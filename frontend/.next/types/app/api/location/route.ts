@@ -1,4 +1,4 @@
-// File: C:\Users\ASUS\Desktop\fitness\frontend\app\api\location\route.js
+// File: C:\Users\ASUS\Documents\GitHub\picoso\frontend\app\api\location\route.js
 import * as entry from '../../../../../app/api/location/route.js'
 import type { NextRequest } from 'next/server.js'
 

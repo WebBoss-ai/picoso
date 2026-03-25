@@ -1,4 +1,4 @@
-// File: C:\Users\ASUS\Desktop\fitness\frontend\app\layout.js
+// File: C:\Users\ASUS\Documents\GitHub\picoso\frontend\app\layout.js
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -1,257 +1,161 @@
-"use client";
-import Link from "next/link";
-import { Phone, Mail, MapPin, Heart, ArrowUpRight } from "lucide-react";
+import Link from 'next/link';
+import { Instagram, Twitter, Facebook, Mail, Phone, Leaf, Crown, MapPin, ArrowRight } from 'lucide-react';
 
 export default function Footer() {
+  const year = new Date().getFullYear();
+
   return (
-    <footer
-      style={{
-        position: "relative",
-        background:
-          "linear-gradient(180deg, #0f0f0f 0%, #121212 40%, #0b0b0b 100%)",
-        color: "#fff",
-        padding: "90px 20px 40px",
-        overflow: "hidden",
-      }}
-    >
-      {/* glow orbs */}
-      <div
-        style={{
-          position: "absolute",
-          width: 420,
-          height: 420,
-          borderRadius: "50%",
-          background: "radial-gradient(circle,#C41E73 0%, transparent 70%)",
-          opacity: 0.12,
-          top: -120,
-          right: -120,
-          filter: "blur(80px)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          width: 300,
-          height: 300,
-          borderRadius: "50%",
-          background: "radial-gradient(circle,#E91E63 0%, transparent 70%)",
-          opacity: 0.12,
-          bottom: -100,
-          left: -100,
-          filter: "blur(80px)",
-        }}
-      />
+    <footer className="bg-white border-t border-surface-200">
 
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
-        {/* GRID */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
-            gap: "60px",
-            marginBottom: 60,
-          }}
-        >
-          {/* BRAND */}
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                marginBottom: 18,
-              }}
-            >
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  background:
-                    "linear-gradient(135deg,#C41E73 0%,#E91E63 60%,#FF4DA6 100%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 700,
-                  fontSize: 20,
-                }}
-              >
-                F
-              </div>
-
-              <span
-                style={{
-                  fontSize: 24,
-                  fontWeight: 600,
-                  letterSpacing: "-0.02em",
-                }}
-              >
-                Picoso
-              </span>
+      {/* Top CTA band */}
+      <div className="bg-brand-50 border-b border-brand-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-brand-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Leaf size={16} className="text-brand-600" />
             </div>
-
-            <p
-              style={{
-                color: "rgba(255,255,255,.6)",
-                fontSize: 14,
-                lineHeight: 1.7,
-                maxWidth: 260,
-              }}
-            >
-              Precision nutrition bowls designed for performance, recovery and
-              everyday energy. Built for modern fitness lifestyles.
-            </p>
-          </div>
-
-          {/* LINKS */}
-          <FooterCol title="Menu">
-            <FooterLink href="/bowls">Browse Bowls</FooterLink>
-            <FooterLink href="/custom">Custom Bowl</FooterLink>
-            <FooterLink href="/orders">Track Order</FooterLink>
-          </FooterCol>
-
-          <FooterCol title="Company">
-            <FooterLink href="/about">About</FooterLink>
-            <FooterLink href="/contact">Contact</FooterLink>
-            <FooterLink href="/careers">Careers</FooterLink>
-          </FooterCol>
-
-          {/* CONTACT */}
-          <div>
-            <h4 className="footerTitle">Contact</h4>
-
-            <div className="footerContact">
-              <Phone size={16} />
-              <a href="tel:8167080111">8167080111</a>
-            </div>
-
-            <div className="footerContact">
-              <Mail size={16} />
-              <a href="mailto:hello@picoso.com">hello@picoso.com</a>
-            </div>
-
-            <div className="footerContact">
-              <MapPin size={16} />
-              <span>Gurugram, India</span>
+            <div>
+              <p className="text-sm font-bold text-gray-900">Fresh meals, delivered in 30 minutes</p>
+              <p className="text-xs text-gray-500">Free delivery on every order — no minimum</p>
             </div>
           </div>
+          <Link href="/menu" className="btn-primary text-sm px-5 py-2.5 flex-shrink-0">
+            Order Now <ArrowRight size={14} />
+          </Link>
         </div>
+      </div>
 
-        {/* BOTTOM */}
-        <div
-          style={{
-            borderTop: "1px solid rgba(255,255,255,.08)",
-            paddingTop: 28,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 16,
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13 }}>
-            © {new Date().getFullYear()} Picoso. All rights reserved.
+      {/* Main footer grid */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-10">
+
+          {/* Brand col */}
+          <div className="lg:col-span-2">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-sm">
+                <span className="text-white font-extrabold text-sm">P</span>
+              </div>
+              <span className="font-extrabold text-gray-900 text-xl tracking-tight">Picoso</span>
+            </div>
+            <p className="text-sm text-gray-500 leading-relaxed mb-5 max-w-xs">
+              Nutritionist-crafted PF Meals packed with protein, made fresh daily and delivered to your door in 30 minutes. No junk, no compromise.
+            </p>
+
+            {/* Contact */}
+            <div className="space-y-2.5 mb-6">
+              <a href="tel:+918210823753" className="flex items-center gap-2.5 text-sm text-gray-500 hover:text-brand-600 transition-colors group">
+                <div className="w-7 h-7 bg-surface-100 group-hover:bg-brand-100 rounded-lg flex items-center justify-center transition-colors">
+                  <Phone size={13} className="text-gray-500 group-hover:text-brand-600 transition-colors" />
+                </div>
+                +91 82108 23753
+              </a>
+              <a href="mailto:hello@picoso.in" className="flex items-center gap-2.5 text-sm text-gray-500 hover:text-brand-600 transition-colors group">
+                <div className="w-7 h-7 bg-surface-100 group-hover:bg-brand-100 rounded-lg flex items-center justify-center transition-colors">
+                  <Mail size={13} className="text-gray-500 group-hover:text-brand-600 transition-colors" />
+                </div>
+                hello@picoso.in
+              </a>
+            </div>
+
+            {/* Socials */}
+            <div className="flex gap-2">
+              {[
+                { href: '#', icon: Instagram, label: 'Instagram' },
+                { href: '#', icon: Twitter,   label: 'Twitter' },
+                { href: '#', icon: Facebook,  label: 'Facebook' },
+              ].map(({ href, icon: Icon, label }) => (
+                <a key={label} href={href} aria-label={label}
+                  className="w-8 h-8 bg-surface-100 hover:bg-brand-100 border border-surface-200 hover:border-brand-200 rounded-lg flex items-center justify-center text-gray-500 hover:text-brand-600 transition-all">
+                  <Icon size={14} />
+                </a>
+              ))}
+            </div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              color: "rgba(255,255,255,.6)",
-              fontSize: 13,
-            }}
-          >
-            Made with
-            <Heart
-              size={14}
-              fill="#E91E63"
-              style={{ marginTop: 1, marginLeft: 4 }}
-            />
-            for high-performance living
+          {/* Categories */}
+          <div>
+            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest mb-4">Categories</h4>
+            <ul className="space-y-2.5">
+              <li>
+                <Link href="/menu" className="text-sm text-gray-500 hover:text-brand-600 transition-colors flex items-center gap-1.5 group">
+                  <span className="w-1 h-1 rounded-full bg-brand-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  PF Meals
+                </Link>
+              </li>
+              {['PF Snacks', 'PF Desserts', 'PF Beverages'].map(name => (
+                <li key={name}>
+                  <span className="text-sm text-gray-300 cursor-not-allowed flex items-center gap-2">
+                    {name}
+                    <span className="text-xs bg-surface-100 text-gray-400 px-1.5 py-0.5 rounded-full font-medium">Soon</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Account */}
+          <div>
+            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest mb-4">Account</h4>
+            <ul className="space-y-2.5">
+              {[
+                { label: 'My Profile',    href: '/profile' },
+                { label: 'My Orders',     href: '/profile?tab=orders' },
+                { label: 'Saved Addresses', href: '/profile?tab=addresses' },
+                { label: 'Help & Support', href: '/profile?tab=support' },
+              ].map(({ label, href }) => (
+                <li key={label}>
+                  <Link href={href} className="text-sm text-gray-500 hover:text-brand-600 transition-colors flex items-center gap-1.5 group">
+                    <span className="w-1 h-1 rounded-full bg-brand-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Platinum */}
+          <div>
+            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-widest mb-4">Membership</h4>
+            <Link href="/profile?tab=platinum"
+              className="block p-4 bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-2xl hover:shadow-card-hover transition-all group mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Crown size={15} className="text-platinum-500" />
+                <span className="text-sm font-bold text-gray-900">Picoso Platinum</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">20% off all meals + free delivery for ₹99/month</p>
+              <span className="text-xs font-bold text-orange-600 flex items-center gap-1 group-hover:gap-2 transition-all">
+                Get started <ArrowRight size={11} />
+              </span>
+            </Link>
+
+            <ul className="space-y-2 text-xs text-gray-400">
+              <li className="flex items-center gap-1.5"><span className="text-brand-400">✓</span> 20% off every order</li>
+              <li className="flex items-center gap-1.5"><span className="text-brand-400">✓</span> Free delivery always</li>
+              <li className="flex items-center gap-1.5"><span className="text-brand-400">✓</span> Priority dispatch</li>
+            </ul>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Bottom bar */}
+      <div className="border-t border-surface-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <span>© {year} Picoso. All rights reserved.</span>
+            <span className="hidden sm:block">•</span>
+            <div className="hidden sm:flex items-center gap-1.5 text-brand-500 font-medium">
+              <Leaf size={11} /> FSSAI Certified Kitchen
+            </div>
+          </div>
+          <div className="flex items-center gap-5 text-xs text-gray-400">
+            {['Privacy Policy', 'Terms of Service', 'Refund Policy'].map(t => (
+              <a key={t} href="#" className="hover:text-gray-700 transition-colors">{t}</a>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* styles */}
-      <style jsx>{`
-        .footerTitle {
-          font-size: 15px;
-          font-weight: 600;
-          margin-bottom: 18px;
-          letter-spacing: 0.04em;
-          color: #fff;
-        }
-
-        .footerLink {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 6px;
-          font-size: 14px;
-          color: rgba(255, 255, 255, 0.55);
-          text-decoration: none;
-          margin-bottom: 12px;
-          transition: 0.3s;
-        }
-
-        .footerLink:hover {
-          color: #fff;
-          transform: translateX(4px);
-        }
-
-        .footerContact {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          color: rgba(255, 255, 255, 0.6);
-          font-size: 14px;
-          margin-bottom: 14px;
-        }
-
-        .footerContact a {
-          color: inherit;
-          text-decoration: none;
-          transition: 0.3s;
-        }
-
-        .footerContact a:hover {
-          color: #fff;
-        }
-
-        @media (max-width: 700px) {
-          footer {
-            padding: 70px 18px 40px;
-          }
-        }
-      `}</style>
     </footer>
-  );
-}
-
-function FooterCol({ title, children }) {
-  return (
-    <div>
-      <h4 className="footerTitle">{title}</h4>
-      {children}
-    </div>
-  );
-}
-
-function FooterLink({ href, children }) {
-  return (
-    <Link href={href} className="footerLink">
-      <span className="flex items-center gap-1">
-        {children}
-        <ArrowUpRight size={14} />
-      </span>
-    </Link>
   );
 }

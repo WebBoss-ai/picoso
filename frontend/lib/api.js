@@ -1,17 +1,13 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
 });
 
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    const token = localStorage.getItem('picoso_token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -22,16 +18,12 @@ export const auth = {
 };
 
 export const bowls = {
-  getAll: () => api.get('/bowls'),
+  getAll: (pfCategory) => api.get('/bowls', { params: pfCategory ? { pfCategory } : {} }),
   getById: (id) => api.get(`/bowls/${id}`),
 };
 
-export const ingredients = {
-  getAll: () => api.get('/ingredients'),
-};
-
 export const orders = {
-  create: (orderData) => api.post('/orders', orderData),
+  create: (data) => api.post('/orders', data),
   getAll: () => api.get('/orders'),
   getById: (id) => api.get(`/orders/${id}`),
 };
@@ -39,6 +31,14 @@ export const orders = {
 export const profile = {
   get: () => api.get('/profile'),
   update: (data) => api.put('/profile', data),
+  addAddress: (data) => api.post('/profile/addresses', data),
+  updateAddresses: (addresses) => api.put('/profile/addresses', { addresses }),
+  deleteAddress: (addressId) => api.delete(`/profile/addresses/${addressId}`),
+};
+
+export const platinum = {
+  getStatus: () => api.get('/platinum/status'),
+  subscribe: (data) => api.post('/platinum/subscribe', data),
 };
 
 export const feedback = {
@@ -46,23 +46,19 @@ export const feedback = {
 };
 
 export const admin = {
-  getOrders: () => api.get('/admin/orders'),
-  updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}`, { status }),
   getStats: () => api.get('/admin/stats'),
-  createBowl: (formData) => api.post('/admin/bowls', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  updateBowl: (id, formData) => api.put(`/admin/bowls/${id}`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
+  getOrders: (params) => api.get('/admin/orders', { params }),
+  updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}`, { status }),
+  approvePayment: (id) => api.put(`/admin/orders/${id}/approve-payment`),
+  rejectPayment: (id) => api.put(`/admin/orders/${id}/reject-payment`),
+  getPlatinumRequests: () => api.get('/admin/platinum'),
+  approvePlatinum: (id) => api.put(`/admin/platinum/${id}/approve`),
+  rejectPlatinum: (id) => api.put(`/admin/platinum/${id}/reject`),
+  getUsers: () => api.get('/admin/users'),
+  getBowls: () => api.get('/bowls'),
+  createBowl: (data) => api.post('/admin/bowls', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  updateBowl: (id, data) => api.put(`/admin/bowls/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   deleteBowl: (id) => api.delete(`/admin/bowls/${id}`),
-  createIngredient: (formData) => api.post('/admin/ingredients', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  updateIngredient: (id, formData) => api.put(`/admin/ingredients/${id}`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  deleteIngredient: (id) => api.delete(`/admin/ingredients/${id}`),
 };
 
 export default api;
