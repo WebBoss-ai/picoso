@@ -273,13 +273,54 @@ export default function OrderSuccessPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!isLoggedIn) { router.replace('/'); return; }
-    orders.getById(id).then(res => setOrder(res.data.order)).catch(() => {}).finally(() => setLoading(false));
+
+    orders.getById(id)
+      .then(res => setOrder(res.data.order))
+      .catch(() => {})
+      .finally(() => setLoading(false));
 
     const poll = setInterval(() => {
-      orders.getById(id).then(res => setOrder(res.data.order)).catch(() => {});
+      orders.getById(id)
+        .then(res => setOrder(res.data.order))
+        .catch(() => {});
     }, 15000);
+
     return () => clearInterval(poll);
   }, [id, isLoggedIn, authLoading, router]);
+
+  /**
+   * 🔥 META PURCHASE TRACKING (SAFE + OPTIMIZED)
+   */
+  useEffect(() => {
+    if (!order) return;
+
+    // Only fire when payment is actually valid
+    if (order.paymentMethod === 'upi' && order.paymentStatus !== 'paid') return;
+
+    const eventId = `order_${order._id}`;
+
+    // Prevent duplicate firing (refresh / re-render safe)
+    if (typeof window !== 'undefined' && window.fbq && !localStorage.getItem(eventId)) {
+      window.fbq('track', 'Purchase', {
+        value: order.totalPrice,
+        currency: 'INR',
+
+        // Required for better ad optimization
+        content_ids: order.items?.map(item => item.bowlId?._id || item.name) || [],
+
+        contents: order.items?.map(item => ({
+          id: item.bowlId?._id || item.name,
+          quantity: item.quantity
+        })) || [],
+
+        content_type: 'product'
+      }, {
+        eventID: eventId
+      });
+
+      localStorage.setItem(eventId, 'true');
+    }
+  }, [order]);
 
   const currentStepIndex = order
     ? STATUS_STEPS.findIndex(s => s.key === order.status)
