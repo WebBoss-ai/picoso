@@ -27,14 +27,19 @@ export const sendOTPController = async (req, res) => {
 
 export const verifyOTPController = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    console.log("🔹 verifyOTPController called");
+    console.log("➡️ req.body:", req.body);
 
+    const { phone, otp } = req.body;
     const DEFAULT_OTP = '0000';
 
     let otpDoc = null;
 
+    // ✅ OTP verification (skip for default OTP)
     if (otp !== DEFAULT_OTP) {
       otpDoc = await OTP.findOne({ phone }).sort({ createdAt: -1 });
+
+      console.log("📄 OTP doc:", otpDoc?._id);
 
       if (!otpDoc) {
         return res.status(400).json({ error: 'OTP not found or expired' });
@@ -47,9 +52,33 @@ export const verifyOTPController = async (req, res) => {
       }
     }
 
+    // 🔥 Clean phone (only digits, last 10 digits)
+    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+    const dummyEmail = `${cleanPhone}@picoso.in`;
+
+    console.log("📱 Clean phone:", cleanPhone);
+    console.log("🧪 Dummy email:", dummyEmail);
+
     let user = await User.findOne({ phone });
+
     if (!user) {
-      user = await User.create({ phone });
+      console.log("🆕 Creating new user");
+
+      user = await User.create({
+        phone,
+        email: dummyEmail // ✅ FIX: always set unique email
+      });
+
+    } else {
+      console.log("👤 Existing user found:", user._id);
+
+      // ✅ Optional: fix old users with null email
+      if (!user.email) {
+        console.log("⚠️ User missing email → assigning dummy");
+
+        user.email = dummyEmail;
+        await user.save();
+      }
     }
 
     const token = jwt.sign(
@@ -62,7 +91,10 @@ export const verifyOTPController = async (req, res) => {
       await OTP.findByIdAndDelete(otpDoc._id);
     }
 
-    const platinum = await PlatinumCard.findOne({ userId: user._id, active: true });
+    const platinum = await PlatinumCard.findOne({
+      userId: user._id,
+      active: true
+    });
 
     res.json({
       success: true,
@@ -76,7 +108,18 @@ export const verifyOTPController = async (req, res) => {
         isPlatinum: !!platinum
       }
     });
+
   } catch (error) {
+    console.error("🔥 verifyOTPController ERROR:", error);
+
+    if (error.code === 11000) {
+      console.error("🚨 Duplicate key:", error.keyValue);
+      return res.status(400).json({
+        error: "Duplicate value",
+        details: error.keyValue
+      });
+    }
+
     res.status(500).json({ error: error.message });
   }
 };
