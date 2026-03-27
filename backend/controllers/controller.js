@@ -181,13 +181,32 @@ export const updateProfile = async (req, res) => {
     // Normalize email
     email = email?.trim().toLowerCase();
 
+    // 🔥 Clean phone (only digits, last 10 digits)
+    const cleanPhone = req.user.phone.replace(/\D/g, "").slice(-10);
+
+    // 🔥 Generate dummy email
+    const dummyEmail = `${cleanPhone}@picoso.in`;
+
     const updateData = {
       name,
       location
     };
 
-    // ✅ Only include email if it's valid (not empty)
-    if (email) {
+    // ✅ Email logic
+    if (!email || email === "") {
+      // Use dummy email if empty
+      updateData.email = dummyEmail;
+    } else {
+      // Check duplicate (exclude current user)
+      const existingUser = await User.findOne({
+        email,
+        _id: { $ne: req.user._id }
+      });
+
+      if (existingUser) {
+        return res.status(400).json({ error: "Email already in use" });
+      }
+
       updateData.email = email;
     }
 
@@ -200,11 +219,6 @@ export const updateProfile = async (req, res) => {
     res.json({ success: true, user });
 
   } catch (error) {
-    // Handle duplicate email properly
-    if (error.code === 11000) {
-      return res.status(400).json({ error: 'Email already in use' });
-    }
-
     res.status(500).json({ error: error.message });
   }
 };

@@ -14,7 +14,7 @@ const savedAddressSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
   phone: { type: String, required: true, unique: true },
   name: { type: String, default: '' },
-  email: { type: String, default: '' },
+  email: { type: String, default: null },
   location: {
     city: String,
     area: String,
