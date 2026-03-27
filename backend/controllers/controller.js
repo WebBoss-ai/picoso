@@ -176,16 +176,26 @@ export const getProfile = async (req, res) => {
 
 export const updateProfile = async (req, res) => {
   try {
+    console.log("🔹 updateProfile called");
+    console.log("➡️ req.user:", req.user);
+    console.log("➡️ req.body:", req.body);
+
     let { name, email, location } = req.body;
 
     // Normalize email
     email = email?.trim().toLowerCase();
+    console.log("📧 Normalized email:", email);
 
     // 🔥 Clean phone (only digits, last 10 digits)
-    const cleanPhone = req.user.phone.replace(/\D/g, "").slice(-10);
+    const rawPhone = req.user.phone;
+    const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+
+    console.log("📱 Raw phone:", rawPhone);
+    console.log("📱 Clean phone:", cleanPhone);
 
     // 🔥 Generate dummy email
     const dummyEmail = `${cleanPhone}@picoso.in`;
+    console.log("🧪 Dummy email generated:", dummyEmail);
 
     const updateData = {
       name,
@@ -194,21 +204,27 @@ export const updateProfile = async (req, res) => {
 
     // ✅ Email logic
     if (!email || email === "") {
-      // Use dummy email if empty
+      console.log("⚠️ No email provided → using dummy email");
       updateData.email = dummyEmail;
     } else {
-      // Check duplicate (exclude current user)
+      console.log("🔍 Checking duplicate for email:", email);
+
       const existingUser = await User.findOne({
         email,
         _id: { $ne: req.user._id }
       });
 
+      console.log("🔎 Existing user found:", existingUser?._id);
+
       if (existingUser) {
+        console.log("❌ Duplicate email detected");
         return res.status(400).json({ error: "Email already in use" });
       }
 
       updateData.email = email;
     }
+
+    console.log("📝 Final updateData:", updateData);
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
@@ -216,9 +232,25 @@ export const updateProfile = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    console.log("✅ Updated user:", user?._id);
+
     res.json({ success: true, user });
 
   } catch (error) {
+    console.error("🔥 updateProfile ERROR:");
+    console.error("Message:", error.message);
+    console.error("Code:", error.code);
+    console.error("Stack:", error.stack);
+
+    // Extra handling for duplicate error (just in case)
+    if (error.code === 11000) {
+      console.error("🚨 Duplicate key error:", error.keyValue);
+      return res.status(400).json({
+        error: "Duplicate value",
+        details: error.keyValue
+      });
+    }
+
     res.status(500).json({ error: error.message });
   }
 };
