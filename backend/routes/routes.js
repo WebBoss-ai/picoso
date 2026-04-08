@@ -5,6 +5,12 @@ import { uploadToS3 } from '../utils/s3.js';
 
 const router = express.Router();
 
+// Categories (public read, admin write)
+router.get('/categories', controller.getCategories);
+router.post('/admin/categories', authenticate, isAdmin, controller.createCategory);
+router.put('/admin/categories/:id', authenticate, isAdmin, controller.updateCategory);
+router.delete('/admin/categories/:id', authenticate, isAdmin, controller.deleteCategory);
+
 // Auth
 router.post('/auth/send-otp', controller.sendOTPController);
 router.post('/auth/verify-otp', controller.verifyOTPController);

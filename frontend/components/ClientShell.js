@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Header from './Header';
 import Footer from './Footer';
 import CartDrawer from './CartDrawer';
+import CartBar from './CartBar';
 import AuthModal from './AuthModal';
 import { useAuth } from '@/context/AuthContext';
 
@@ -42,6 +43,7 @@ export default function ClientShell({ children }) {
       {!isAdminPage && <Footer />}
 
       <CartDrawer onAuthRequired={handleAuthRequired} />
+      <CartBar onAuthRequired={handleAuthRequired} />
 
       {showAuth && (
         <AuthModal

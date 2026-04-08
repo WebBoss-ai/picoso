@@ -22,6 +22,10 @@ export const bowls = {
   getById: (id) => api.get(`/bowls/${id}`),
 };
 
+export const categories = {
+  getAll: () => api.get('/categories'),
+};
+
 export const orders = {
   create: (data) => api.post('/orders', data),
   getAll: () => api.get('/orders'),
@@ -59,6 +63,10 @@ export const admin = {
   createBowl: (data) => api.post('/admin/bowls', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   updateBowl: (id, data) => api.put(`/admin/bowls/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   deleteBowl: (id) => api.delete(`/admin/bowls/${id}`),
+  getCategories: () => api.get('/categories'),
+  createCategory: (data) => api.post('/admin/categories', data),
+  updateCategory: (id, data) => api.put(`/admin/categories/${id}`, data),
+  deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
 };
 
 export default api;

@@ -49,13 +49,16 @@ const bowlSchema = new mongoose.Schema({
   category: { type: String, default: 'signature' },
   pfCategory: {
     type: String,
-    enum: ['pf-meals', 'pf-snacks', 'pf-desserts', 'pf-beverages'],
+    enum: ['pf-meals', 'pf-wraps', 'pf-sandwiches', 'pf-salads'],
     default: 'pf-meals'
   },
   isVeg: { type: Boolean, default: true },
   isBestseller: { type: Boolean, default: false },
   isChefSpecial: { type: Boolean, default: false },
-  tags: [{ type: String }]
+  tags: [{ type: String }],
+  availableFrom: { type: String, default: '' },  // "09:00" IST
+  availableTo:   { type: String, default: '' },  // "21:00" IST — empty = always available
+  sortOrder: { type: Number, default: 0 }
 });
 
 const ingredientSchema = new mongoose.Schema({
@@ -140,6 +143,17 @@ const platinumCardSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+const categoryConfigSchema = new mongoose.Schema({
+  id:          { type: String, required: true, unique: true },
+  label:       { type: String, required: true },
+  description: { type: String, default: '' },
+  image:       { type: String, default: '' },
+  active:      { type: Boolean, default: false },
+  sortOrder:   { type: Number, default: 0 },
+  color:       { type: String, default: '#f0fdf4' },
+  createdAt:   { type: Date, default: Date.now }
+});
+
 export const User = mongoose.model('User', userSchema);
 export const OTP = mongoose.model('OTP', otpSchema);
 export const Bowl = mongoose.model('Bowl', bowlSchema);
@@ -147,3 +161,4 @@ export const Ingredient = mongoose.model('Ingredient', ingredientSchema);
 export const Order = mongoose.model('Order', orderSchema);
 export const Feedback = mongoose.model('Feedback', feedbackSchema);
 export const PlatinumCard = mongoose.model('PlatinumCard', platinumCardSchema);
+export const CategoryConfig = mongoose.model('CategoryConfig', categoryConfigSchema);

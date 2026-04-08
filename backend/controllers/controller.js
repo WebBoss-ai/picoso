@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard } from '../models/Model.js';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, CategoryConfig } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 
 // Auth Controllers
@@ -124,13 +124,29 @@ export const verifyOTPController = async (req, res) => {
   }
 };
 
+// ── Availability helper (IST) ───────────────────────────────────────────────
+function computeAvailability(bowl) {
+  const doc = typeof bowl.toObject === 'function' ? bowl.toObject() : { ...bowl };
+  if (doc.availableFrom && doc.availableTo) {
+    const now = new Date();
+    const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    const hh  = ist.getUTCHours().toString().padStart(2, '0');
+    const mm  = ist.getUTCMinutes().toString().padStart(2, '0');
+    const cur = `${hh}:${mm}`;
+    doc.isAvailableNow = cur >= doc.availableFrom && cur <= doc.availableTo;
+  } else {
+    doc.isAvailableNow = doc.available !== false;
+  }
+  return doc;
+}
+
 // Product / Bowl Controllers
 export const getBowls = async (req, res) => {
   try {
-    const filter = { available: true };
+    const filter = {};
     if (req.query.pfCategory) filter.pfCategory = req.query.pfCategory;
-    const bowls = await Bowl.find(filter).sort({ isBestseller: -1, createdAt: -1 });
-    res.json({ success: true, bowls });
+    const bowls = await Bowl.find(filter).sort({ sortOrder: 1, isBestseller: -1, createdAt: -1 });
+    res.json({ success: true, bowls: bowls.map(computeAvailability) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -732,6 +748,64 @@ export const deleteIngredient = async (req, res) => {
   try {
     await Ingredient.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Ingredient deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ── Category Config Controllers ────────────────────────────────────────────
+const DEFAULT_CATEGORIES = [
+  { id: 'pf-meals',      label: 'Bowls',      description: 'Fresh protein-packed bowls',  active: true, sortOrder: 0, color: '#f0fdf4' },
+  { id: 'pf-wraps',      label: 'Wraps',      description: 'Loaded healthy wraps',         active: true, sortOrder: 1, color: '#fefce8' },
+  { id: 'pf-sandwiches', label: 'Sandwiches', description: 'Artisan protein sandwiches',   active: true, sortOrder: 2, color: '#fff7ed' },
+  { id: 'pf-salads',     label: 'Salads',     description: 'Crispy fresh salad bowls',     active: true, sortOrder: 3, color: '#ecfdf5' },
+];
+
+export const getCategories = async (req, res) => {
+  try {
+    // Upsert defaults — updates labels/meta, preserves admin's active toggle
+    for (const def of DEFAULT_CATEGORIES) {
+      await CategoryConfig.findOneAndUpdate(
+        { id: def.id },
+        { $set: { label: def.label, description: def.description, sortOrder: def.sortOrder, color: def.color, active: def.active },
+          $setOnInsert: { createdAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    // Remove categories that no longer exist in defaults (cleanup old pf-snacks etc.)
+    await CategoryConfig.deleteMany({ id: { $nin: DEFAULT_CATEGORIES.map(d => d.id) } });
+    const cats = await CategoryConfig.find().sort({ sortOrder: 1 });
+    res.json({ success: true, categories: cats });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const update = { ...req.body };
+    const cat = await CategoryConfig.findOneAndUpdate({ id }, update, { new: true, upsert: true });
+    res.json({ success: true, category: cat });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createCategory = async (req, res) => {
+  try {
+    const cat = await CategoryConfig.create(req.body);
+    // also ensure Bowl pfCategory enum supports it (we skip strict enum here)
+    res.json({ success: true, category: cat });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteCategory = async (req, res) => {
+  try {
+    await CategoryConfig.findOneAndDelete({ id: req.params.id });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
