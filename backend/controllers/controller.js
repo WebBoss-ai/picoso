@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, CategoryConfig } from '../models/Model.js';
+import bcrypt from 'bcryptjs';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, CategoryConfig, DeliveryPartner } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 
 // Auth Controllers
@@ -184,7 +185,7 @@ export const createOrder = async (req, res) => {
       items,
       totalPrice,
       discountAmount: discountAmount || 0,
-      deliveryFee: deliveryFee || 0,
+      deliveryFee: deliveryFee !== undefined ? deliveryFee : 15,
       isPlatinumOrder: isPlatinumOrder || false,
       paymentMethod: paymentMethod || 'cod',
       paymentStatus: paymentMethod === 'cod' ? 'pending' : 'pending',
@@ -385,7 +386,7 @@ export const subscribePlatinum = async (req, res) => {
         active: false,
         paymentStatus: 'pending',
         upiRef: upiRef || '',
-        monthlyFee: 99
+        monthlyFee: 299
       });
     }
 
@@ -755,10 +756,11 @@ export const deleteIngredient = async (req, res) => {
 
 // ── Category Config Controllers ────────────────────────────────────────────
 const DEFAULT_CATEGORIES = [
-  { id: 'pf-meals',      label: 'Bowls',      description: 'Fresh protein-packed bowls',  active: true, sortOrder: 0, color: '#f0fdf4' },
-  { id: 'pf-wraps',      label: 'Wraps',      description: 'Loaded healthy wraps',         active: true, sortOrder: 1, color: '#fefce8' },
-  { id: 'pf-sandwiches', label: 'Sandwiches', description: 'Artisan protein sandwiches',   active: true, sortOrder: 2, color: '#fff7ed' },
-  { id: 'pf-salads',     label: 'Salads',     description: 'Crispy fresh salad bowls',     active: true, sortOrder: 3, color: '#ecfdf5' },
+  { id: 'pf-beverages',  label: 'Cold Drinks',  description: 'Cold coffees & refreshing drinks', active: true, sortOrder: 0, color: '#fef3c7' },
+  { id: 'pf-meals',      label: 'Bowls',        description: 'Fresh protein-packed bowls',        active: true, sortOrder: 1, color: '#f0fdf4' },
+  { id: 'pf-wraps',      label: 'Wraps',        description: 'Loaded healthy wraps',              active: true, sortOrder: 2, color: '#fefce8' },
+  { id: 'pf-sandwiches', label: 'Sandwiches',   description: 'Artisan protein sandwiches',        active: true, sortOrder: 3, color: '#fff7ed' },
+  { id: 'pf-salads',     label: 'Salads',       description: 'Crispy fresh salad bowls',          active: true, sortOrder: 4, color: '#ecfdf5' },
 ];
 
 export const getCategories = async (req, res) => {
@@ -809,4 +811,112 @@ export const deleteCategory = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+};
+
+// ── Delivery Partner Controllers ───────────────────────────────────────────
+
+export const deliveryLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    const partner = await DeliveryPartner.findOne({ email: email.toLowerCase().trim() });
+    if (!partner) return res.status(401).json({ error: 'Invalid credentials' });
+    const valid = await bcrypt.compare(password, partner.password);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!partner.isActive) return res.status(403).json({ error: 'Account is inactive. Contact admin.' });
+    const token = jwt.sign({ partnerId: partner._id, role: 'delivery' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.json({
+      success: true, token,
+      partner: { _id: partner._id, name: partner.name, email: partner.email, phone: partner.phone, totalDeliveries: partner.totalDeliveries }
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getAvailableOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      status: { $in: ['confirmed', 'preparing', 'pending'] },
+      deliveryPartnerId: { $exists: false }
+    }).sort({ createdAt: -1 });
+    res.json({ success: true, orders });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getActiveDelivery = async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      deliveryPartnerId: req.deliveryPartner._id,
+      status: 'out-for-delivery'
+    });
+    res.json({ success: true, order: order || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getDeliveryHistory = async (req, res) => {
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const orders = await Order.find({
+      deliveryPartnerId: req.deliveryPartner._id,
+      status: 'delivered',
+      deliveredAt: { $gte: today }
+    }).sort({ deliveredAt: -1 });
+    res.json({ success: true, orders });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const pickupOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!['confirmed', 'preparing', 'pending'].includes(order.status)) {
+      return res.status(400).json({ error: 'Order not available for pickup' });
+    }
+    if (order.deliveryPartnerId) return res.status(400).json({ error: 'Order already assigned' });
+    order.status = 'out-for-delivery';
+    order.deliveryPartnerId = req.deliveryPartner._id;
+    order.pickedUpAt = new Date();
+    order.updatedAt = new Date();
+    await order.save();
+    res.json({ success: true, order });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const markDelivered = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.deliveryPartnerId?.toString() !== req.deliveryPartner._id.toString()) {
+      return res.status(403).json({ error: 'Not your delivery' });
+    }
+    if (order.status !== 'out-for-delivery') return res.status(400).json({ error: 'Order not in delivery' });
+    order.status = 'delivered';
+    order.deliveredAt = new Date();
+    order.updatedAt = new Date();
+    if (order.paymentMethod === 'cod') order.paymentStatus = 'paid';
+    await order.save();
+    await DeliveryPartner.findByIdAndUpdate(req.deliveryPartner._id, { $inc: { totalDeliveries: 1 } });
+    res.json({ success: true, order });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getDeliveryStats = async (req, res) => {
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const [todayDocs, earningsAgg, partner] = await Promise.all([
+      Order.countDocuments({ deliveryPartnerId: req.deliveryPartner._id, status: 'delivered', deliveredAt: { $gte: today } }),
+      Order.aggregate([
+        { $match: { deliveryPartnerId: req.deliveryPartner._id, status: 'delivered', deliveredAt: { $gte: today } } },
+        { $group: { _id: null, total: { $sum: '$deliveryFee' } } }
+      ]),
+      DeliveryPartner.findById(req.deliveryPartner._id)
+    ]);
+    res.json({
+      success: true,
+      stats: {
+        todayDeliveries: todayDocs,
+        todayEarnings: earningsAgg[0]?.total || 0,
+        totalDeliveries: partner?.totalDeliveries || 0
+      }
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 };

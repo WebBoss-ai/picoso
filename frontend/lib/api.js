@@ -69,4 +69,25 @@ export const admin = {
   deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
 };
 
+const deliveryApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+});
+deliveryApi.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('picoso_delivery_token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export const delivery = {
+  login:          (data)  => deliveryApi.post('/delivery/login', data),
+  getAvailable:   ()      => deliveryApi.get('/delivery/orders/available'),
+  getActive:      ()      => deliveryApi.get('/delivery/orders/active'),
+  getHistory:     ()      => deliveryApi.get('/delivery/orders/history'),
+  getStats:       ()      => deliveryApi.get('/delivery/stats'),
+  pickup:         (id)    => deliveryApi.put(`/delivery/orders/${id}/pickup`),
+  deliver:        (id)    => deliveryApi.put(`/delivery/orders/${id}/deliver`),
+};
+
 export default api;

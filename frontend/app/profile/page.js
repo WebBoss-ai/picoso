@@ -20,7 +20,7 @@ const TABS = [
 
 const FAQS = [
   { q: 'How long does delivery take?', a: 'We deliver within 30 minutes of order placement. Our riders are always ready to bring your meal hot and fresh.' },
-  { q: 'What is the Platinum Card?', a: 'Picoso Platinum is a ₹99/month subscription that gives you 20% off every meal, free delivery, and priority service. Pay via UPI and get activated after admin approval.' },
+  { q: 'What is the Platinum Card?', a: 'Picoso Platinum is a ₹299/month subscription that gives you 20% off every meal, ₹15 delivery, and priority service. Pay via UPI and get activated after admin approval.' },
   { q: 'How do I pay via UPI?', a: 'During checkout, select "Pay via UPI", copy our UPI ID (8210823753@ybl), pay the amount from your UPI app, and place your order. Our team will verify and confirm your order.' },
   { q: 'Can I cancel my order?', a: 'Orders can be cancelled within 2 minutes of placing. Once confirmed, cancellation may not be possible. Please contact support immediately.' },
   { q: 'Are the meals really healthy?', a: 'Yes! Every PF Meal is crafted by our nutritionists with specific macro targets. High protein, balanced carbs, and healthy fats — no preservatives.' },
@@ -39,7 +39,7 @@ const STATUS_COLORS = {
 
 const PLATINUM_PERKS = [
   { icon: <Percent size={18} className="text-white" />, title: '20% Off Every Meal', desc: 'Flat discount on all PF Meals' },
-  { icon: <Truck size={18} className="text-white" />, title: 'Free Delivery', desc: 'Every single order, always' },
+  { icon: <Truck size={18} className="text-white" />, title: '₹15 Delivery', desc: 'Fast & hot to your door' },
   { icon: <Shield size={18} className="text-white" />, title: 'Priority Service', desc: 'Your orders jump the queue' },
   { icon: <Gift size={18} className="text-white" />, title: 'Exclusive Deals', desc: 'Member-only offers & early access' },
 ];
@@ -375,7 +375,7 @@ function PlatinumTab({ platinumData, onSubscribe }) {
           </div>
           <div className="text-right">
             <p className="text-white/70 text-xs">Monthly</p>
-            <p className="text-2xl font-extrabold">₹99</p>
+            <p className="text-2xl font-extrabold">₹299</p>
           </div>
         </div>
       </div>
@@ -417,11 +417,11 @@ function PlatinumTab({ platinumData, onSubscribe }) {
             </div>
           ) : (
             <div>
-              <h3 className="font-bold text-gray-900 mb-1">Get Platinum — ₹99/month</h3>
+              <h3 className="font-bold text-gray-900 mb-1">Get Platinum — ₹299/month</h3>
               <p className="text-sm text-gray-500 mb-5">Pay via UPI and your card will be activated within 2–4 hours after admin approval.</p>
 
               <div className="bg-surface-50 rounded-xl p-4 border border-surface-200 mb-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Pay ₹99 to</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Pay ₹299 to</p>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <p className="font-bold text-gray-900 text-lg">8210823753@ybl</p>
@@ -452,7 +452,7 @@ function PlatinumTab({ platinumData, onSubscribe }) {
         <div className="card p-5 border-brand-200 bg-brand-50 text-center">
           <CheckCircle2 size={28} className="text-brand-500 mx-auto mb-2" />
           <p className="font-bold text-gray-900 mb-1">You're a Platinum Member!</p>
-          <p className="text-sm text-gray-500">Enjoy 20% off and free delivery on every order.</p>
+          <p className="text-sm text-gray-500">Enjoy 20% off on every order with ₹15 delivery.</p>
         </div>
       )}
     </div>

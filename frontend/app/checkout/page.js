@@ -4,13 +4,37 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   MapPin, Home, User, Phone, CreditCard, Smartphone, Banknote,
-  Copy, CheckCircle2, ArrowLeft, Flame, Crown, Plus, Loader2
+  Copy, CheckCircle2, ArrowLeft, Flame, Crown, Plus, Loader2,
+  Moon, Clock, X
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { orders, profile } from '@/lib/api';
 
+function getISTInfo() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const ist = new Date(utc + 5.5 * 3600000);
+  const h = ist.getHours();
+  const m = ist.getMinutes();
+  const isOpen = h >= 10 && h < 22;
+
+  let minutesUntil10AM;
+  if (h < 10) {
+    minutesUntil10AM = (10 - h) * 60 - m;
+  } else {
+    minutesUntil10AM = (34 - h) * 60 - m;
+  }
+
+  return {
+    isOpen,
+    hoursLeft: Math.floor(minutesUntil10AM / 60),
+    minsLeft: minutesUntil10AM % 60,
+  };
+}
+
 const PLATINUM_DISCOUNT = 0.20;
+const DELIVERY_FEE = 15;
 const UPI_ID = '8210823753@ybl';
 
 export default function CheckoutPage() {
@@ -36,6 +60,9 @@ export default function CheckoutPage() {
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState('');
   const [orderPlaced, setOrderPlaced] = useState(false);
+  const [orderingOpen, setOrderingOpen] = useState(true);
+  const [timeLeft, setTimeLeft] = useState({ hoursLeft: 0, minsLeft: 0 });
+  const [showClosedModal, setShowClosedModal] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -53,8 +80,20 @@ export default function CheckoutPage() {
     }).catch(() => {});
   }, [isLoggedIn, authLoading, user, items.length, orderPlaced, router]);
 
+  useEffect(() => {
+    const tick = () => {
+      const { isOpen, hoursLeft, minsLeft } = getISTInfo();
+      setOrderingOpen(isOpen);
+      setTimeLeft({ hoursLeft, minsLeft });
+    };
+    tick();
+    const interval = setInterval(tick, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const subtotal = isPlatinum ? Math.round(cartTotal * (1 - PLATINUM_DISCOUNT)) : cartTotal;
   const discountAmt = cartTotal - subtotal;
+  const grandTotal = subtotal + DELIVERY_FEE;
 
   const handleCopyUPI = () => {
     navigator.clipboard.writeText(UPI_ID);
@@ -90,7 +129,7 @@ export default function CheckoutPage() {
         deliveryAddress,
         totalPrice: subtotal,
         discountAmount: discountAmt,
-        deliveryFee: 0,
+        deliveryFee: DELIVERY_FEE,
         isPlatinumOrder: isPlatinum,
         paymentMethod,
         customerName: name,
@@ -328,7 +367,7 @@ export default function CheckoutPage() {
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">UPI Payment Instructions</p>
                   <ol className="text-sm text-gray-600 space-y-2 mb-4">
                     <li className="flex gap-2"><span className="font-bold text-brand-600">1.</span> Open your UPI app (GPay / PhonePe / Paytm)</li>
-                    <li className="flex gap-2"><span className="font-bold text-brand-600">2.</span> Pay <strong>₹{subtotal}</strong> to the UPI ID below</li>
+                    <li className="flex gap-2"><span className="font-bold text-brand-600">2.</span> Pay <strong>₹{grandTotal}</strong> to the UPI ID below</li>
                     <li className="flex gap-2"><span className="font-bold text-brand-600">3.</span> Place your order — we'll confirm once payment is verified</li>
                   </ol>
                   <div className="flex items-center gap-3 bg-white rounded-xl border border-brand-200 px-4 py-3">
@@ -396,13 +435,13 @@ export default function CheckoutPage() {
                     <span>−₹{discountAmt}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm text-brand-600 font-medium">
+                <div className="flex justify-between text-sm text-gray-500">
                   <span>Delivery</span>
-                  <span>FREE</span>
+                  <span>₹{DELIVERY_FEE}</span>
                 </div>
                 <div className="flex justify-between font-bold text-gray-900 text-lg pt-2 border-t border-surface-100">
                   <span>Total</span>
-                  <span>₹{subtotal}</span>
+                  <span>₹{grandTotal}</span>
                 </div>
               </div>
 
@@ -413,21 +452,121 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <button
-                onClick={handlePlaceOrder}
-                disabled={placing}
-                className="btn-primary w-full mt-5 text-base py-3.5"
-              >
-                {placing ? (
-                  <><Loader2 size={18} className="animate-spin" /> Placing Order...</>
-                ) : (
-                  `Place Order — ₹${subtotal}`
-                )}
-              </button>
+              {orderingOpen ? (
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={placing}
+                  className="btn-primary w-full mt-5 text-base py-3.5"
+                >
+                  {placing ? (
+                    <><Loader2 size={18} className="animate-spin" /> Placing Order...</>
+                  ) : (
+                    `Place Order — ₹${grandTotal}`
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowClosedModal(true)}
+                  className="w-full mt-5 py-3.5 rounded-2xl text-base font-semibold flex items-center justify-center gap-2.5 transition-all duration-200 cursor-pointer bg-slate-100 text-slate-400 border-2 border-slate-200 hover:bg-slate-200 hover:border-slate-300 hover:text-slate-500"
+                >
+                  <Moon size={17} />
+                  Kitchen is Closed
+                </button>
+              )}
+
+              {!orderingOpen && (
+                <p className="text-center text-xs text-slate-400 mt-2.5 flex items-center justify-center gap-1.5">
+                  <Clock size={11} />
+                  Open daily 10:00 AM – 10:00 PM IST
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Closed Modal */}
+      {showClosedModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backdropFilter: 'blur(12px)', backgroundColor: 'rgba(15,23,42,0.65)' }}
+          onClick={() => setShowClosedModal(false)}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl"
+            style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e1b4b 60%, #0f172a 100%)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Subtle top glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-24 rounded-full opacity-30 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse, #818cf8 0%, transparent 70%)', filter: 'blur(20px)' }} />
+
+            {/* Close button */}
+            <button
+              onClick={() => setShowClosedModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors z-10"
+              style={{ background: 'rgba(255,255,255,0.08)' }}
+            >
+              <X size={15} className="text-slate-300" />
+            </button>
+
+            <div className="px-8 pt-10 pb-8 text-center relative">
+              {/* Moon icon */}
+              <div className="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #312e81, #1e1b4b)', boxShadow: '0 0 40px rgba(129,140,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1)' }}>
+                <Moon size={34} className="text-indigo-300" strokeWidth={1.5} />
+              </div>
+
+              <h2 className="text-2xl font-bold text-white mb-1.5 tracking-tight">Kitchen is Closed</h2>
+              <p className="text-indigo-300 text-sm mb-7">We&apos;ll be back at <span className="font-semibold text-indigo-200">10:00 AM IST</span></p>
+
+              {/* Countdown pill */}
+              <div className="rounded-2xl px-6 py-4 mb-6 mx-auto"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <p className="text-xs text-slate-400 uppercase tracking-widest mb-2 font-medium">Time until we open</p>
+                <div className="flex items-center justify-center gap-3">
+                  <div className="text-center">
+                    <p className="text-4xl font-bold text-white tabular-nums leading-none"
+                      style={{ textShadow: '0 0 20px rgba(129,140,248,0.5)' }}>
+                      {String(timeLeft.hoursLeft).padStart(2, '0')}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1.5 font-medium">hours</p>
+                  </div>
+                  <p className="text-3xl font-light text-indigo-400 mb-4">:</p>
+                  <div className="text-center">
+                    <p className="text-4xl font-bold text-white tabular-nums leading-none"
+                      style={{ textShadow: '0 0 20px rgba(129,140,248,0.5)' }}>
+                      {String(timeLeft.minsLeft).padStart(2, '0')}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1.5 font-medium">mins</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hours badge */}
+              <div className="flex items-center justify-center gap-2 mb-8">
+                <div className="h-px flex-1 rounded" style={{ background: 'rgba(255,255,255,0.08)' }} />
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-300"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <Clock size={11} className="text-indigo-400" />
+                  Open 10 AM – 10 PM IST · Every day
+                </div>
+                <div className="h-px flex-1 rounded" style={{ background: 'rgba(255,255,255,0.08)' }} />
+              </div>
+
+              <button
+                onClick={() => setShowClosedModal(false)}
+                className="w-full py-3 rounded-2xl text-sm font-semibold text-indigo-200 transition-all duration-200 hover:text-white"
+                style={{ background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.35)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.35)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.2)'}
+              >
+                Got it, see you soon!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,21 +1,13 @@
 import jwt from 'jsonwebtoken';
-import { User } from '../models/Model.js';
+import { User, DeliveryPartner } from '../models/Model.js';
 
 export const authenticate = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
+    if (!token) return res.status(401).json({ error: 'Authentication required' });
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId);
-
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
-    }
-
+    if (!user) return res.status(401).json({ error: 'User not found' });
     req.user = user;
     next();
   } catch (error) {
@@ -24,8 +16,21 @@ export const authenticate = async (req, res, next) => {
 };
 
 export const isAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
+};
+
+export const authenticateDelivery = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Authentication required' });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.role !== 'delivery') return res.status(403).json({ error: 'Delivery partner access only' });
+    const partner = await DeliveryPartner.findById(decoded.partnerId);
+    if (!partner || !partner.isActive) return res.status(401).json({ error: 'Account not found or inactive' });
+    req.deliveryPartner = partner;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
 };

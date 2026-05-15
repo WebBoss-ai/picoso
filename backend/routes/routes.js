@@ -1,6 +1,6 @@
 import express from 'express';
 import * as controller from '../controllers/controller.js';
-import { authenticate, isAdmin } from '../middleware/auth.js';
+import { authenticate, isAdmin, authenticateDelivery } from '../middleware/auth.js';
 import { uploadToS3 } from '../utils/s3.js';
 
 const router = express.Router();
@@ -67,5 +67,14 @@ router.delete('/admin/bowls/:id', authenticate, isAdmin, controller.deleteBowl);
 router.post('/admin/ingredients', authenticate, isAdmin, uploadToS3.single('image'), controller.createIngredient);
 router.put('/admin/ingredients/:id', authenticate, isAdmin, uploadToS3.single('image'), controller.updateIngredient);
 router.delete('/admin/ingredients/:id', authenticate, isAdmin, controller.deleteIngredient);
+
+// ── Delivery Partner ──────────────────────────────────────────────────────
+router.post('/delivery/login',                                      controller.deliveryLogin);
+router.get('/delivery/orders/available', authenticateDelivery,      controller.getAvailableOrders);
+router.get('/delivery/orders/active',    authenticateDelivery,      controller.getActiveDelivery);
+router.get('/delivery/orders/history',   authenticateDelivery,      controller.getDeliveryHistory);
+router.put('/delivery/orders/:id/pickup',  authenticateDelivery,    controller.pickupOrder);
+router.put('/delivery/orders/:id/deliver', authenticateDelivery,    controller.markDelivered);
+router.get('/delivery/stats',            authenticateDelivery,      controller.getDeliveryStats);
 
 export default router;

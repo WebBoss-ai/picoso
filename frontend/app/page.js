@@ -18,13 +18,13 @@ import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIl
 /*  STATIC DATA                                                                 */
 /* ??????????????????????????????????????????????????????????????????????????? */
 const DESKTOP_BANNERS = [
-  { id: 'a', from: '#15803d', to: '#16a34a', accent: '#bbf7d0', Icon: Truck,  h: 'Free Delivery',      s: 'On every order, always.' },
-  { id: 'b', from: '#92400e', to: '#d97706', accent: '#fef08a', Icon: Crown,  h: '20% Savings',        s: 'Picoso Platinum - Rs.99/mo' },
+  { id: 'a', from: '#15803d', to: '#16a34a', accent: '#bbf7d0', Icon: Truck,  h: '₹15 Delivery',       s: 'Fast & hot to your door.' },
+  { id: 'b', from: '#92400e', to: '#d97706', accent: '#fef08a', Icon: Crown,  h: '20% Savings',        s: 'Picoso Platinum - Rs.299/mo' },
   { id: 'c', from: '#1e3a5f', to: '#2563eb', accent: '#bfdbfe', Icon: Leaf,   h: 'Zero Preservatives', s: 'Cooked fresh to order.' },
   { id: 'd', from: '#4c1d95', to: '#7c3aed', accent: '#ddd6fe', Icon: Zap,    h: '30g+ Protein',       s: 'Per bowl, guaranteed.' },
 ];
 const FEATURES = [
-  { Icon: Truck,    t: 'Free Delivery',        d: 'Every order, no minimum',    c: 'text-brand-600',   bg: 'bg-brand-50' },
+  { Icon: Truck,    t: '₹15 Delivery',          d: 'Fast & hot to your door',    c: 'text-brand-600',   bg: 'bg-brand-50' },
   { Icon: Timer,    t: '30-Min Delivery',       d: 'Hot and fresh, guaranteed',  c: 'text-violet-600',  bg: 'bg-violet-50' },
   { Icon: Leaf,     t: 'Zero Preservatives',    d: 'Clean whole ingredients',    c: 'text-emerald-600', bg: 'bg-emerald-50' },
   { Icon: Shield,   t: 'FSSAI Certified',       d: 'Hygiene-first kitchen',      c: 'text-blue-600',    bg: 'bg-blue-50' },
@@ -39,7 +39,7 @@ const HOW_STEPS = [
 ];
 const PLATINUM_PERKS = [
   { Icon: Percent, t: '20% Off Every Meal' },
-  { Icon: Truck,   t: 'Free Delivery Always' },
+  { Icon: Truck,   t: '₹15 Delivery' },
   { Icon: Zap,     t: 'Priority Dispatch' },
   { Icon: Gift,    t: 'Exclusive Deals' },
 ];
@@ -347,7 +347,7 @@ export default function HomePage() {
           {[
             { Icon: Leaf,       label: 'No Preservatives', c: '#86efac' },
             { Icon: Zap,        label: '30g+ Protein',      c: '#fde68a' },
-            { Icon: Truck,      label: 'Free Delivery',     c: '#bfdbfe' },
+            { Icon: Truck,      label: '₹15 Delivery',      c: '#bfdbfe' },
             { Icon: BadgeCheck, label: 'FSSAI Certified',   c: '#d9f99d' },
           ].map(tag => (
             <div key={tag.label}
@@ -517,7 +517,7 @@ export default function HomePage() {
       <div className="mt-3 mx-4 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="grid grid-cols-2">
           {[
-            { Icon: Truck,  l: 'Free Delivery',    s: 'Every order' },
+            { Icon: Truck,  l: '₹15 Delivery',     s: 'Fast & hot' },
             { Icon: Clock,  l: deliveryTime + ' min Delivery', s: 'Hot and fresh' },
             { Icon: Leaf,   l: 'No Preservatives',  s: 'Always fresh' },
             { Icon: Shield, l: 'FSSAI Certified',   s: 'Safe kitchen' },
@@ -554,10 +554,10 @@ export default function HomePage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-white font-extrabold text-base leading-tight">Picoso Platinum</span>
-                  <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">Rs.99/mo</span>
+                  <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">Rs.299/mo</span>
                 </div>
                 <p className="text-white/75 text-xs mt-1 leading-relaxed">
-                  20% off every meal &bull; Free delivery &bull; Priority orders
+                  20% off every meal &bull; ₹15 delivery &bull; Priority orders
                 </p>
                 <Link href="/profile?tab=platinum"
                   className="inline-flex items-center gap-1.5 bg-white text-orange-700 font-extrabold text-xs px-4 py-2 rounded-xl mt-3 shadow-sm active:scale-95 transition-transform">
@@ -653,7 +653,7 @@ export default function HomePage() {
                   <Truck size={14} className="text-brand-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-900">Free Delivery</p>
+                  <p className="text-xs font-bold text-gray-900">₹15 Delivery</p>
                   <p className="text-xs text-gray-400">in 30 min</p>
                 </div>
               </div>
@@ -815,10 +815,10 @@ export default function HomePage() {
                   <Crown size={17} className="text-white" />
                 </div>
                 <span className="text-white font-extrabold text-lg">Picoso Platinum</span>
-                <span className="bg-white/20 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">Rs.99/mo</span>
+                <span className="bg-white/20 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">Rs.299/mo</span>
               </div>
               <p className="text-white/80 text-sm mb-4 max-w-md">
-                Save on every order - 20% off, free delivery and priority dispatch.
+                Save on every order - 20% off, ₹15 delivery and priority dispatch.
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 {PLATINUM_PERKS.map(p => (

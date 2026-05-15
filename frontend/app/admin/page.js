@@ -481,7 +481,7 @@ function OverviewSection({ stats, onRefresh }) {
           <StatCard label="Total Orders" value={s.totalOrders ?? 0} icon={<Package size={14} />} color="blue" sub={`${s.deliveredOrders ?? 0} delivered`} />
           <StatCard label="Total Users" value={s.totalUsers ?? 0} icon={<Users size={14} />} color="purple" sub={`${s.newUsersWeek ?? 0} this week`} />
           <StatCard label="Total Revenue" value={totalRevDisplay} icon={<DollarSign size={14} />} color="brand" sub="COD + UPI" />
-          <StatCard label="Active Platinum" value={s.activePlatinum ?? 0} icon={<Crown size={14} />} color="orange" sub={`₹${(s.activePlatinum ?? 0) * 99}/mo recurring`} />
+          <StatCard label="Active Platinum" value={s.activePlatinum ?? 0} icon={<Crown size={14} />} color="orange" sub={`₹${(s.activePlatinum ?? 0) * 299}/mo recurring`} />
         </div>
       </div>
     </div>
@@ -752,7 +752,7 @@ function PlatinumSection() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Platinum Card Approvals</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Activate platinum memberships after verifying ₹99 UPI payments</p>
+          <p className="text-sm text-gray-500 mt-0.5">Activate platinum memberships after verifying ₹299 UPI payments</p>
         </div>
         <button onClick={load} className="btn-secondary text-xs px-3 py-2"><RefreshCw size={13} /> Refresh</button>
       </div>
@@ -781,7 +781,7 @@ function PlatinumSection() {
                   {req.upiRef && <p className="text-xs text-gray-500 mt-1">UTR: <span className="font-mono text-gray-700">{req.upiRef}</span></p>}
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-extrabold text-gray-900">₹99</p>
+                  <p className="text-2xl font-extrabold text-gray-900">₹299</p>
                   <p className="text-xs text-gray-400">Monthly</p>
                 </div>
               </div>

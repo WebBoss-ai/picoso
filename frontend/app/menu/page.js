@@ -2,15 +2,26 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import {
-  Search, X, Leaf, Star, ChefHat, SlidersHorizontal, Clock,
-  Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Sparkles
+  Search, X, Leaf, Star, ChefHat, Clock,
+  Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee
 } from 'lucide-react';
 import { bowls, categories } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 
-// ── Promo banners data ──────────────────────────────────────────────────────
+// ── Promo banners ────────────────────────────────────────────────────────────
 const BANNERS = [
+  {
+    id: 'beverages',
+    tag: '✨ New Launch',
+    headline: 'Cold Coffees\nAre Here!',
+    sub: 'Creamy iced lattes & cold brews, crafted with real espresso.',
+    cta: 'Try a Drink',
+    href: '#',
+    from: '#78350f', to: '#b45309', accent: '#fcd34d',
+    Icon: Coffee,
+    shape: 'circle',
+  },
   {
     id: 'fresh',
     tag: 'Our Promise',
@@ -26,23 +37,12 @@ const BANNERS = [
     id: 'platinum',
     tag: 'Save More',
     headline: '20% Off\nEvery Order',
-    sub: 'Join Platinum for ₹99/month — pay less every day.',
+    sub: 'Join Platinum for ₹299/month — pay less every day.',
     cta: 'Activate Platinum',
     href: '/profile?tab=platinum',
     from: '#92400e', to: '#d97706', accent: '#fef08a',
     Icon: Crown,
     shape: 'diamond',
-  },
-  {
-    id: 'delivery',
-    tag: 'Always Free',
-    headline: 'Free Delivery\non Every Order',
-    sub: 'No minimum, no catch — hot to your door in 30 min.',
-    cta: 'Order Now',
-    href: '#',
-    from: '#1e1b4b', to: '#3730a3', accent: '#c7d2fe',
-    Icon: Truck,
-    shape: 'triangle',
   },
   {
     id: 'protein',
@@ -85,24 +85,15 @@ function BannerCarousel() {
   return (
     <div className="relative overflow-hidden rounded-2xl select-none"
       style={{ background: `linear-gradient(135deg, ${b.from}, ${b.to})` }}>
-
-      {/* Decorative background shape */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full opacity-10"
-          style={{ background: b.accent }} />
-        <div className="absolute right-12 bottom-0 w-32 h-32 rounded-full opacity-[0.07]"
-          style={{ background: b.accent }} />
-        <div className="absolute -left-4 top-1/2 w-24 h-24 rounded-full opacity-[0.06]"
-          style={{ background: b.accent }} />
+        <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full opacity-10" style={{ background: b.accent }} />
+        <div className="absolute right-12 bottom-0 w-32 h-32 rounded-full opacity-[0.07]" style={{ background: b.accent }} />
+        <div className="absolute -left-4 top-1/2 w-24 h-24 rounded-full opacity-[0.06]" style={{ background: b.accent }} />
       </div>
-
-      {/* Large background icon */}
       <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.08]">
         <Icon size={120} color={b.accent} />
       </div>
-
       <div className="relative px-5 py-5 flex items-center justify-between gap-4">
-        {/* Left content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-2">
             <Icon size={12} color={b.accent} />
@@ -116,15 +107,11 @@ function BannerCarousel() {
             {b.cta} <ArrowRight size={12} />
           </Link>
         </div>
-
-        {/* Right icon */}
         <div className="flex-shrink-0 w-20 h-20 rounded-2xl flex items-center justify-center"
           style={{ background: 'rgba(255,255,255,0.1)' }}>
           <Icon size={40} color={b.accent} />
         </div>
       </div>
-
-      {/* Nav arrows + dots */}
       <div className="flex items-center justify-between px-5 pb-3 pt-0 relative z-10">
         <div className="flex gap-1.5">
           {BANNERS.map((_, i) => (
@@ -148,33 +135,70 @@ function BannerCarousel() {
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function MenuPage() {
-  const [cats, setCats]               = useState([]);
-  const [activeCategory, setActive]   = useState('pf-meals');
-  const [activeFilter, setFilter]     = useState('all');
-  const [search, setSearch]           = useState('');
-  const [products, setProducts]       = useState([]);
-  const [loading, setLoading]         = useState(true);
+  const [cats, setCats]             = useState([]);
+  const [activeCategory, setActive] = useState('pf-beverages');
+  const [activeFilter, setFilter]   = useState('all');
+  const [search, setSearch]         = useState('');
+  const [products, setProducts]     = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [catsLoading, setCatsLoading] = useState(true);
-  const [searchOpen, setSearchOpen]   = useState(false);
-  const searchRef = useRef(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef  = useRef(null);
+  const sectionRefs = useRef({});
+  const tabsRef    = useRef(null);
 
+  // Load categories
   useEffect(() => {
     categories.getAll()
-      .then(res => { const c = res.data.categories || []; setCats(c); if (c.length) setActive(c[0].id); })
+      .then(res => {
+        const c = res.data.categories || [];
+        setCats(c);
+        if (c.length) setActive(c[0].id);
+      })
       .catch(() => {})
       .finally(() => setCatsLoading(false));
   }, []);
 
+  // Load ALL bowls at once (no category filter)
   useEffect(() => {
     setLoading(true);
-    bowls.getAll(activeCategory)
+    bowls.getAll()
       .then(res => setProducts(res.data.bowls || []))
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
-  }, [activeCategory]);
+  }, []);
+
+  // Scroll tracker — update active tab as user scrolls
+  useEffect(() => {
+    if (!cats.length) return;
+    const handleScroll = () => {
+      const OFFSET = 155;
+      let current = cats[0]?.id;
+      for (const cat of cats) {
+        const el = sectionRefs.current[cat.id];
+        if (el && el.offsetTop <= window.scrollY + OFFSET) current = cat.id;
+      }
+      setActive(prev => prev !== current ? current : prev);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [cats]);
 
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
 
+  const scrollToSection = (catId) => {
+    const el = sectionRefs.current[catId];
+    if (el) {
+      const offset = 135;
+      window.scrollTo({ top: el.offsetTop - offset, behavior: 'smooth' });
+    }
+    setActive(catId);
+    // scroll the tab into view in the horizontal strip
+    const tab = tabsRef.current?.querySelector(`[data-tab="${catId}"]`);
+    tab?.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' });
+  };
+
+  // Global filter + sort
   const filtered = useMemo(() => {
     let list = [...products];
     if (activeFilter === 'veg')        list = list.filter(p => p.isVeg);
@@ -184,15 +208,21 @@ export default function MenuPage() {
       const q = search.toLowerCase();
       list = list.filter(p => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
     }
-    list.sort((a, b) => {
+    return list.sort((a, b) => {
       if (a.isAvailableNow === b.isAvailableNow) return 0;
       return a.isAvailableNow === false ? 1 : -1;
     });
-    return list;
   }, [products, activeFilter, search]);
 
-  const activeCat = cats.find(c => c.id === activeCategory);
-  const theme = CATEGORY_THEMES[activeCategory] || CATEGORY_THEMES['pf-meals'];
+  // Group by category
+  const categorizedItems = useMemo(() => {
+    return cats.map(cat => ({
+      ...cat,
+      items: filtered.filter(p => p.pfCategory === cat.id),
+    }));
+  }, [cats, filtered]);
+
+  const totalFiltered = filtered.length;
 
   return (
     <div className="min-h-screen bg-[#f7f8f9]">
@@ -205,7 +235,9 @@ export default function MenuPage() {
           <div className={`flex items-center gap-3 py-3 ${searchOpen ? 'hidden sm:flex' : 'flex'}`}>
             <div className="flex-1">
               <h1 className="text-base font-bold text-gray-900 leading-none">Our Menu</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Nutritionist-crafted meals</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {loading ? 'Loading...' : `${totalFiltered} items across ${cats.length} categories`}
+              </p>
             </div>
             <button onClick={() => setSearchOpen(true)}
               className="sm:hidden w-9 h-9 bg-surface-50 border border-surface-200 rounded-xl flex items-center justify-center text-gray-500 hover:text-brand-600 transition-colors">
@@ -214,7 +246,7 @@ export default function MenuPage() {
             <div className="hidden sm:flex relative max-w-xs flex-1">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input type="text" className="w-full pl-9 pr-8 py-2 text-sm border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
-                placeholder="Search meals..." value={search} onChange={e => setSearch(e.target.value)} />
+                placeholder="Search across all categories..." value={search} onChange={e => setSearch(e.target.value)} />
               {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><X size={13} /></button>}
             </div>
           </div>
@@ -231,10 +263,10 @@ export default function MenuPage() {
             </div>
           )}
 
-          {/* ── Category cards row ────────────────────────────────── */}
-          <div className="flex items-start gap-4 overflow-x-auto scrollbar-hide py-3">
+          {/* ── Category nav tabs ─────────────────────────────────── */}
+          <div ref={tabsRef} className="flex items-start gap-4 overflow-x-auto scrollbar-hide py-3">
             {catsLoading
-              ? Array.from({ length: 4 }).map((_, i) => (
+              ? Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="flex flex-col items-center gap-2 flex-shrink-0">
                     <div className="w-16 h-16 shimmer rounded-2xl" />
                     <div className="h-3 w-14 shimmer rounded" />
@@ -244,42 +276,33 @@ export default function MenuPage() {
                   const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
                   const t = CATEGORY_THEMES[cat.id] || CATEGORY_THEMES['pf-meals'];
                   const isActive = activeCategory === cat.id;
+                  const isBev = cat.id === 'pf-beverages';
 
                   return (
-                    <button key={cat.id}
-                      onClick={() => cat.active && setActive(cat.id)}
-                      disabled={!cat.active}
-                      className="flex flex-col items-center gap-1.5 flex-shrink-0 group"
+                    <button
+                      key={cat.id}
+                      data-tab={cat.id}
+                      onClick={() => scrollToSection(cat.id)}
+                      className="flex flex-col items-center gap-1.5 flex-shrink-0 group relative"
                     >
-                      {/* Icon box */}
+                      {/* NEW badge for beverages */}
+                      {isBev && (
+                        <span className="absolute -top-1 -right-1 z-10 bg-amber-400 text-amber-900 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">
+                          NEW
+                        </span>
+                      )}
                       <div className={`
                         w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 relative overflow-hidden
-                        ${!cat.active
-                          ? 'bg-surface-100 grayscale opacity-50'
-                          : isActive
-                            ? `${t.bg} shadow-lg scale-105`
-                            : `${t.light} group-hover:scale-105`
-                        }
+                        ${isActive ? `${t.bg} shadow-lg scale-105` : `${t.light} group-hover:scale-105`}
                         ${isActive ? `ring-2 ring-offset-2 ${t.ring}` : ''}
                       `}>
                         {Illustration && (
-                          <Illustration
-                            className="w-9 h-9"
-                            color={isActive ? 'white' : t.color}
-                          />
-                        )}
-                        {/* Coming soon badge — only when explicitly inactive */}
-                        {cat.active === false && (
-                          <div className="absolute bottom-0 inset-x-0 bg-black/40 text-white text-[9px] font-bold text-center py-0.5">
-                            SOON
-                          </div>
+                          <Illustration className="w-9 h-9" color={isActive ? 'white' : t.color} />
                         )}
                       </div>
-                      {/* Label */}
                       <span className={`text-[11px] font-semibold leading-tight ${isActive ? t.text : 'text-gray-400'}`}>
                         {cat.label}
                       </span>
-                      {/* Active underline */}
                       <div className={`h-0.5 rounded-full transition-all duration-200 ${isActive ? `w-5 ${t.bg}` : 'w-0 bg-transparent'}`} />
                     </button>
                   );
@@ -289,90 +312,166 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* ── Filter pills ─────────────────────────────────────────── */}
-      <div className="bg-white border-b border-surface-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2.5">
-            <SlidersHorizontal size={13} className="text-gray-400 flex-shrink-0 mr-1" />
-            {FILTERS.map(f => {
-              const Icon = f.icon;
-              return (
-                <button key={f.id} onClick={() => setFilter(f.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all duration-150
-                    ${activeFilter === f.id ? 'bg-gray-900 text-white' : 'bg-surface-100 text-gray-600 hover:bg-surface-200'}`}>
-                  {Icon && <Icon size={11} className={activeFilter === f.id ? 'text-white' : 'text-gray-500'} />}
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
       {/* ── Content area ─────────────────────────────────────────── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 pb-28">
 
-        {/* Promotional banner carousel */}
-        <div className="mb-5">
+        {/* Filter pills */}
+        <div className="flex gap-2 mb-5 overflow-x-auto scrollbar-hide">
+          {FILTERS.map(f => (
+            <button key={f.id} onClick={() => setFilter(f.id)}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                activeFilter === f.id
+                  ? 'bg-brand-500 text-white border-brand-500 shadow-sm'
+                  : 'bg-white text-gray-500 border-surface-200 hover:border-brand-300'
+              }`}>
+              {f.icon && <f.icon size={12} />}
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Promo banner carousel */}
+        <div className="mb-7">
           <BannerCarousel />
         </div>
 
-        {/* Category headline */}
-        {activeCat && !loading && (
-          <div className="flex items-center gap-2.5 mb-4">
-            <div className={`w-1 h-5 rounded-full ${theme.bg}`} />
-            <div>
-              <h2 className="text-base font-bold text-gray-900">{activeCat.label}</h2>
-              {activeCat.description && <p className="text-xs text-gray-400">{activeCat.description}</p>}
-            </div>
-            {!loading && filtered.length > 0 && (
-              <span className="ml-auto text-xs text-gray-400">{filtered.length} items</span>
-            )}
-          </div>
-        )}
-
-        {/* Product grid */}
+        {/* ── Category sections ─────────────────────────────────── */}
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl overflow-hidden border border-surface-100">
-                <div className="aspect-square shimmer" />
-                <div className="p-3 space-y-2">
-                  <div className="h-3.5 shimmer rounded w-3/4" />
-                  <div className="h-3 shimmer rounded w-full" />
-                  <div className="h-5 shimmer rounded w-1/2 mt-1" />
+          // Skeleton for multiple sections
+          <div className="space-y-8">
+            {Array.from({ length: 2 }).map((_, si) => (
+              <div key={si}>
+                <div className="h-6 shimmer rounded w-32 mb-4" />
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="bg-white rounded-2xl overflow-hidden border border-surface-100">
+                      <div className="aspect-square shimmer" />
+                      <div className="p-3 space-y-2">
+                        <div className="h-3.5 shimmer rounded w-3/4" />
+                        <div className="h-3 shimmer rounded w-full" />
+                        <div className="h-5 shimmer rounded w-1/2 mt-1" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center py-16 gap-3">
-            {activeCat && !activeCat.active ? (
-              <>
-                {/* Inactive category — coming soon state */}
-                {(() => { const Ill = CATEGORY_ILLUSTRATIONS[activeCategory]; return Ill ? <Ill className="w-20 h-20 opacity-20" color="#9ca3af" /> : null; })()}
-                <p className="font-bold text-gray-400 text-lg">{activeCat.label} — Coming Soon</p>
-                <p className="text-sm text-gray-400 text-center max-w-xs">
-                  We're working on it! Check back soon for our fresh {activeCat.label.toLowerCase()}.
-                </p>
-                <Link href="#" className="btn-primary mt-2 text-sm">Explore Bowls</Link>
-              </>
-            ) : (
-              <>
+        ) : (
+          <div className="space-y-10">
+            {categorizedItems.map((cat, idx) => {
+              const isBev = cat.id === 'pf-beverages';
+              const theme = CATEGORY_THEMES[cat.id] || CATEGORY_THEMES['pf-meals'];
+              const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
+
+              return (
+                <div
+                  key={cat.id}
+                  ref={el => { sectionRefs.current[cat.id] = el; }}
+                >
+                  {/* ── Beverages: premium featured header ───────── */}
+                  {isBev ? (
+                    <div
+                      className="relative rounded-2xl overflow-hidden mb-5 cursor-pointer"
+                      style={{ background: 'linear-gradient(135deg, #78350f 0%, #b45309 55%, #d97706 100%)' }}
+                    >
+                      {/* Decorative blobs */}
+                      <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full opacity-10 bg-amber-300 pointer-events-none" />
+                      <div className="absolute right-16 bottom-0 w-28 h-28 rounded-full opacity-[0.07] bg-amber-200 pointer-events-none" />
+                      <div className="absolute -left-6 top-1/2 w-24 h-24 rounded-full opacity-[0.06] bg-amber-400 pointer-events-none" />
+                      {/* Large ghost illustration */}
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-[0.09] pointer-events-none">
+                        {Illustration && <Illustration className="w-32 h-32" color="#fcd34d" />}
+                      </div>
+
+                      <div className="relative px-6 py-6 flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <span className="bg-amber-300 text-amber-900 text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wide animate-pulse">
+                              ✨ NEW
+                            </span>
+                            {cat.items.length > 0 && (
+                              <span className="text-amber-300/90 text-xs font-semibold">{cat.items.length} drinks available</span>
+                            )}
+                          </div>
+                          <h2 className="text-white font-extrabold text-2xl leading-tight mb-1.5">
+                            Cold Coffees<br />& Beverages
+                          </h2>
+                          <p className="text-amber-200/90 text-xs leading-relaxed max-w-[230px]">
+                            Crafted with real espresso &amp; premium ingredients. Served ice-cold, sip by sip.
+                          </p>
+                        </div>
+                        <div
+                          className="flex-shrink-0 w-20 h-20 rounded-2xl flex items-center justify-center"
+                          style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.15)' }}
+                        >
+                          {Illustration && <Illustration className="w-12 h-12" color="#fcd34d" />}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Regular section header ─────────────────── */
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${theme.light}`}>
+                        {Illustration && <Illustration className="w-5 h-5" color={theme.color} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h2 className="text-sm font-bold text-gray-900">{cat.label}</h2>
+                        {cat.description && <p className="text-xs text-gray-400 truncate">{cat.description}</p>}
+                      </div>
+                      {cat.items.length > 0 && (
+                        <span className="text-xs font-medium text-gray-400 bg-surface-100 px-2.5 py-1 rounded-lg flex-shrink-0">
+                          {cat.items.length} items
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Products or empty state ───────────────────── */}
+                  {cat.items.length === 0 ? (
+                    <div className={`rounded-2xl border border-dashed py-10 flex flex-col items-center gap-3 ${isBev ? 'border-amber-200 bg-amber-50/50' : 'border-surface-200 bg-white'}`}>
+                      {Illustration && (
+                        <Illustration className="w-14 h-14 opacity-20" color={isBev ? '#b45309' : '#9ca3af'} />
+                      )}
+                      <p className={`font-bold text-sm ${isBev ? 'text-amber-700' : 'text-gray-400'}`}>
+                        {isBev ? 'Drinks launching soon!' : `No ${cat.label.toLowerCase()} match your filters`}
+                      </p>
+                      <p className="text-xs text-gray-400 text-center max-w-xs px-4">
+                        {isBev
+                          ? 'Our cold coffees are being crafted. Check back soon for a refreshing surprise!'
+                          : 'Try clearing your filters to see all items.'}
+                      </p>
+                      {!isBev && (activeFilter !== 'all' || search) && (
+                        <button
+                          onClick={() => { setSearch(''); setFilter('all'); }}
+                          className="mt-1 text-xs font-semibold text-brand-600 hover:underline"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {cat.items.map(product => (
+                        <ProductCard key={product._id} product={product} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* No results at all */}
+            {!loading && categorizedItems.every(c => c.items.length === 0) && (activeFilter !== 'all' || search) && (
+              <div className="flex flex-col items-center py-16 gap-3">
                 <Search size={28} className="text-gray-300" />
                 <p className="font-semibold text-gray-600">No items found</p>
-                <p className="text-sm text-gray-400">Try adjusting your filters</p>
+                <p className="text-sm text-gray-400">Try adjusting your search or filters</p>
                 <button onClick={() => { setSearch(''); setFilter('all'); }} className="btn-secondary text-sm px-6 mt-1">
-                  Clear filters
+                  Clear all filters
                 </button>
-              </>
+              </div>
             )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {filtered.map(product => (
-              <ProductCard key={product._id} product={product} />
-            ))}
           </div>
         )}
       </div>

@@ -21,6 +21,7 @@ export default function BowlsSection() {
     ingredients: '',
     price: '',
     category: 'signature',
+    pfCategory: 'pf-meals',
     available: true,
   });
   const [imageFile, setImageFile] = useState(null);
@@ -56,6 +57,7 @@ export default function BowlsSection() {
         ingredients: bowl.ingredients?.join(', ') || '',
         price: bowl.price,
         category: bowl.category || 'signature',
+        pfCategory: bowl.pfCategory || 'pf-meals',
         available: bowl.available,
       });
     } else {
@@ -72,6 +74,7 @@ export default function BowlsSection() {
         ingredients: '',
         price: '',
         category: 'signature',
+        pfCategory: 'pf-meals',
         available: true,
       });
     }
@@ -102,6 +105,7 @@ export default function BowlsSection() {
       data.append('ingredients', JSON.stringify(formData.ingredients.split(',').map(i => i.trim()).filter(i => i)));
       data.append('price', formData.price);
       data.append('category', formData.category);
+      data.append('pfCategory', formData.pfCategory);
       data.append('available', formData.available);
 
       if (imageFile) {
@@ -372,10 +376,27 @@ export default function BowlsSection() {
                 />
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category
+                    Menu Section *
+                  </label>
+                  <select
+                    value={formData.pfCategory}
+                    onChange={(e) => setFormData({ ...formData, pfCategory: e.target.value })}
+                    className="input-field"
+                  >
+                    <option value="pf-beverages">Cold Drinks</option>
+                    <option value="pf-meals">Bowls</option>
+                    <option value="pf-wraps">Wraps</option>
+                    <option value="pf-sandwiches">Sandwiches</option>
+                    <option value="pf-salads">Salads</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Category Tag
                   </label>
                   <select
                     value={formData.category}

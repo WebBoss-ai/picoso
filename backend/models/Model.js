@@ -49,7 +49,7 @@ const bowlSchema = new mongoose.Schema({
   category: { type: String, default: 'signature' },
   pfCategory: {
     type: String,
-    enum: ['pf-meals', 'pf-wraps', 'pf-sandwiches', 'pf-salads'],
+    enum: ['pf-beverages', 'pf-meals', 'pf-wraps', 'pf-sandwiches', 'pf-salads'],
     default: 'pf-meals'
   },
   isVeg: { type: Boolean, default: true },
@@ -96,7 +96,7 @@ const orderSchema = new mongoose.Schema({
   }],
   totalPrice: { type: Number, required: true },
   discountAmount: { type: Number, default: 0 },
-  deliveryFee: { type: Number, default: 0 },
+  deliveryFee: { type: Number, default: 15 },
   isPlatinumOrder: { type: Boolean, default: false },
   status: {
     type: String,
@@ -118,6 +118,9 @@ const orderSchema = new mongoose.Schema({
   customerName: String,
   phone: { type: String, required: true },
   estimatedDelivery: { type: Date },
+  deliveryPartnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryPartner' },
+  pickedUpAt: { type: Date },
+  deliveredAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -135,7 +138,7 @@ const platinumCardSchema = new mongoose.Schema({
   active: { type: Boolean, default: false },
   startDate: { type: Date },
   endDate: { type: Date },
-  monthlyFee: { type: Number, default: 99 },
+  monthlyFee: { type: Number, default: 299 },
   paymentStatus: { type: String, enum: ['pending', 'paid', 'failed'], default: 'pending' },
   upiRef: { type: String, default: '' },
   autoRenew: { type: Boolean, default: true },
@@ -154,6 +157,16 @@ const categoryConfigSchema = new mongoose.Schema({
   createdAt:   { type: Date, default: Date.now }
 });
 
+const deliveryPartnerSchema = new mongoose.Schema({
+  email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password: { type: String, required: true },
+  name:     { type: String, required: true },
+  phone:    { type: String, default: '' },
+  isActive: { type: Boolean, default: true },
+  totalDeliveries: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
+
 export const User = mongoose.model('User', userSchema);
 export const OTP = mongoose.model('OTP', otpSchema);
 export const Bowl = mongoose.model('Bowl', bowlSchema);
@@ -162,3 +175,4 @@ export const Order = mongoose.model('Order', orderSchema);
 export const Feedback = mongoose.model('Feedback', feedbackSchema);
 export const PlatinumCard = mongoose.model('PlatinumCard', platinumCardSchema);
 export const CategoryConfig = mongoose.model('CategoryConfig', categoryConfigSchema);
+export const DeliveryPartner = mongoose.model('DeliveryPartner', deliveryPartnerSchema);

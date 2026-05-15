@@ -87,7 +87,34 @@ export function SaladIllustration({ className = 'w-10 h-10', color = 'currentCol
   );
 }
 
+export function BeverageIllustration({ className = 'w-10 h-10', color = 'currentColor' }) {
+  return (
+    <svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      {/* Rim */}
+      <rect x="13" y="11" width="30" height="5" rx="2.5" fill={color} opacity="0.9"/>
+      {/* Glass body — tapered wider at top */}
+      <path d="M15 16 L13 47 L43 47 L41 16 Z" fill={color} opacity="0.65"/>
+      {/* Coffee liquid layer at bottom */}
+      <path d="M14 37 L13 47 L43 47 L42 37 Z" fill={color} opacity="0.9"/>
+      {/* Milk / froth top layer */}
+      <path d="M15 16 L41 16 L40.5 23 L15.5 23 Z" fill="white" opacity="0.3"/>
+      {/* Ice cube 1 */}
+      <rect x="17" y="26" width="8" height="8" rx="2" fill="white" opacity="0.4" transform="rotate(-6 21 30)"/>
+      {/* Ice cube 2 */}
+      <rect x="28" y="24" width="9" height="8" rx="2" fill="white" opacity="0.32" transform="rotate(7 32.5 28)"/>
+      {/* Straw */}
+      <rect x="33.5" y="5" width="3.5" height="35" rx="1.75" fill="white" opacity="0.85" transform="rotate(6 35.25 22.5)"/>
+      {/* Condensation drops */}
+      <circle cx="10.5" cy="23" r="1.2" fill={color} opacity="0.35"/>
+      <circle cx="10" cy="31" r="0.9" fill={color} opacity="0.25"/>
+      <circle cx="46.5" cy="26" r="1" fill={color} opacity="0.3"/>
+      <circle cx="46" cy="35" r="0.8" fill={color} opacity="0.2"/>
+    </svg>
+  );
+}
+
 export const CATEGORY_ILLUSTRATIONS = {
+  'pf-beverages':  BeverageIllustration,
   'pf-meals':      BowlIllustration,
   'pf-wraps':      WrapIllustration,
   'pf-sandwiches': SandwichIllustration,
@@ -95,6 +122,7 @@ export const CATEGORY_ILLUSTRATIONS = {
 };
 
 export const CATEGORY_THEMES = {
+  'pf-beverages':  { bg: 'bg-amber-700',   light: 'bg-amber-50',   ring: 'ring-amber-600',  text: 'text-amber-700',  color: '#b45309' },
   'pf-meals':      { bg: 'bg-brand-500',   light: 'bg-brand-50',   ring: 'ring-brand-400',  text: 'text-brand-600',  color: '#22c55e' },
   'pf-wraps':      { bg: 'bg-amber-500',   light: 'bg-amber-50',   ring: 'ring-amber-400',  text: 'text-amber-600',  color: '#f59e0b' },
   'pf-sandwiches': { bg: 'bg-orange-500',  light: 'bg-orange-50',  ring: 'ring-orange-400', text: 'text-orange-600', color: '#f97316' },
