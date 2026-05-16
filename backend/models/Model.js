@@ -23,6 +23,9 @@ const userSchema = new mongoose.Schema({
   },
   savedAddresses: [savedAddressSchema],
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  lastLoginAt: { type: Date },
+  lastActiveAt: { type: Date },
+  cartSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { user as userApi } from '@/lib/api';
 
 const AuthContext = createContext(null);
 
@@ -43,6 +44,15 @@ export function AuthProvider({ children }) {
   const isLoggedIn = !!token;
   const isAdmin = user?.role === 'admin';
   const isPlatinum = user?.isPlatinum || false;
+
+  // Ping activity every 5 minutes while logged in
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      userApi.pingActivity().catch(() => {});
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   return (
     <AuthContext.Provider value={{

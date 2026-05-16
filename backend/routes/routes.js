@@ -57,6 +57,11 @@ router.get('/admin/stats', authenticate, isAdmin, controller.getDashboardStats);
 
 // Admin — Users
 router.get('/admin/users', authenticate, isAdmin, controller.getAllUsers);
+router.get('/admin/users/:userId/orders', authenticate, isAdmin, controller.getUserOrders);
+
+// User activity & cart snapshot
+router.put('/user/cart', authenticate, controller.saveUserCart);
+router.put('/user/activity', authenticate, controller.pingUserActivity);
 
 // Admin — Products
 router.post('/admin/bowls', authenticate, isAdmin, uploadToS3.single('image'), controller.createBowl);

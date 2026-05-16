@@ -7,6 +7,7 @@ import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 
 const PLATINUM_DISCOUNT = 0.20;
+const DELIVERY_FEE = 15;
 
 export default function CartDrawer({ onAuthRequired }) {
   const { items, removeItem, updateQty, cartTotal, cartCount, isOpen, setIsOpen } = useCart();
@@ -137,7 +138,7 @@ export default function CartDrawer({ onAuthRequired }) {
               <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-xl">
                 <Crown size={14} className="text-platinum-500 flex-shrink-0" />
                 <p className="text-xs text-orange-700">
-                  Get <span className="font-bold">Platinum (₹99/mo)</span> — save ₹{savings} on this order!
+                  Get <span className="font-bold">Platinum (₹299/mo)</span> — save ₹{savings} on this order!
                 </p>
               </div>
             )}
@@ -150,11 +151,11 @@ export default function CartDrawer({ onAuthRequired }) {
               </div>
               <div className="flex justify-between text-sm text-gray-500">
                 <span>Delivery fee</span>
-                <span className="text-brand-600 font-medium">FREE</span>
+                <span>₹{DELIVERY_FEE}</span>
               </div>
               <div className="flex justify-between font-bold text-gray-900 text-base pt-1 border-t border-surface-100">
                 <span>Total</span>
-                <span>₹{isPlatinum ? platinumTotal : cartTotal}</span>
+                <span>₹{(isPlatinum ? platinumTotal : cartTotal) + DELIVERY_FEE}</span>
               </div>
             </div>
 

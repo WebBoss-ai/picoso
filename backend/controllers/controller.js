@@ -67,19 +67,21 @@ export const verifyOTPController = async (req, res) => {
 
       user = await User.create({
         phone,
-        email: dummyEmail // ✅ FIX: always set unique email
+        email: dummyEmail,
+        lastLoginAt: new Date(),
+        lastActiveAt: new Date(),
       });
 
     } else {
       console.log("👤 Existing user found:", user._id);
 
-      // ✅ Optional: fix old users with null email
+      const updates = { lastLoginAt: new Date(), lastActiveAt: new Date() };
       if (!user.email) {
         console.log("⚠️ User missing email → assigning dummy");
-
-        user.email = dummyEmail;
-        await user.save();
+        updates.email = dummyEmail;
       }
+      await User.findByIdAndUpdate(user._id, updates);
+      user = await User.findById(user._id);
     }
 
     const token = jwt.sign(
@@ -525,14 +527,79 @@ export const rejectPlatinumPayment = async (req, res) => {
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: -1 });
-    const platinumMap = await PlatinumCard.find({ active: true }).then(cards =>
-      cards.reduce((acc, c) => { acc[c.userId.toString()] = true; return acc; }, {})
-    );
-    const usersWithPlatinum = users.map(u => ({
-      ...u.toObject(),
-      isPlatinum: !!platinumMap[u._id.toString()]
-    }));
-    res.json({ success: true, users: usersWithPlatinum });
+
+    const [platinumCards, orderStats] = await Promise.all([
+      PlatinumCard.find({ active: true }),
+      Order.aggregate([
+        { $group: {
+          _id: '$userId',
+          orderCount:     { $sum: 1 },
+          totalSpent:     { $sum: '$totalPrice' },
+          lastOrderDate:  { $max: '$createdAt' },
+          deliveredCount: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
+          cancelledCount: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
+        }}
+      ])
+    ]);
+
+    const platinumMap = platinumCards.reduce((acc, c) => {
+      acc[c.userId.toString()] = true; return acc;
+    }, {});
+    const statsMap = orderStats.reduce((acc, s) => {
+      acc[s._id.toString()] = s; return acc;
+    }, {});
+
+    const usersWithData = users.map(u => {
+      const stats = statsMap[u._id.toString()] || {};
+      return {
+        ...u.toObject(),
+        isPlatinum:     !!platinumMap[u._id.toString()],
+        orderCount:     stats.orderCount     || 0,
+        totalSpent:     stats.totalSpent     || 0,
+        lastOrderDate:  stats.lastOrderDate  || null,
+        deliveredCount: stats.deliveredCount || 0,
+        cancelledCount: stats.cancelledCount || 0,
+      };
+    });
+
+    res.json({ success: true, users: usersWithData });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get all orders for a specific user (admin)
+export const getUserOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.params.userId })
+      .populate('items.bowlId', 'name image price pfCategory')
+      .sort({ createdAt: -1 })
+      .limit(50);
+    res.json({ success: true, orders });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Save user's current cart snapshot (called from frontend on cart change)
+export const saveUserCart = async (req, res) => {
+  try {
+    const { cartItems } = req.body;
+    await User.findByIdAndUpdate(req.user._id, {
+      cartSnapshot: cartItems,
+      lastActiveAt: new Date(),
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Ping to update lastActiveAt
+export const pingUserActivity = async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { lastActiveAt: new Date() });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -756,11 +823,11 @@ export const deleteIngredient = async (req, res) => {
 
 // ── Category Config Controllers ────────────────────────────────────────────
 const DEFAULT_CATEGORIES = [
-  { id: 'pf-beverages',  label: 'Cold Drinks',  description: 'Cold coffees & refreshing drinks', active: true, sortOrder: 0, color: '#fef3c7' },
-  { id: 'pf-meals',      label: 'Bowls',        description: 'Fresh protein-packed bowls',        active: true, sortOrder: 1, color: '#f0fdf4' },
-  { id: 'pf-wraps',      label: 'Wraps',        description: 'Loaded healthy wraps',              active: true, sortOrder: 2, color: '#fefce8' },
-  { id: 'pf-sandwiches', label: 'Sandwiches',   description: 'Artisan protein sandwiches',        active: true, sortOrder: 3, color: '#fff7ed' },
-  { id: 'pf-salads',     label: 'Salads',       description: 'Crispy fresh salad bowls',          active: true, sortOrder: 4, color: '#ecfdf5' },
+  { id: 'pf-meals',      label: 'Bowls',        description: 'Fresh protein-packed bowls',        active: true, sortOrder: 0, color: '#f0fdf4' },
+  { id: 'pf-wraps',      label: 'Wraps',        description: 'Loaded healthy wraps',              active: true, sortOrder: 1, color: '#fefce8' },
+  { id: 'pf-sandwiches', label: 'Sandwiches',   description: 'Artisan protein sandwiches',        active: true, sortOrder: 2, color: '#fff7ed' },
+  { id: 'pf-salads',     label: 'Salads',       description: 'Crispy fresh salad bowls',          active: true, sortOrder: 3, color: '#ecfdf5' },
+  { id: 'pf-beverages',  label: 'Cold Drinks',  description: 'Cold coffees & refreshing drinks',  active: true, sortOrder: 4, color: '#fef3c7' },
 ];
 
 export const getCategories = async (req, res) => {

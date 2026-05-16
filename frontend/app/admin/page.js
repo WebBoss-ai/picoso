@@ -504,22 +504,176 @@ function StatMini({ label, value, icon, sub }) {
 }
 
 // ─── Orders Section ───────────────────────────────────────────────────────────
+function OrderCard({ order, onStatusChange, updating }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const addr = order.deliveryAddress || {};
+  const addrStr = [addr.fullAddress || addr.area, addr.city].filter(Boolean).join(', ') || '—';
+  const subtotal = order.items?.reduce((s, i) => s + (i.price * (i.quantity || 1)), 0) || order.totalPrice;
+  const isPaid   = order.paymentStatus === 'paid';
+
+  const PAYMENT_STATUS_COLORS = {
+    pending: 'bg-amber-100 text-amber-700',
+    paid:    'bg-green-100 text-green-700',
+    failed:  'bg-red-100 text-red-600',
+  };
+
+  return (
+    <div className="card overflow-hidden">
+      {/* Header row */}
+      <div
+        className="p-4 cursor-pointer hover:bg-surface-50 transition-colors"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="flex flex-wrap items-center gap-3 justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-bold text-gray-900 text-sm font-mono">#{order._id.slice(-8).toUpperCase()}</p>
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-600'}`}>
+                  {order.status?.replace(/-/g, ' ')}
+                </span>
+                {order.isPlatinumOrder && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 flex items-center gap-1">
+                    <Crown size={9} /> Platinum
+                  </span>
+                )}
+                <span className={`text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1 ${order.paymentMethod === 'upi' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                  {order.paymentMethod === 'upi' ? <Smartphone size={9} /> : <Banknote size={9} />}
+                  {order.paymentMethod?.toUpperCase()}
+                </span>
+                {order.paymentStatus && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${PAYMENT_STATUS_COLORS[order.paymentStatus] || 'bg-gray-100 text-gray-600'}`}>
+                    {order.paymentStatus}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {order.userId?.name || order.customerName || 'Unknown'} &nbsp;•&nbsp;
+                +91 {order.userId?.phone || order.phone}
+              </p>
+              <p className="text-xs text-gray-400">
+                {new Date(order.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="font-extrabold text-gray-900 text-base">₹{order.totalPrice}</p>
+              <p className="text-[10px] text-gray-400">{order.items?.length} item{order.items?.length !== 1 ? 's' : ''}</p>
+            </div>
+            <ChevronDown size={16} className={`text-gray-400 transition-transform flex-shrink-0 ${expanded ? 'rotate-180' : ''}`} />
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div className="border-t border-surface-100 bg-surface-50/40">
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            {/* Items ordered */}
+            <div className="sm:col-span-2">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Items Ordered</p>
+              <div className="space-y-2">
+                {order.items?.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3 bg-white rounded-xl p-2.5 border border-surface-100">
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+                        <UtensilsCrossed size={14} className="text-brand-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{item.name}</p>
+                      {item.type === 'custom' && item.customIngredients?.length > 0 && (
+                        <p className="text-[10px] text-gray-400 truncate">
+                          Custom: {item.customIngredients.map(ci => ci.name || ci).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs font-bold text-gray-900">₹{item.price} × {item.quantity || 1}</p>
+                      <p className="text-xs text-gray-400">= ₹{item.price * (item.quantity || 1)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Price breakdown */}
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Price Breakdown</p>
+              <div className="bg-white rounded-xl p-3 border border-surface-100 space-y-1.5 text-sm">
+                <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₹{subtotal}</span></div>
+                {order.deliveryFee !== undefined && (
+                  <div className="flex justify-between text-gray-600"><span>Delivery fee</span><span>₹{order.deliveryFee}</span></div>
+                )}
+                {order.discountAmount > 0 && (
+                  <div className="flex justify-between text-brand-600"><span>Discount</span><span>−₹{order.discountAmount}</span></div>
+                )}
+                <div className="flex justify-between font-extrabold text-gray-900 pt-1.5 border-t border-surface-100">
+                  <span>Total</span><span>₹{order.totalPrice}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Delivery info */}
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Delivery Details</p>
+              <div className="bg-white rounded-xl p-3 border border-surface-100 space-y-1.5 text-xs text-gray-600">
+                <p><span className="font-semibold text-gray-700">Address: </span>{addrStr}</p>
+                {addr.landmark && <p><span className="font-semibold text-gray-700">Landmark: </span>{addr.landmark}</p>}
+                {order.phone && <p><span className="font-semibold text-gray-700">Phone: </span>+91 {order.phone}</p>}
+                {order.upiRef && <p><span className="font-semibold text-gray-700">UPI Ref: </span><span className="font-mono">{order.upiRef}</span></p>}
+                {order.pickedUpAt && <p><span className="font-semibold text-gray-700">Picked up: </span>{new Date(order.pickedUpAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
+                {order.deliveredAt && <p><span className="font-semibold text-gray-700">Delivered: </span>{new Date(order.deliveredAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
+                {order.estimatedDelivery && <p><span className="font-semibold text-gray-700">ETA: </span>{order.estimatedDelivery}</p>}
+                {order.updatedAt && <p><span className="font-semibold text-gray-700">Last updated: </span>{new Date(order.updatedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* Status changer */}
+          <div className="px-4 pb-4 flex items-center gap-3">
+            <label className="text-xs font-semibold text-gray-500">Update Status:</label>
+            <select
+              value={order.status}
+              onChange={e => onStatusChange(order._id, e.target.value)}
+              disabled={updating}
+              className="text-xs border border-surface-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 font-medium focus:border-brand-400 outline-none"
+            >
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/-/g, ' ')}</option>)}
+            </select>
+            {updating && <Loader2 size={14} className="animate-spin text-brand-500" />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OrdersSection() {
   const [orderList, setOrderList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterPayment, setFilterPayment] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
 
   const load = () => {
     setLoading(true);
-    admin.getOrders(filterStatus ? { status: filterStatus } : {})
+    const params = {};
+    if (filterStatus)  params.status = filterStatus;
+    if (filterPayment) params.paymentMethod = filterPayment;
+    admin.getOrders(params)
       .then(res => setOrderList(res.data.orders || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [filterStatus]);
+  useEffect(() => { load(); }, [filterStatus, filterPayment]);
 
   const handleStatusChange = async (id, status) => {
     setUpdatingId(id);
@@ -533,73 +687,56 @@ function OrdersSection() {
   const filtered = orderList.filter(o => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return o._id.includes(q) || o.userId?.name?.toLowerCase().includes(q) || o.userId?.phone?.includes(q);
+    return (
+      o._id.toLowerCase().includes(q) ||
+      o.userId?.name?.toLowerCase().includes(q) ||
+      o.userId?.phone?.includes(q) ||
+      o.phone?.includes(q) ||
+      o.customerName?.toLowerCase().includes(q) ||
+      o.upiRef?.toLowerCase().includes(q)
+    );
   });
+
+  const totalRevenue = filtered.reduce((s, o) => s + (o.totalPrice || 0), 0);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-900">Orders Management</h2>
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Orders Management</h2>
+          <p className="text-sm text-gray-500 mt-0.5">{filtered.length} orders &nbsp;•&nbsp; ₹{totalRevenue.toLocaleString()} total</p>
+        </div>
         <button onClick={load} className="btn-secondary text-xs px-3 py-2"><RefreshCw size={13} /> Refresh</button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-          <input className="input-field pl-10" placeholder="Search by order ID, name, phone..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input-field pl-10" placeholder="Search by order ID, name, phone, UPI ref..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="input-field sm:w-44" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+        <select className="input-field sm:w-40" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/-/g, ' ')}</option>)}
+        </select>
+        <select className="input-field sm:w-32" value={filterPayment} onChange={e => setFilterPayment(e.target.value)}>
+          <option value="">All Payment</option>
+          <option value="upi">UPI</option>
+          <option value="cod">COD</option>
         </select>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {filtered.map(order => (
-            <div key={order._id} className="card p-5">
-              <div className="flex flex-wrap items-start gap-4 justify-between mb-3">
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">#{order._id.slice(-6).toUpperCase()}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {order.userId?.name || 'Unknown'} • +91 {order.userId?.phone || order.phone}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(order.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-600'}`}>
-                    {order.status.replace(/-/g, ' ')}
-                  </span>
-                  <span className="text-sm font-bold text-gray-900">₹{order.totalPrice}</span>
-                  <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${order.paymentMethod === 'upi' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                    {order.paymentMethod === 'upi' ? <Smartphone size={10} /> : <Banknote size={10} />}
-                    {order.paymentMethod === 'upi' ? 'UPI' : 'COD'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-500 mb-3">
-                {order.items?.length} item(s) • {order.deliveryAddress?.fullAddress || order.deliveryAddress?.area || '—'}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={order.status}
-                  onChange={e => handleStatusChange(order._id, e.target.value)}
-                  disabled={updatingId === order._id}
-                  className="text-xs border border-surface-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 font-medium focus:border-brand-400 outline-none"
-                >
-                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/-/g, ' ')}</option>)}
-                </select>
-                {updatingId === order._id && <Loader2 size={14} className="animate-spin text-brand-500" />}
-              </div>
-            </div>
+            <OrderCard
+              key={order._id}
+              order={order}
+              onStatusChange={handleStatusChange}
+              updating={updatingId === order._id}
+            />
           ))}
-
           {filtered.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Package size={32} className="mx-auto mb-2 opacity-30" />
@@ -1207,53 +1344,250 @@ function CategoriesSection() {
   );
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function timeAgo(date) {
+  if (!date) return 'Never';
+  const diff = Date.now() - new Date(date).getTime();
+  const mins  = Math.floor(diff / 60000);
+  const hours = Math.floor(mins / 60);
+  const days  = Math.floor(hours / 24);
+  if (mins < 1)   return 'Just now';
+  if (mins < 60)  return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7)   return `${days}d ago`;
+  return new Date(date).toLocaleDateString('en-IN');
+}
+
+// ─── User Row (expandable) ────────────────────────────────────────────────────
+function UserRow({ u }) {
+  const [expanded, setExpanded]   = useState(false);
+  const [orders, setOrders]       = useState(null);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  const fetchOrders = async () => {
+    if (orders !== null) return; // already loaded
+    setLoadingOrders(true);
+    try {
+      const res = await admin.getUserOrders(u._id);
+      setOrders(res.data.orders || []);
+    } catch { setOrders([]); }
+    setLoadingOrders(false);
+  };
+
+  const handleExpand = () => {
+    setExpanded(e => !e);
+    if (!expanded) fetchOrders();
+  };
+
+  const cartItems = u.cartSnapshot || [];
+  const isActive  = u.lastActiveAt && (Date.now() - new Date(u.lastActiveAt).getTime()) < 15 * 60 * 1000;
+
+  return (
+    <div className="card overflow-hidden">
+      {/* Summary row */}
+      <div className="p-4 cursor-pointer hover:bg-surface-50 transition-colors" onClick={handleExpand}>
+        <div className="flex items-center gap-3">
+          {/* Avatar */}
+          <div className="relative flex-shrink-0">
+            <div className="w-10 h-10 bg-brand-100 rounded-xl flex items-center justify-center">
+              <span className="text-brand-700 font-bold text-sm">
+                {u.name ? u.name[0].toUpperCase() : u.phone?.slice(-2)}
+              </span>
+            </div>
+            {isActive && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white" title="Active in last 15 min" />
+            )}
+          </div>
+
+          {/* Core info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center flex-wrap gap-1.5">
+              <p className="font-semibold text-gray-900 text-sm">{u.name || 'No name'}</p>
+              {u.role === 'admin' && <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-bold">ADMIN</span>}
+              {u.isPlatinum && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><Crown size={8} /> PLT</span>}
+              {cartItems.length > 0 && <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full font-bold">{cartItems.length} in cart</span>}
+            </div>
+            <p className="text-xs text-gray-500">+91 {u.phone}</p>
+          </div>
+
+          {/* Stats */}
+          <div className="hidden sm:flex items-center gap-5 flex-shrink-0 mr-2">
+            <div className="text-center">
+              <p className="text-sm font-extrabold text-gray-900">{u.orderCount || 0}</p>
+              <p className="text-[10px] text-gray-400">orders</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-extrabold text-gray-900">₹{(u.totalSpent || 0).toLocaleString()}</p>
+              <p className="text-[10px] text-gray-400">spent</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-semibold text-gray-600">{timeAgo(u.lastActiveAt)}</p>
+              <p className="text-[10px] text-gray-400">last seen</p>
+            </div>
+          </div>
+
+          <ChevronDown size={15} className={`text-gray-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </div>
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div className="border-t border-surface-100 bg-surface-50/40 p-4 space-y-4">
+
+          {/* Two-col meta */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Joined',      value: new Date(u.createdAt).toLocaleDateString('en-IN') },
+              { label: 'Last Login',  value: timeAgo(u.lastLoginAt) },
+              { label: 'Last Active', value: timeAgo(u.lastActiveAt) },
+              { label: 'Delivered',   value: `${u.deliveredCount || 0} orders` },
+            ].map(({ label, value }) => (
+              <div key={label} className="bg-white rounded-xl p-2.5 border border-surface-100 text-center">
+                <p className="text-xs font-bold text-gray-900">{value}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Contact */}
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Contact</p>
+            <div className="bg-white rounded-xl p-3 border border-surface-100 text-xs text-gray-600 space-y-1">
+              <p><span className="font-semibold text-gray-700">Phone: </span>+91 {u.phone}</p>
+              {u.email && !u.email.endsWith('@picoso.in') && (
+                <p><span className="font-semibold text-gray-700">Email: </span>{u.email}</p>
+              )}
+              {u.location?.area && (
+                <p><span className="font-semibold text-gray-700">Location: </span>{[u.location.area, u.location.city].filter(Boolean).join(', ')}</p>
+              )}
+              {u.savedAddresses?.length > 0 && (
+                <p><span className="font-semibold text-gray-700">Saved addresses: </span>{u.savedAddresses.length}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Current cart snapshot */}
+          {cartItems.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Current Cart ({cartItems.length} items)</p>
+              <div className="space-y-1.5">
+                {cartItems.map((item, i) => (
+                  <div key={i} className="bg-white rounded-xl p-2.5 border border-surface-100 flex items-center gap-3 text-xs">
+                    <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+                      <UtensilsCrossed size={12} className="text-brand-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800 truncate">{item.name}</p>
+                      <p className="text-gray-400">Qty: {item.quantity}</p>
+                    </div>
+                    <p className="font-bold text-gray-900 flex-shrink-0">₹{item.price * item.quantity}</p>
+                  </div>
+                ))}
+                <div className="bg-brand-50 rounded-xl p-2.5 border border-brand-100 flex justify-between text-xs font-bold text-brand-700">
+                  <span>Cart Total</span>
+                  <span>₹{cartItems.reduce((s, i) => s + i.price * i.quantity, 0)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recent orders */}
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+              Order History {orders ? `(${orders.length})` : ''}
+            </p>
+            {loadingOrders ? (
+              <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-brand-500" /></div>
+            ) : orders?.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-3">No orders yet</p>
+            ) : (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {orders?.map(o => (
+                  <div key={o._id} className="bg-white rounded-xl p-2.5 border border-surface-100 flex items-center gap-3 text-xs">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                        <span className="font-mono text-gray-500">#{o._id.slice(-6).toUpperCase()}</span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize ${STATUS_COLORS[o.status] || 'bg-gray-100 text-gray-600'}`}>
+                          {o.status?.replace(/-/g, ' ')}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${o.paymentMethod === 'upi' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {o.paymentMethod?.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-gray-400">{o.items?.length} item(s) &nbsp;• {new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
+                    </div>
+                    <p className="font-extrabold text-gray-900 flex-shrink-0">₹{o.totalPrice}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Users Section ────────────────────────────────────────────────────────────
 function UsersSection() {
   const [userList, setUserList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState('');
+  const [filterRole, setFilterRole] = useState('');
 
   useEffect(() => {
-    admin.getUsers().then(res => setUserList(res.data.users || [])).catch(() => {}).finally(() => setLoading(false));
+    admin.getUsers()
+      .then(res => setUserList(res.data.users || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = userList.filter(u => {
+    if (filterRole === 'admin'    && u.role !== 'admin')   return false;
+    if (filterRole === 'platinum' && !u.isPlatinum)        return false;
+    if (filterRole === 'active'   && !u.orderCount)        return false;
     if (!search) return true;
     const q = search.toLowerCase();
-    return u.name?.toLowerCase().includes(q) || u.phone?.includes(q) || u.email?.toLowerCase().includes(q);
+    return (
+      u.name?.toLowerCase().includes(q) ||
+      u.phone?.includes(q) ||
+      u.email?.toLowerCase().includes(q)
+    );
   });
+
+  const totalSpent   = userList.reduce((s, u) => s + (u.totalSpent || 0), 0);
+  const platinumCount = userList.filter(u => u.isPlatinum).length;
+  const activeCount   = userList.filter(u => u.lastActiveAt && (Date.now() - new Date(u.lastActiveAt).getTime()) < 15 * 60 * 1000).length;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-900">Users ({userList.length})</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Users ({userList.length})</h2>
+          <p className="text-sm text-gray-500">
+            {platinumCount} platinum &nbsp;•&nbsp; {activeCount} online now &nbsp;•&nbsp; ₹{totalSpent.toLocaleString()} total spent
+          </p>
+        </div>
       </div>
 
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-        <input className="input-field pl-10" placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
+          <input className="input-field pl-10" placeholder="Search by name, phone, email..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="input-field sm:w-40" value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+          <option value="">All Users</option>
+          <option value="platinum">Platinum only</option>
+          <option value="admin">Admins only</option>
+          <option value="active">With orders</option>
+        </select>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(u => (
-            <div key={u._id} className="card p-4 flex items-center gap-4">
-              <div className="w-10 h-10 bg-brand-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <span className="text-brand-700 font-bold text-sm">{u.name ? u.name[0].toUpperCase() : u.phone?.slice(-2)}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-gray-900 text-sm">{u.name || 'No name'}</p>
-                  {u.role === 'admin' && <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">Admin</span>}
-                  {u.isPlatinum && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full flex items-center gap-0.5"><Crown size={9} /> Platinum</span>}
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">+91 {u.phone} {u.email ? `• ${u.email}` : ''}</p>
-              </div>
-              <p className="text-xs text-gray-400 hidden sm:block">{new Date(u.createdAt).toLocaleDateString('en-IN')}</p>
-            </div>
-          ))}
+          {filtered.map(u => <UserRow key={u._id} u={u} />)}
           {filtered.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Users size={32} className="mx-auto mb-2 opacity-30" />

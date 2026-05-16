@@ -136,7 +136,7 @@ function BannerCarousel() {
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function MenuPage() {
   const [cats, setCats]             = useState([]);
-  const [activeCategory, setActive] = useState('pf-beverages');
+  const [activeCategory, setActive] = useState('pf-meals');
   const [activeFilter, setFilter]   = useState('all');
   const [search, setSearch]         = useState('');
   const [products, setProducts]     = useState([]);
@@ -369,63 +369,21 @@ export default function MenuPage() {
                   key={cat.id}
                   ref={el => { sectionRefs.current[cat.id] = el; }}
                 >
-                  {/* ── Beverages: premium featured header ───────── */}
-                  {isBev ? (
-                    <div
-                      className="relative rounded-2xl overflow-hidden mb-5 cursor-pointer"
-                      style={{ background: 'linear-gradient(135deg, #78350f 0%, #b45309 55%, #d97706 100%)' }}
-                    >
-                      {/* Decorative blobs */}
-                      <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full opacity-10 bg-amber-300 pointer-events-none" />
-                      <div className="absolute right-16 bottom-0 w-28 h-28 rounded-full opacity-[0.07] bg-amber-200 pointer-events-none" />
-                      <div className="absolute -left-6 top-1/2 w-24 h-24 rounded-full opacity-[0.06] bg-amber-400 pointer-events-none" />
-                      {/* Large ghost illustration */}
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-[0.09] pointer-events-none">
-                        {Illustration && <Illustration className="w-32 h-32" color="#fcd34d" />}
-                      </div>
-
-                      <div className="relative px-6 py-6 flex items-center justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2.5">
-                            <span className="bg-amber-300 text-amber-900 text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wide animate-pulse">
-                              ✨ NEW
-                            </span>
-                            {cat.items.length > 0 && (
-                              <span className="text-amber-300/90 text-xs font-semibold">{cat.items.length} drinks available</span>
-                            )}
-                          </div>
-                          <h2 className="text-white font-extrabold text-2xl leading-tight mb-1.5">
-                            Cold Coffees<br />& Beverages
-                          </h2>
-                          <p className="text-amber-200/90 text-xs leading-relaxed max-w-[230px]">
-                            Crafted with real espresso &amp; premium ingredients. Served ice-cold, sip by sip.
-                          </p>
-                        </div>
-                        <div
-                          className="flex-shrink-0 w-20 h-20 rounded-2xl flex items-center justify-center"
-                          style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.15)' }}
-                        >
-                          {Illustration && <Illustration className="w-12 h-12" color="#fcd34d" />}
-                        </div>
-                      </div>
+                  {/* ── Section header ───────────────────────────── */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${theme.light}`}>
+                      {Illustration && <Illustration className="w-5 h-5" color={theme.color} />}
                     </div>
-                  ) : (
-                    /* ── Regular section header ─────────────────── */
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${theme.light}`}>
-                        {Illustration && <Illustration className="w-5 h-5" color={theme.color} />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h2 className="text-sm font-bold text-gray-900">{cat.label}</h2>
-                        {cat.description && <p className="text-xs text-gray-400 truncate">{cat.description}</p>}
-                      </div>
-                      {cat.items.length > 0 && (
-                        <span className="text-xs font-medium text-gray-400 bg-surface-100 px-2.5 py-1 rounded-lg flex-shrink-0">
-                          {cat.items.length} items
-                        </span>
-                      )}
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-sm font-bold text-gray-900">{cat.label}</h2>
+                      {cat.description && <p className="text-xs text-gray-400 truncate">{cat.description}</p>}
                     </div>
-                  )}
+                    {cat.items.length > 0 && (
+                      <span className="text-xs font-medium text-gray-400 bg-surface-100 px-2.5 py-1 rounded-lg flex-shrink-0">
+                        {cat.items.length} items
+                      </span>
+                    )}
+                  </div>
 
                   {/* ── Products or empty state ───────────────────── */}
                   {cat.items.length === 0 ? (

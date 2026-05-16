@@ -59,6 +59,7 @@ export const admin = {
   approvePlatinum: (id) => api.put(`/admin/platinum/${id}/approve`),
   rejectPlatinum: (id) => api.put(`/admin/platinum/${id}/reject`),
   getUsers: () => api.get('/admin/users'),
+  getUserOrders: (userId) => api.get(`/admin/users/${userId}/orders`),
   getBowls: () => api.get('/bowls'),
   createBowl: (data) => api.post('/admin/bowls', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   updateBowl: (id, data) => api.put(`/admin/bowls/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } }),
@@ -67,6 +68,11 @@ export const admin = {
   createCategory: (data) => api.post('/admin/categories', data),
   updateCategory: (id, data) => api.put(`/admin/categories/${id}`, data),
   deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
+};
+
+export const user = {
+  saveCart:     (cartItems) => api.put('/user/cart', { cartItems }),
+  pingActivity: ()          => api.put('/user/activity'),
 };
 
 const deliveryApi = axios.create({
