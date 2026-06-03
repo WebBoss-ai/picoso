@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, CategoryConfig, DeliveryPartner } from '../models/Model.js';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 
 // Auth Controllers
@@ -985,5 +985,163 @@ export const getDeliveryStats = async (req, res) => {
         totalDeliveries: partner?.totalDeliveries || 0
       }
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// ── Healthy Subscription Controllers ─────────────────────────────────────────
+
+const PLAN_PRICES = {
+  3: { weeklyPrice: 690,  perBowlPrice: 230 },
+  5: { weeklyPrice: 1100, perBowlPrice: 220 },
+  7: { weeklyPrice: 1400, perBowlPrice: 200 },
+};
+
+export const createHealthySubscription = async (req, res) => {
+  try {
+    const { selectedItems, bowlsPerWeek, timeSlot, upiRef } = req.body;
+
+    if (![3, 5, 7].includes(Number(bowlsPerWeek))) {
+      return res.status(400).json({ error: 'bowlsPerWeek must be 3, 5, or 7' });
+    }
+    if (!selectedItems || !selectedItems.length) {
+      return res.status(400).json({ error: 'Select at least one item' });
+    }
+    if (!upiRef || upiRef.trim().length < 6) {
+      return res.status(400).json({ error: 'Valid UPI transaction reference required' });
+    }
+
+    const pricing = PLAN_PRICES[Number(bowlsPerWeek)];
+
+    const sub = await HealthySubscription.findOneAndUpdate(
+      { userId: req.user.userId },
+      {
+        userId:       req.user.userId,
+        selectedItems,
+        bowlsPerWeek: Number(bowlsPerWeek),
+        ...pricing,
+        timeSlot:     timeSlot || '',
+        upiRef:       upiRef.trim(),
+        status:       'pending_approval',
+        updatedAt:    new Date(),
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true, subscription: sub });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getHealthySubscription = async (req, res) => {
+  try {
+    const sub = await HealthySubscription.findOne({ userId: req.user.userId });
+    res.json({ success: true, subscription: sub || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const cancelHealthySubscription = async (req, res) => {
+  try {
+    const sub = await HealthySubscription.findOneAndUpdate(
+      { userId: req.user.userId },
+      { status: 'cancelled', updatedAt: new Date() },
+      { new: true }
+    );
+    if (!sub) return res.status(404).json({ error: 'No subscription found' });
+    res.json({ success: true, subscription: sub });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getAllHealthySubscriptions = async (req, res) => {
+  try {
+    const subs = await HealthySubscription.find()
+      .populate('userId', 'phone name')
+      .sort({ createdAt: -1 });
+    res.json({ success: true, subscriptions: subs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const approveHealthySubscription = async (req, res) => {
+  try {
+    const nextDelivery = new Date();
+    nextDelivery.setDate(nextDelivery.getDate() + 1);
+
+    const sub = await HealthySubscription.findByIdAndUpdate(
+      req.params.id,
+      {
+        status:     'active',
+        approvedBy: req.user.userId,
+        approvedAt: new Date(),
+        startDate:  new Date(),
+        nextDelivery,
+        updatedAt:  new Date(),
+      },
+      { new: true }
+    );
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+    res.json({ success: true, subscription: sub });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const rejectHealthySubscription = async (req, res) => {
+  try {
+    const sub = await HealthySubscription.findByIdAndUpdate(
+      req.params.id,
+      { status: 'rejected', updatedAt: new Date() },
+      { new: true }
+    );
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+    res.json({ success: true, subscription: sub });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// ── Store Status ─────────────────────────────────────────────────────────────
+export const getStoreStatus = async (req, res) => {
+  try {
+    let status = await StoreStatus.findOne();
+    if (!status) status = await StoreStatus.create({});
+    res.json({ status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const updateStoreStatus = async (req, res) => {
+  try {
+    const { isOpen, closedReason, openingTime, closingTime } = req.body;
+    let status = await StoreStatus.findOne();
+    if (!status) status = new StoreStatus({});
+    if (isOpen !== undefined) status.isOpen = isOpen;
+    if (closedReason !== undefined) status.closedReason = closedReason;
+    if (openingTime) status.openingTime = openingTime;
+    if (closingTime) status.closingTime = closingTime;
+    status.updatedBy = req.user._id;
+    status.updatedAt = new Date();
+    await status.save();
+    res.json({ status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// ── Notify Requests ──────────────────────────────────────────────────────────
+export const addNotifyRequest = async (req, res) => {
+  try {
+    const { phone, userId } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Phone required' });
+    const existing = await NotifyRequest.findOne({ phone, notified: false });
+    if (existing) return res.json({ message: 'Already registered', alreadyRegistered: true });
+    const request = await NotifyRequest.create({ phone, userId: userId || null });
+    res.json({ request });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getNotifyRequests = async (req, res) => {
+  try {
+    const pending  = await NotifyRequest.find({ notified: false }).sort('-createdAt');
+    const total    = await NotifyRequest.countDocuments();
+    const notified = await NotifyRequest.countDocuments({ notified: true });
+    res.json({ requests: pending, total, notified });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const markNotified = async (req, res) => {
+  try {
+    await NotifyRequest.findByIdAndUpdate(req.params.id, { notified: true });
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

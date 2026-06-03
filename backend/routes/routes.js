@@ -41,6 +41,16 @@ router.post('/platinum/subscribe', authenticate, controller.subscribePlatinum);
 // Feedback (Protected)
 router.post('/feedback', authenticate, controller.createFeedback);
 
+// Healthy Subscription (Protected)
+router.post('/subscription/healthy',        authenticate, controller.createHealthySubscription);
+router.get('/subscription/healthy/status',  authenticate, controller.getHealthySubscription);
+router.put('/subscription/healthy/cancel',  authenticate, controller.cancelHealthySubscription);
+
+// Admin — Healthy Subscriptions
+router.get('/admin/subscriptions/healthy',                    authenticate, isAdmin, controller.getAllHealthySubscriptions);
+router.put('/admin/subscriptions/healthy/:id/approve',        authenticate, isAdmin, controller.approveHealthySubscription);
+router.put('/admin/subscriptions/healthy/:id/reject',         authenticate, isAdmin, controller.rejectHealthySubscription);
+
 // Admin — Orders
 router.get('/admin/orders', authenticate, isAdmin, controller.getAllOrders);
 router.put('/admin/orders/:id', authenticate, isAdmin, controller.updateOrderStatus);
@@ -51,6 +61,13 @@ router.put('/admin/orders/:id/reject-payment', authenticate, isAdmin, controller
 router.get('/admin/platinum', authenticate, isAdmin, controller.getAllPlatinumRequests);
 router.put('/admin/platinum/:id/approve', authenticate, isAdmin, controller.approvePlatinumPayment);
 router.put('/admin/platinum/:id/reject', authenticate, isAdmin, controller.rejectPlatinumPayment);
+
+// Store status (public read, admin write)
+router.get('/store/status',                             controller.getStoreStatus);
+router.post('/store/notify',                            controller.addNotifyRequest);
+router.put('/admin/store/status',  authenticate, isAdmin, controller.updateStoreStatus);
+router.get('/admin/store/notify-requests', authenticate, isAdmin, controller.getNotifyRequests);
+router.put('/admin/store/notify-requests/:id/notified', authenticate, isAdmin, controller.markNotified);
 
 // Admin — Stats
 router.get('/admin/stats', authenticate, isAdmin, controller.getDashboardStats);

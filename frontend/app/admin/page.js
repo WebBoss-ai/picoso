@@ -8,19 +8,22 @@ import {
   RefreshCw, Loader2, ArrowUpRight, ArrowDownRight,
   LogOut, Menu, X, Banknote, Smartphone, Percent,
   Activity, PieChart, BarChart2, Zap, AlertTriangle,
-  ToggleLeft, ToggleRight, GripVertical, Tag
+  ToggleLeft, ToggleRight, GripVertical, Tag,
+  Store, BellRing, PhoneCall, CheckCheck, Power,
 } from 'lucide-react';
 import { admin } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const SIDEBAR_ITEMS = [
-  { id: 'overview',    label: 'Overview',   icon: LayoutDashboard },
-  { id: 'orders',      label: 'Orders',     icon: Package },
-  { id: 'payments',    label: 'Payments',   icon: CreditCard },
-  { id: 'platinum',    label: 'Platinum',   icon: Crown },
-  { id: 'products',    label: 'Products',   icon: UtensilsCrossed },
-  { id: 'categories',  label: 'Categories', icon: Menu },
-  { id: 'users',       label: 'Users',      icon: Users },
+  { id: 'overview',       label: 'Overview',      icon: LayoutDashboard },
+  { id: 'store',          label: 'Store',          icon: Store },
+  { id: 'orders',         label: 'Orders',         icon: Package },
+  { id: 'payments',       label: 'Payments',       icon: CreditCard },
+  { id: 'platinum',       label: 'Platinum',       icon: Crown },
+  { id: 'subscriptions',  label: 'Subscriptions',  icon: Zap },
+  { id: 'products',       label: 'Products',       icon: UtensilsCrossed },
+  { id: 'categories',     label: 'Categories',     icon: Menu },
+  { id: 'users',          label: 'Users',          icon: Users },
 ];
 
 const STATUS_OPTIONS = ['pending', 'confirmed', 'preparing', 'out-for-delivery', 'delivered', 'cancelled'];
@@ -1528,6 +1531,418 @@ function UserRow({ u }) {
   );
 }
 
+// ─── Subscriptions Section ────────────────────────────────────────────────────
+const SUB_STATUS_COLORS = {
+  pending_payment:  'bg-amber-100 text-amber-700',
+  pending_approval: 'bg-blue-100 text-blue-700',
+  active:           'bg-green-100 text-green-700',
+  paused:           'bg-gray-100 text-gray-600',
+  cancelled:        'bg-red-100 text-red-600',
+};
+
+function fmt24to12Admin(val) {
+  if (!val) return '—';
+  const [h, m] = val.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h > 12 ? h - 12 : h || 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+// ─── Store Section ────────────────────────────────────────────────────────────
+function StoreSection() {
+  const [status, setStatus]           = useState(null);
+  const [loading, setLoading]         = useState(true);
+  const [saving, setSaving]           = useState(false);
+  const [closedReason, setReason]     = useState('');
+  const [openingTime, setOpen]        = useState('10:00');
+  const [closingTime, setClose]       = useState('22:00');
+  const [notifyList, setNotifyList]   = useState([]);
+  const [notifyTotal, setNotifyTotal] = useState(0);
+  const [notifyDone, setNotifyDone]   = useState(0);
+  const [markingId, setMarkingId]     = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [sRes, nRes] = await Promise.all([
+        admin.getStoreStatus(),
+        admin.getNotifyRequests(),
+      ]);
+      const s = sRes.data.status;
+      setStatus(s);
+      setReason(s.closedReason);
+      setOpen(s.openingTime);
+      setClose(s.closingTime);
+      setNotifyList(nRes.data.requests || []);
+      setNotifyTotal(nRes.data.total || 0);
+      setNotifyDone(nRes.data.notified || 0);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const toggle = async () => {
+    setSaving(true);
+    try {
+      const res = await admin.updateStoreStatus({ isOpen: !status.isOpen });
+      setStatus(res.data.status);
+    } catch {}
+    setSaving(false);
+  };
+
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      const res = await admin.updateStoreStatus({ closedReason, openingTime, closingTime });
+      setStatus(res.data.status);
+    } catch {}
+    setSaving(false);
+  };
+
+  const markDone = async (id) => {
+    setMarkingId(id);
+    try {
+      await admin.markNotified(id);
+      setNotifyList(prev => prev.filter(r => r._id !== id));
+      setNotifyDone(d => d + 1);
+    } catch {}
+    setMarkingId(null);
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 size={24} className="animate-spin text-gray-400" />
+    </div>
+  );
+
+  const isOpen = status?.isOpen ?? true;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Store Control</h2>
+          <p className="text-sm text-gray-400 mt-0.5">Toggle store open/closed · Manage notify-me requests</p>
+        </div>
+        <button onClick={load} className="btn-secondary text-sm gap-1.5">
+          <RefreshCw size={14} /> Refresh
+        </button>
+      </div>
+
+      {/* ── Big toggle card ── */}
+      <div className={`rounded-2xl border-2 p-6 transition-all duration-300 ${isOpen ? 'border-brand-200 bg-brand-50' : 'border-red-200 bg-red-50'}`}>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isOpen ? 'bg-brand-500' : 'bg-red-500'} shadow-md`}>
+              <Power size={24} className="text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl font-extrabold text-gray-900">
+                  {isOpen ? 'Store is OPEN' : 'Store is CLOSED'}
+                </span>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isOpen ? 'bg-brand-100 text-brand-700' : 'bg-red-100 text-red-700'}`}>
+                  {isOpen ? 'LIVE' : 'OFFLINE'}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Operating hours: {openingTime} – {closingTime} · Click to {isOpen ? 'close' : 'reopen'} the store
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={toggle}
+            disabled={saving}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all ${
+              isOpen
+                ? 'bg-red-500 hover:bg-red-600 text-white shadow-md hover:shadow-lg'
+                : 'bg-brand-500 hover:bg-brand-600 text-white shadow-md hover:shadow-lg'
+            } disabled:opacity-60`}
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Power size={16} />}
+            {isOpen ? 'Close Store' : 'Open Store'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ── Settings card ── */}
+        <div className="card p-5 space-y-4">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <Clock size={16} className="text-brand-600" /> Store Settings
+          </h3>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Opening Time</label>
+              <input type="time" value={openingTime} onChange={e => setOpen(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-300" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">Closing Time</label>
+              <input type="time" value={closingTime} onChange={e => setClose(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-300" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">Closed Message (shown to users)</label>
+            <textarea rows={3} value={closedReason} onChange={e => setReason(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none" />
+          </div>
+
+          <button onClick={saveSettings} disabled={saving}
+            className="btn-primary w-full text-sm gap-1.5">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            Save Settings
+          </button>
+        </div>
+
+        {/* ── Notify requests stats ── */}
+        <div className="card p-5">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+            <BellRing size={16} className="text-amber-500" /> Notify-Me Requests
+          </h3>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {[
+              { label: 'Total',    value: notifyTotal,                    color: 'text-gray-900' },
+              { label: 'Pending',  value: notifyList.length,              color: 'text-amber-600' },
+              { label: 'Notified', value: notifyDone,                     color: 'text-brand-600' },
+            ].map(s => (
+              <div key={s.label} className="bg-surface-50 rounded-xl p-3 text-center">
+                <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
+                <p className="text-[11px] text-gray-400 font-medium mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+          {notifyList.length === 0 ? (
+            <div className="flex flex-col items-center py-6 gap-2 text-gray-400">
+              <CheckCheck size={28} />
+              <p className="text-sm font-medium">All requests handled</p>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-600 font-semibold">
+              {notifyList.length} customer{notifyList.length > 1 ? 's' : ''} waiting to be notified
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Pending notify requests table ── */}
+      {notifyList.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-4 border-b border-surface-100 flex items-center justify-between">
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <PhoneCall size={15} className="text-amber-500" />
+              Pending Notifications
+              <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">{notifyList.length}</span>
+            </h3>
+          </div>
+          <div className="divide-y divide-surface-100">
+            {notifyList.map(req => (
+              <div key={req._id} className="flex items-center justify-between px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-amber-50 rounded-full flex items-center justify-center">
+                    <PhoneCall size={14} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{req.phone}</p>
+                    <p className="text-xs text-gray-400">{new Date(req.createdAt).toLocaleString('en-IN')}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => markDone(req._id)}
+                  disabled={markingId === req._id}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {markingId === req._id
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <CheckCircle2 size={12} />}
+                  Mark Notified
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubscriptionsSection() {
+  const [subs,     setSubs]     = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState('all');
+  const [search,   setSearch]   = useState('');
+  const [actioning,setActioning]= useState({});
+
+  const load = () => {
+    setLoading(true);
+    admin.getAllHealthySubs()
+      .then(r => setSubs(r.data.subscriptions || []))
+      .catch(() => setSubs([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const act = async (id, action) => {
+    setActioning(p => ({ ...p, [id]: action }));
+    try {
+      if (action === 'approve') await admin.approveHealthySub(id);
+      else                      await admin.rejectHealthySub(id);
+      load();
+    } catch {}
+    setActioning(p => ({ ...p, [id]: null }));
+  };
+
+  const filtered = subs.filter(s => {
+    const matchStatus = filter === 'all' || s.status === filter;
+    const q = search.toLowerCase();
+    const matchSearch = !q || s.userId?.phone?.includes(q) || s.userId?.name?.toLowerCase().includes(q);
+    return matchStatus && matchSearch;
+  });
+
+  /* ── Analytics ── */
+  const total       = subs.length;
+  const active      = subs.filter(s => s.status === 'active').length;
+  const pending     = subs.filter(s => s.status === 'pending_approval').length;
+  const cancelled   = subs.filter(s => s.status === 'cancelled').length;
+  const weeklyRev   = subs.filter(s => s.status === 'active').reduce((sum, s) => sum + (s.weeklyPrice || 0), 0);
+  const plan3       = subs.filter(s => s.bowlsPerWeek === 3).length;
+  const plan5       = subs.filter(s => s.bowlsPerWeek === 5).length;
+  const plan7       = subs.filter(s => s.bowlsPerWeek === 7).length;
+
+  return (
+    <div className="space-y-5">
+      {/* Analytics cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Total Subscriptions" value={total}          icon={<Zap size={14}/>}        color="brand"  />
+        <StatCard label="Active"              value={active}         icon={<Activity size={14}/>}   color="green"  />
+        <StatCard label="Pending Approval"    value={pending}        icon={<Clock size={14}/>}      color="amber"  />
+        <StatCard label="Weekly Revenue"      value={`₹${weeklyRev.toLocaleString()}`} icon={<DollarSign size={14}/>} color="purple" />
+      </div>
+
+      {/* Plan distribution */}
+      <div className="card">
+        <p className="text-xs font-extrabold text-gray-500 uppercase tracking-wide mb-3">Plan Distribution</p>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: '3 Bowls/Week', count: plan3, price: 690,  color: 'bg-brand-500'  },
+            { label: '5 Bowls/Week', count: plan5, price: 1100, color: 'bg-blue-500'   },
+            { label: '7 Bowls/Week', count: plan7, price: 1400, color: 'bg-purple-500' },
+          ].map(({ label, count, price, color }) => (
+            <div key={label} className="p-3 rounded-xl bg-surface-50 border border-surface-100">
+              <div className={`w-6 h-1.5 rounded-full ${color} mb-2`}/>
+              <p className="text-lg font-black text-gray-900">{count}</p>
+              <p className="text-[10px] font-bold text-gray-500">{label}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">₹{price}/wk each</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Cancelled stat */}
+        <div className="mt-3 flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100">
+          <div className="flex items-center gap-2">
+            <XCircle size={14} className="text-red-500"/>
+            <span className="text-xs font-bold text-red-600">Cancelled Subscriptions</span>
+          </div>
+          <span className="text-sm font-extrabold text-red-700">{cancelled}</span>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by phone or name..."
+            className="w-full pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-brand-300"/>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {['all','pending_approval','active','paused','cancelled'].map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${filter === f ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-gray-600 border-surface-200 hover:border-brand-300'}`}>
+              {f === 'all' ? 'All' : f.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+        <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-surface-200 bg-white text-xs font-semibold text-gray-600 hover:bg-surface-50">
+          <RefreshCw size={12}/> Refresh
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="card overflow-hidden p-0">
+        {loading ? (
+          <div className="p-8 flex items-center justify-center"><Loader2 size={20} className="animate-spin text-brand-500"/></div>
+        ) : filtered.length === 0 ? (
+          <div className="p-10 text-center text-sm text-gray-400">No subscriptions found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-50 border-b border-surface-100">
+                  {['User','Plan','Time Slot','UPI Ref','Status','Actions'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-100">
+                {filtered.map(sub => (
+                  <tr key={sub._id} className="hover:bg-surface-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-gray-900 text-xs">{sub.userId?.name || '—'}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{sub.userId?.phone || '—'}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center font-extrabold text-brand-600 text-xs flex-shrink-0">{sub.bowlsPerWeek}x</span>
+                        <div>
+                          <p className="font-semibold text-gray-900 text-xs">₹{sub.weeklyPrice}/wk</p>
+                          <p className="text-[10px] text-gray-400">₹{sub.perBowlPrice}/bowl</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-xs font-semibold text-gray-700">{fmt24to12Admin(sub.timeSlot)}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-xs font-mono text-gray-600 max-w-[100px] truncate">{sub.upiRef || '—'}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${SUB_STATUS_COLORS[sub.status] || 'bg-gray-100 text-gray-500'}`}>
+                        {sub.status?.replace('_',' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {sub.status === 'pending_approval' ? (
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => act(sub._id,'approve')} disabled={actioning[sub._id]}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-brand-500 text-white text-[10px] font-bold hover:bg-brand-600 disabled:opacity-50 whitespace-nowrap">
+                            {actioning[sub._id] === 'approve' ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>} Approve
+                          </button>
+                          <button onClick={() => act(sub._id,'reject')} disabled={actioning[sub._id]}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 text-[10px] font-bold hover:bg-red-100 disabled:opacity-50 whitespace-nowrap">
+                            {actioning[sub._id] === 'reject' ? <Loader2 size={10} className="animate-spin"/> : <XCircle size={10}/>} Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Users Section ────────────────────────────────────────────────────────────
 function UsersSection() {
   const [userList, setUserList] = useState([]);
@@ -1625,13 +2040,15 @@ export default function AdminPage() {
 
   const renderSection = () => {
     switch (activeSection) {
-      case 'overview': return <OverviewSection stats={stats} onRefresh={loadStats} />;
-      case 'orders': return <OrdersSection />;
-      case 'payments': return <PaymentsSection />;
-      case 'platinum': return <PlatinumSection />;
-      case 'products':   return <ProductsSection />;
-      case 'categories': return <CategoriesSection />;
-      case 'users':      return <UsersSection />;
+      case 'overview':      return <OverviewSection stats={stats} onRefresh={loadStats} />;
+      case 'store':         return <StoreSection />;
+      case 'orders':        return <OrdersSection />;
+      case 'payments':      return <PaymentsSection />;
+      case 'platinum':      return <PlatinumSection />;
+      case 'subscriptions': return <SubscriptionsSection />;
+      case 'products':      return <ProductsSection />;
+      case 'categories':    return <CategoriesSection />;
+      case 'users':         return <UsersSection />;
       default: return null;
     }
   };

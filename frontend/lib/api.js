@@ -49,6 +49,17 @@ export const feedback = {
   create: (data) => api.post('/feedback', data),
 };
 
+export const healthySubscription = {
+  create:    (data) => api.post('/subscription/healthy', data),
+  getStatus: ()     => api.get('/subscription/healthy/status'),
+  cancel:    ()     => api.put('/subscription/healthy/cancel'),
+};
+
+export const storeStatus = {
+  get:      ()     => api.get('/store/status'),
+  notifyMe: (data) => api.post('/store/notify', data),
+};
+
 export const admin = {
   getStats: () => api.get('/admin/stats'),
   getOrders: (params) => api.get('/admin/orders', { params }),
@@ -58,6 +69,13 @@ export const admin = {
   getPlatinumRequests: () => api.get('/admin/platinum'),
   approvePlatinum: (id) => api.put(`/admin/platinum/${id}/approve`),
   rejectPlatinum: (id) => api.put(`/admin/platinum/${id}/reject`),
+  getAllHealthySubs:  ()   => api.get('/admin/subscriptions/healthy'),
+  approveHealthySub: (id) => api.put(`/admin/subscriptions/healthy/${id}/approve`),
+  rejectHealthySub:  (id) => api.put(`/admin/subscriptions/healthy/${id}/reject`),
+  getStoreStatus:      ()     => api.get('/store/status'),
+  updateStoreStatus:   (data) => api.put('/admin/store/status', data),
+  getNotifyRequests:   ()     => api.get('/admin/store/notify-requests'),
+  markNotified:        (id)   => api.put(`/admin/store/notify-requests/${id}/notified`),
   getUsers: () => api.get('/admin/users'),
   getUserOrders: (userId) => api.get(`/admin/users/${userId}/orders`),
   getBowls: () => api.get('/bowls'),

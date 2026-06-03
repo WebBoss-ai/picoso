@@ -9,13 +9,16 @@ import {
 } from 'lucide-react';
 import { profile, orders, platinum } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import UserSubscriptionDashboard from '@/components/UserSubscriptionDashboard';
+import { Leaf } from 'lucide-react';
 
 const TABS = [
-  { id: 'account', label: 'Account', icon: User },
-  { id: 'orders', label: 'Orders', icon: Package },
-  { id: 'addresses', label: 'Addresses', icon: MapPin },
-  { id: 'platinum', label: 'Platinum', icon: Crown },
-  { id: 'support', label: 'Support', icon: HelpCircle },
+  { id: 'account',      label: 'Account',      icon: User      },
+  { id: 'orders',       label: 'Orders',        icon: Package   },
+  { id: 'addresses',    label: 'Addresses',     icon: MapPin    },
+  { id: 'platinum',     label: 'Platinum',      icon: Crown     },
+  { id: 'subscription', label: 'Subscription',  icon: Leaf      },
+  { id: 'support',      label: 'Support',       icon: HelpCircle},
 ];
 
 const FAQS = [
@@ -624,6 +627,12 @@ function ProfileContent() {
                 {activeTab === 'orders' && <OrdersTab />}
                 {activeTab === 'addresses' && <AddressesTab userData={userData} onRefresh={handleRefreshAddresses} />}
                 {activeTab === 'platinum' && <PlatinumTab platinumData={platinumData} onSubscribe={handleSubscribePlatinum} />}
+                {activeTab === 'subscription' && (
+                  <div>
+                    <h2 className="text-base font-extrabold text-gray-900 mb-4">Healthy Subscription</h2>
+                    <UserSubscriptionDashboard />
+                  </div>
+                )}
                 {activeTab === 'support' && <SupportTab />}
               </>
             )}

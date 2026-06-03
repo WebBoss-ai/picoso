@@ -149,6 +149,27 @@ const platinumCardSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+const healthySubscriptionSchema = new mongoose.Schema({
+  userId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  selectedItems: [{ type: String }],
+  bowlsPerWeek:  { type: Number, enum: [3, 5, 7], required: true },
+  weeklyPrice:   { type: Number, required: true },
+  perBowlPrice:  { type: Number, required: true },
+  timeSlot:      { type: String, default: '' },
+  upiRef:        { type: String, default: '' },
+  status: {
+    type: String,
+    enum: ['pending_payment', 'pending_approval', 'active', 'paused', 'cancelled', 'rejected'],
+    default: 'pending_approval',
+  },
+  approvedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  approvedAt:    { type: Date },
+  startDate:     { type: Date },
+  nextDelivery:  { type: Date },
+  createdAt:     { type: Date, default: Date.now },
+  updatedAt:     { type: Date, default: Date.now },
+});
+
 const categoryConfigSchema = new mongoose.Schema({
   id:          { type: String, required: true, unique: true },
   label:       { type: String, required: true },
@@ -175,7 +196,29 @@ export const OTP = mongoose.model('OTP', otpSchema);
 export const Bowl = mongoose.model('Bowl', bowlSchema);
 export const Ingredient = mongoose.model('Ingredient', ingredientSchema);
 export const Order = mongoose.model('Order', orderSchema);
+// ── Store on/off control ─────────────────────────────────────────────────────
+const storeStatusSchema = new mongoose.Schema({
+  isOpen:        { type: Boolean, default: true },
+  closedReason:  { type: String,  default: "Due to high demand we're not accepting orders right now. We'll be back between 10 AM – 10 PM." },
+  openingTime:   { type: String,  default: '10:00' },
+  closingTime:   { type: String,  default: '22:00' },
+  updatedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  updatedAt:     { type: Date, default: Date.now },
+});
+
+// ── Notify-me requests ───────────────────────────────────────────────────────
+const notifyRequestSchema = new mongoose.Schema({
+  phone:     { type: String, required: true },
+  userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  notified:  { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+});
+notifyRequestSchema.index({ phone: 1, notified: 1 });
+
 export const Feedback = mongoose.model('Feedback', feedbackSchema);
 export const PlatinumCard = mongoose.model('PlatinumCard', platinumCardSchema);
+export const HealthySubscription = mongoose.model('HealthySubscription', healthySubscriptionSchema);
 export const CategoryConfig = mongoose.model('CategoryConfig', categoryConfigSchema);
 export const DeliveryPartner = mongoose.model('DeliveryPartner', deliveryPartnerSchema);
+export const StoreStatus = mongoose.model('StoreStatus', storeStatusSchema);
+export const NotifyRequest = mongoose.model('NotifyRequest', notifyRequestSchema);

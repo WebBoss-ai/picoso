@@ -3,14 +3,15 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
   Plus, Minus, Star, ChefHat, Crown, Clock,
-  X, Flame, Zap, Wheat, Droplets, Leaf, Info, ShoppingBag
+  X, Flame, Zap, Wheat, Droplets, Leaf, Info, ShoppingBag, Coffee,
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 
 const PLATINUM_DISCOUNT = 0.20;
-const isBeverage = (p) => p?.pfCategory === 'pf-beverages';
-const IS_COKE = (p) => p?.name === 'Coke';
+const isBeverage    = (p) => p?.pfCategory === 'pf-beverages';
+const IS_CAPPUCCINO = (p) => p?.name?.toLowerCase().includes('cappuccino');
+const isCoffeeDrink = (p) => isBeverage(p) && p?.name?.toLowerCase() !== 'coke';
 
 // ─── Product Detail Modal ────────────────────────────────────────────────────
 function ProductModal({ product, onClose }) {
@@ -25,9 +26,10 @@ function ProductModal({ product, onClose }) {
   const platinumPrice = Math.round(originalPrice * (1 - PLATINUM_DISCOUNT));
   const displayPrice = isPlatinum ? platinumPrice : originalPrice;
   const showMacros = !isBeverage(product);
-  const isCokeItem = IS_COKE(product);
-  const hasNonCoke = items.some(i => !IS_COKE(i));
-  const canAdd = !isCokeItem || hasNonCoke;
+  const isCappItem = IS_CAPPUCCINO(product);
+  const hasNonCapp = items.some(i => !IS_CAPPUCCINO(i));
+  const canAdd = !isCappItem || hasNonCapp;
+  const isCoffee = isCoffeeDrink(product);
 
   const handleAdd = () => { if (!isUnavailable && canAdd) addItem(product); };
   const handleIncrease = () => updateQty(product._id, qty + 1);
@@ -119,7 +121,14 @@ function ProductModal({ product, onClose }) {
 
             {/* Name + Price */}
             <div className="flex items-start justify-between gap-3 mb-2">
-              <h2 className="text-xl font-extrabold text-gray-900 leading-tight flex-1">{product.name}</h2>
+              <div className="flex-1">
+                <h2 className="text-xl font-extrabold text-gray-900 leading-tight">{product.name}</h2>
+                {isCoffee && (
+                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full leading-none">
+                    <Coffee size={9} strokeWidth={2} /> 450–500 ml
+                  </span>
+                )}
+              </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-xl font-extrabold text-gray-900">₹{displayPrice}</div>
                 {isPlatinum && originalPrice !== displayPrice && (
@@ -208,13 +217,13 @@ function ProductModal({ product, onClose }) {
             <div className="flex items-center justify-center gap-2 py-3 text-gray-400 text-sm font-semibold">
               <Clock size={15} /> Available from {product.availableFrom}
             </div>
-          ) : isCokeItem && !hasNonCoke ? (
+          ) : isCappItem && !hasNonCapp ? (
             <div className="flex flex-col items-center gap-2">
               <div className="flex items-center gap-2 w-full py-3.5 rounded-2xl bg-surface-100 border border-surface-200 justify-center cursor-not-allowed">
                 <ShoppingBag size={16} className="text-gray-400" />
-                <span className="text-sm font-semibold text-gray-400">Add a bowl first to order Coke</span>
+                <span className="text-sm font-semibold text-gray-400">Add a bowl first to order Cappuccino</span>
               </div>
-              <p className="text-xs text-gray-400 text-center">Coke can&apos;t be ordered alone — add any meal or bowl first.</p>
+              <p className="text-xs text-gray-400 text-center">Cappuccino can&apos;t be ordered alone — add any meal or bowl first.</p>
             </div>
           ) : qty === 0 ? (
             <button
@@ -261,19 +270,20 @@ function ProductModal({ product, onClose }) {
 
 // ─── Product Card ────────────────────────────────────────────────────────────
 export default function ProductCard({ product }) {
-  const { items, addItem, updateQty, registerCoke } = useCart();
+  const { items, addItem, updateQty, registerCapp } = useCart();
   const { isPlatinum } = useAuth();
   const [imageError, setImageError] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
-  const isCokeItem = IS_COKE(product);
-  const hasNonCoke = items.some(i => !IS_COKE(i));
-  const canAdd = !isCokeItem || hasNonCoke;
+  const isCappItem = IS_CAPPUCCINO(product);
+  const hasNonCapp = items.some(i => !IS_CAPPUCCINO(i));
+  const canAdd = !isCappItem || hasNonCapp;
+  const isCoffee = isCoffeeDrink(product);
 
-  // Register Coke's data in CartContext so it can be auto-added later
+  // Register Cappuccino data so CartContext can auto-add it
   useEffect(() => {
-    if (isCokeItem) registerCoke(product);
-  }, [isCokeItem, product, registerCoke]);
+    if (isCappItem) registerCapp(product);
+  }, [isCappItem, product, registerCapp]);
 
   const cartItem = items.find(i => i._id === product._id);
   const qty = cartItem?.quantity || 0;
@@ -356,7 +366,7 @@ export default function ProductCard({ product }) {
                   <button
                     onClick={e => { e.stopPropagation(); setShowModal(true); }}
                     className="flex items-center gap-0.5 px-2.5 py-1.5 bg-white/90 border-2 border-gray-300 text-gray-400 font-bold text-[10px] rounded-xl shadow-sm cursor-not-allowed"
-                    title="Add a bowl first to order Coke"
+                    title="Add a bowl first to order Cappuccino"
                   >
                     <ShoppingBag size={11} /> Bowl first
                   </button>
@@ -395,20 +405,25 @@ export default function ProductCard({ product }) {
             </div>
           )}
 
-          {/* Price */}
-          <div className="flex items-end justify-between gap-1">
-            <div>
+          {/* Price row — price first, then 450-500ml badge inline for coffee */}
+          <div>
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-bold text-gray-900 text-sm">₹{displayPrice}</span>
               {isPlatinum && (
-                <span className="text-xs text-gray-400 line-through ml-1.5">₹{originalPrice}</span>
+                <span className="text-xs text-gray-400 line-through">₹{originalPrice}</span>
               )}
-              {!isPlatinum && (
-                <div className="flex items-center gap-0.5 mt-0.5">
-                  <Crown size={9} className="text-orange-400" />
-                  <span className="text-[10px] text-orange-500 font-medium">₹{platinumPrice} with Platinum</span>
-                </div>
+              {isCoffee && (
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none">
+                  <Coffee size={8} strokeWidth={2.5} /> 450–500 ml
+                </span>
               )}
             </div>
+            {!isPlatinum && (
+              <div className="flex items-center gap-0.5 mt-0.5">
+                <Crown size={9} className="text-orange-400" />
+                <span className="text-[10px] text-orange-500 font-medium">₹{platinumPrice} with Platinum</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
