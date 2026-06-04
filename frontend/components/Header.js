@@ -24,27 +24,37 @@ export default function Header({ onAuthClick }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Location fetch
+  // Location fetch — calls Nominatim directly from the browser (no proxy dependency)
   useEffect(() => {
     const cached = sessionStorage.getItem('picoso_location');
     if (cached) { try { setLocation(JSON.parse(cached)); return; } catch {} }
-    if (!navigator.geolocation) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
     setLocLoading(true);
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
         try {
-          const res  = await fetch(`/api/location?lat=${coords.latitude}&lng=${coords.longitude}`);
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json`,
+            { headers: { 'Accept': 'application/json', 'User-Agent': 'picoso-app' } }
+          );
+          if (!res.ok) throw new Error('geocode failed');
           const data = await res.json();
-          if (data.area || data.city) {
-            const loc = { area: data.area, city: data.city };
+          const city = data.address?.city || data.address?.town || data.address?.village
+                    || data.address?.state_district || null;
+          const area = data.address?.neighbourhood || data.address?.suburb
+                    || data.address?.road || null;
+          if (area || city) {
+            const loc = { area, city };
             setLocation(loc);
             sessionStorage.setItem('picoso_location', JSON.stringify(loc));
           }
-        } catch {}
+        } catch {
+          // Location is decorative — silently swallow all errors
+        }
         setLocLoading(false);
       },
-      () => setLocLoading(false),
-      { timeout: 6000 }
+      () => setLocLoading(false),      // user denied or timed out
+      { timeout: 8000, maximumAge: 300_000 }
     );
   }, []);
 

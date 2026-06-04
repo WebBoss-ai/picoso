@@ -81,6 +81,12 @@ export default function CartDrawer({ onAuthRequired }) {
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
 
+  // Reset closed panel when drawer is closed/reopened — MUST be before early return
+  useEffect(() => {
+    if (!isOpen) { setShowClosed(false); setNotifyDone(false); setNotifyPhone(''); setAdminSent(false); }
+  }, [isOpen]);
+
+  // ── All hooks must be above this line ─────────────────────────────────────
   if (!isOpen) return null;
 
   const realItems  = items.filter(i => !i.isOfferCoffee && !i.name?.toLowerCase().includes('cappuccino'));
@@ -90,10 +96,8 @@ export default function CartDrawer({ onAuthRequired }) {
   const savings       = cartTotal - platinumTotal;
 
   const handleCheckout = async () => {
-    // If store is closed, capture the lead and show closed panel
     if (store && !store.isOpen) {
       setShowClosed(true);
-      // Auto-notify admin (once per drawer open)
       if (!adminSent) {
         setAdminSent(true);
         storeApi.saveClosedCheckout({
@@ -110,12 +114,6 @@ export default function CartDrawer({ onAuthRequired }) {
     router.push('/checkout');
   };
 
-  // Reset closed panel when drawer is closed/reopened
-  useEffect(() => {
-    if (!isOpen) { setShowClosed(false); setNotifyDone(false); setNotifyPhone(''); setAdminSent(false); }
-  }, [isOpen]);
-
-  // Toggle: add offer item, or remove it if already in cart
   const toggleOffer = (product, offerPrice) => {
     const inCart = items.find(i => i._id === product._id);
     if (inCart) { removeItem(product._id); return; }

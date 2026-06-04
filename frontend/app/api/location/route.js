@@ -10,28 +10,21 @@ export async function GET(req) {
   }
 
   try {
-    // You can swap this with any geocoding provider
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-      { headers: { 'User-Agent': 'trezla-app' } }
+      { headers: { 'Accept': 'application/json', 'User-Agent': 'picoso-app' }, next: { revalidate: 3600 } }
     );
+    if (!res.ok) return NextResponse.json({ city: null, area: null });
     const data = await res.json();
 
     const city =
-      data.address?.city ||
-      data.address?.town ||
-      data.address?.village ||
-      data.address?.state_district ||
-      null;
-
+      data.address?.city || data.address?.town || data.address?.village ||
+      data.address?.state_district || null;
     const area =
-      data.address?.neighbourhood ||
-      data.address?.suburb ||
-      data.address?.road ||
-      null;
+      data.address?.neighbourhood || data.address?.suburb || data.address?.road || null;
 
     return NextResponse.json({ city, area });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ city: null, area: null });
   }
 }
