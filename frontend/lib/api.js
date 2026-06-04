@@ -56,8 +56,9 @@ export const healthySubscription = {
 };
 
 export const storeStatus = {
-  get:      ()     => api.get('/store/status'),
-  notifyMe: (data) => api.post('/store/notify', data),
+  get:              ()     => api.get('/store/status'),
+  notifyMe:         (data) => api.post('/store/notify', data),
+  saveClosedCheckout: (data) => api.post('/store/closed-checkout', data),
 };
 
 export const admin = {
@@ -72,10 +73,12 @@ export const admin = {
   getAllHealthySubs:  ()   => api.get('/admin/subscriptions/healthy'),
   approveHealthySub: (id) => api.put(`/admin/subscriptions/healthy/${id}/approve`),
   rejectHealthySub:  (id) => api.put(`/admin/subscriptions/healthy/${id}/reject`),
-  getStoreStatus:      ()     => api.get('/store/status'),
-  updateStoreStatus:   (data) => api.put('/admin/store/status', data),
-  getNotifyRequests:   ()     => api.get('/admin/store/notify-requests'),
-  markNotified:        (id)   => api.put(`/admin/store/notify-requests/${id}/notified`),
+  getStoreStatus:             ()     => api.get('/store/status'),
+  updateStoreStatus:          (data) => api.put('/admin/store/status', data),
+  getNotifyRequests:          ()     => api.get('/admin/store/notify-requests'),
+  markNotified:               (id)   => api.put(`/admin/store/notify-requests/${id}/notified`),
+  getClosedCheckouts:         ()     => api.get('/admin/store/closed-checkouts'),
+  markClosedCheckoutNotified: (id)   => api.put(`/admin/store/closed-checkouts/${id}/notified`),
   getUsers: () => api.get('/admin/users'),
   getUserOrders: (userId) => api.get(`/admin/users/${userId}/orders`),
   getBowls: () => api.get('/bowls'),

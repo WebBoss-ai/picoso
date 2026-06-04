@@ -5,7 +5,7 @@ import Image from 'next/image';
 import {
   MapPin, Home, User, Phone, CreditCard, Smartphone, Banknote,
   Copy, CheckCircle2, ArrowLeft, Flame, Crown, Plus, Loader2,
-  Moon, Clock, X
+  Moon, Clock, X, Navigation, LocateFixed, AlertCircle
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -64,6 +64,12 @@ export default function CheckoutPage() {
   const [timeLeft, setTimeLeft] = useState({ hoursLeft: 0, minsLeft: 0 });
   const [showClosedModal, setShowClosedModal] = useState(false);
 
+  // Location capture
+  const [geoCoords, setGeoCoords] = useState(null);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState('');
+  const [geoGranted, setGeoGranted] = useState(false);
+
   useEffect(() => {
     if (authLoading) return;
     if (!isLoggedIn) { router.replace('/'); return; }
@@ -95,6 +101,55 @@ export default function CheckoutPage() {
   const discountAmt = cartTotal - subtotal;
   const grandTotal = subtotal + DELIVERY_FEE;
 
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError('');
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setGeoCoords({ lat, lng });
+        setGeoGranted(true);
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          const data = await res.json();
+          if (data?.address) {
+            const a = data.address;
+            const road = a.road || a.pedestrian || a.residential || '';
+            const houseNo = a.house_number || '';
+            const suburb = a.suburb || a.neighbourhood || a.village || '';
+            const city = a.city || a.town || a.county || '';
+            const fullAddress = [houseNo, road].filter(Boolean).join(', ') ||
+              (data.display_name || '').split(',').slice(0, 2).join(',').trim();
+            setForm(f => ({
+              ...f,
+              fullAddress: fullAddress || f.fullAddress,
+              area: suburb || f.area,
+              city: city || f.city,
+            }));
+          }
+        } catch { /* reverse-geocode best-effort */ }
+        setGeoLoading(false);
+      },
+      (err) => {
+        setGeoError(
+          err.code === 1
+            ? 'Location access denied. Please allow location and try again.'
+            : 'Unable to detect your location. Enter address manually.'
+        );
+        setGeoLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000 }
+    );
+  };
+
   const handleCopyUPI = () => {
     navigator.clipboard.writeText(UPI_ID);
     setUpiCopied(true);
@@ -103,8 +158,24 @@ export default function CheckoutPage() {
 
   const handlePlaceOrder = async () => {
     const deliveryAddress = selectedAddress
-      ? { label: selectedAddress.label, fullAddress: selectedAddress.fullAddress, area: selectedAddress.area, city: selectedAddress.city, landmark: selectedAddress.landmark }
-      : { label: form.label, fullAddress: form.fullAddress, area: form.area, city: form.city, landmark: form.landmark };
+      ? {
+          label: selectedAddress.label,
+          fullAddress: selectedAddress.fullAddress,
+          area: selectedAddress.area,
+          city: selectedAddress.city,
+          landmark: selectedAddress.landmark,
+          lat: selectedAddress.lat,
+          lng: selectedAddress.lng,
+        }
+      : {
+          label: form.label,
+          fullAddress: form.fullAddress,
+          area: form.area,
+          city: form.city,
+          landmark: form.landmark,
+          lat: geoCoords?.lat ?? undefined,
+          lng: geoCoords?.lng ?? undefined,
+        };
 
     if (!deliveryAddress.fullAddress.trim()) {
       setError('Please enter your delivery address');
@@ -222,6 +293,40 @@ export default function CheckoutPage() {
               {/* New address form */}
               {(!selectedAddress) && (
                 <div className="space-y-3">
+
+                  {/* ── Location detect button ── */}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={detectLocation}
+                      disabled={geoLoading}
+                      className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all duration-200 ${
+                        geoGranted
+                          ? 'border-brand-400 bg-brand-50 text-brand-700'
+                          : 'border-dashed border-brand-300 bg-brand-50/60 text-brand-600 hover:border-brand-400 hover:bg-brand-50'
+                      } disabled:opacity-60`}
+                    >
+                      {geoLoading ? (
+                        <><Loader2 size={15} className="animate-spin" /> Detecting location...</>
+                      ) : geoGranted ? (
+                        <><CheckCircle2 size={15} /> Location detected</>
+                      ) : (
+                        <><LocateFixed size={15} /> Use my current location</>
+                      )}
+                    </button>
+                    {geoGranted && geoCoords && (
+                      <p className="text-[11px] text-brand-600 flex items-center gap-1">
+                        <Navigation size={10} />
+                        {geoCoords.lat.toFixed(5)}, {geoCoords.lng.toFixed(5)} — address auto-filled below
+                      </p>
+                    )}
+                    {geoError && (
+                      <div className="flex items-start gap-1.5 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        <AlertCircle size={12} className="flex-shrink-0 mt-0.5" /> {geoError}
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Full Address *</label>
                     <div className="relative">

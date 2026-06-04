@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   X, Plus, Minus, ShoppingBag, ArrowRight,
   Trash2, Crown, Coffee, Zap, CheckCircle2,
-  AlertTriangle, BellRing, PhoneCall,
+  AlertTriangle, BellRing, PhoneCall, ChevronLeft, Package,
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -40,14 +40,18 @@ function VolumeBadge() {
 
 export default function CartDrawer({ onAuthRequired }) {
   const { items, addItem, removeItem, updateQty, cartTotal, cartCount, isOpen, setIsOpen } = useCart();
-  const { isPlatinum, isLoggedIn } = useAuth();
+  const { isPlatinum, isLoggedIn, user } = useAuth();
+  const router = useRouter();
 
-  const [coffeeOffers, setCoffeeOffers] = useState([]);
-  const [cokeProduct,  setCokeProduct]  = useState(null);
-  const [store,        setStore]        = useState(null);
-  const [notifyPhone,  setNotifyPhone]  = useState('');
-  const [notifyDone,   setNotifyDone]   = useState(false);
-  const [notifySend,   setNotifySend]   = useState(false);
+  const [coffeeOffers,    setCoffeeOffers]   = useState([]);
+  const [cokeProduct,     setCokeProduct]    = useState(null);
+  const [store,           setStore]          = useState(null);
+  // Closed checkout panel state
+  const [showClosed,      setShowClosed]     = useState(false);
+  const [notifyPhone,     setNotifyPhone]    = useState('');
+  const [notifyDone,      setNotifyDone]     = useState(false);
+  const [notifySend,      setNotifySend]     = useState(false);
+  const [adminSent,       setAdminSent]      = useState(false); // prevent double-send
 
   // Fetch store status
   useEffect(() => {
@@ -85,10 +89,31 @@ export default function CartDrawer({ onAuthRequired }) {
   const platinumTotal = Math.round(cartTotal * (1 - PLATINUM_DISCOUNT));
   const savings       = cartTotal - platinumTotal;
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
+    // If store is closed, capture the lead and show closed panel
+    if (store && !store.isOpen) {
+      setShowClosed(true);
+      // Auto-notify admin (once per drawer open)
+      if (!adminSent) {
+        setAdminSent(true);
+        storeApi.saveClosedCheckout({
+          phone: isLoggedIn ? (user?.phone || '') : '',
+          userId: user?._id || null,
+          items: items.map(i => ({ name: i.name, price: i.price, qty: i.quantity })),
+          total: cartTotal,
+        }).catch(() => {});
+      }
+      return;
+    }
     if (!isLoggedIn) { setIsOpen(false); onAuthRequired?.('checkout'); return; }
     setIsOpen(false);
+    router.push('/checkout');
   };
+
+  // Reset closed panel when drawer is closed/reopened
+  useEffect(() => {
+    if (!isOpen) { setShowClosed(false); setNotifyDone(false); setNotifyPhone(''); setAdminSent(false); }
+  }, [isOpen]);
 
   // Toggle: add offer item, or remove it if already in cart
   const toggleOffer = (product, offerPrice) => {
@@ -118,6 +143,110 @@ export default function CartDrawer({ onAuthRequired }) {
             <X size={18} />
           </button>
         </div>
+
+        {/* ── Closed checkout panel (full-drawer overlay) ── */}
+        {showClosed && store && !store.isOpen && (
+          <div className="absolute inset-0 z-10 bg-white flex flex-col" style={{ top: 60 }}>
+            {/* Back bar */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-surface-100">
+              <button onClick={() => setShowClosed(false)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-800 transition-colors">
+                <ChevronLeft size={16} /> Back to cart
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Closed header */}
+              <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-start gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <AlertTriangle size={18} className="text-red-500" />
+                </div>
+                <div>
+                  <p className="font-bold text-red-800">We&apos;re currently closed</p>
+                  <p className="text-xs text-red-600 leading-snug mt-1">{store.closedReason}</p>
+                  <p className="text-xs text-red-400 mt-1">Operating hours: {store.openingTime} – {store.closingTime}</p>
+                </div>
+              </div>
+
+              {/* Cart snapshot */}
+              <div className="rounded-2xl border border-surface-200 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 bg-surface-50 border-b border-surface-100">
+                  <Package size={14} className="text-gray-400" />
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                    Your order ({items.length} item{items.length !== 1 ? 's' : ''})
+                  </span>
+                </div>
+                <div className="divide-y divide-surface-50">
+                  {items.map(item => (
+                    <div key={item._id} className="flex items-center justify-between px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-5 h-5 bg-surface-100 text-gray-500 text-[10px] font-bold rounded-md flex items-center justify-center flex-shrink-0">
+                          {item.quantity}
+                        </span>
+                        <span className="text-sm text-gray-700 font-medium line-clamp-1">{item.name}</span>
+                      </div>
+                      <span className="text-sm font-bold text-gray-900 ml-3 flex-shrink-0">
+                        ₹{item.price * item.quantity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 bg-surface-50 border-t border-surface-100">
+                  <span className="text-sm font-bold text-gray-700">Total</span>
+                  <span className="text-base font-extrabold text-gray-900">₹{cartTotal}</span>
+                </div>
+              </div>
+
+              {/* Notify me */}
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <BellRing size={15} className="text-amber-600" />
+                  <span className="text-sm font-bold text-amber-800">Get notified when we reopen</span>
+                </div>
+                {notifyDone ? (
+                  <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-xl px-3 py-2.5">
+                    <CheckCircle2 size={15} className="text-brand-500 flex-shrink-0" />
+                    <p className="text-sm font-semibold text-brand-700">
+                      We&apos;ll notify you the moment we&apos;re back!
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-amber-700">
+                      Your cart has been saved. Enter your number and we&apos;ll reach out as soon as we reopen.
+                    </p>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <PhoneCall size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="tel"
+                          value={notifyPhone}
+                          onChange={e => setNotifyPhone(e.target.value)}
+                          placeholder={isLoggedIn && user?.phone ? user.phone : 'Your phone number'}
+                          className="w-full pl-8 pr-3 py-2.5 text-sm border border-amber-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                        />
+                      </div>
+                      <button
+                        onClick={submitNotify}
+                        disabled={notifySend || !notifyPhone.trim()}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors whitespace-nowrap"
+                      >
+                        {notifySend
+                          ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                          : <BellRing size={13} />}
+                        Notify me
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <p className="text-[11px] text-gray-400 text-center">
+                Your cart items are saved — they&apos;ll be here when we reopen.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto">
@@ -358,47 +487,9 @@ export default function CartDrawer({ onAuthRequired }) {
                 <span>₹{(isPlatinum ? platinumTotal : cartTotal) + DELIVERY_FEE}</span>
               </div>
             </div>
-            {store && !store.isOpen ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2.5 p-3 bg-red-50 border border-red-200 rounded-xl">
-                  <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-bold text-red-800">Store is currently closed</p>
-                    <p className="text-xs text-red-500 leading-snug mt-0.5">{store.closedReason}</p>
-                  </div>
-                </div>
-                {notifyDone ? (
-                  <div className="flex items-center gap-2 p-3 bg-brand-50 border border-brand-200 rounded-xl">
-                    <CheckCircle2 size={15} className="text-brand-500 flex-shrink-0" />
-                    <p className="text-sm font-semibold text-brand-700">We&apos;ll notify you when we&apos;re back!</p>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <PhoneCall size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="tel"
-                        value={notifyPhone}
-                        onChange={e => setNotifyPhone(e.target.value)}
-                        placeholder="Your phone number"
-                        className="w-full pl-8 pr-3 py-2.5 text-sm border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-red-200"
-                      />
-                    </div>
-                    <button
-                      onClick={submitNotify}
-                      disabled={notifySend || !notifyPhone.trim()}
-                      className="flex items-center gap-1 px-3 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors"
-                    >
-                      <BellRing size={12} /> Notify me
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <Link href="/checkout" onClick={handleCheckout} className="btn-primary w-full text-base">
-                Proceed to Checkout <ArrowRight size={16} />
-              </Link>
-            )}
+            <button onClick={handleCheckout} className="btn-primary w-full text-base">
+              Proceed to Checkout <ArrowRight size={16} />
+            </button>
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, CreditCard, UtensilsCrossed, Users,
@@ -9,22 +9,48 @@ import {
   LogOut, Menu, X, Banknote, Smartphone, Percent,
   Activity, PieChart, BarChart2, Zap, AlertTriangle,
   ToggleLeft, ToggleRight, GripVertical, Tag,
-  Store, BellRing, PhoneCall, CheckCheck, Power,
+  Store, BellRing, PhoneCall, CheckCheck, Power, ShoppingCart,
+  MapPin, Navigation,
 } from 'lucide-react';
 import { admin } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const SIDEBAR_ITEMS = [
-  { id: 'overview',       label: 'Overview',      icon: LayoutDashboard },
-  { id: 'store',          label: 'Store',          icon: Store },
-  { id: 'orders',         label: 'Orders',         icon: Package },
-  { id: 'payments',       label: 'Payments',       icon: CreditCard },
-  { id: 'platinum',       label: 'Platinum',       icon: Crown },
-  { id: 'subscriptions',  label: 'Subscriptions',  icon: Zap },
-  { id: 'products',       label: 'Products',       icon: UtensilsCrossed },
-  { id: 'categories',     label: 'Categories',     icon: Menu },
-  { id: 'users',          label: 'Users',          icon: Users },
+  { id: 'overview',       label: 'Overview',        icon: LayoutDashboard },
+  { id: 'store',          label: 'Store',            icon: Store },
+  { id: 'orders',         label: 'Orders',           icon: Package },
+  { id: 'zones',          label: 'Delivery Zones',   icon: MapPin },
+  { id: 'payments',       label: 'Payments',         icon: CreditCard },
+  { id: 'platinum',       label: 'Platinum',         icon: Crown },
+  { id: 'subscriptions',  label: 'Subscriptions',    icon: Zap },
+  { id: 'products',       label: 'Products',         icon: UtensilsCrossed },
+  { id: 'categories',     label: 'Categories',       icon: Menu },
+  { id: 'users',          label: 'Users',            icon: Users },
 ];
+
+// ─── Store location & distance utilities ─────────────────────────────────────
+const STORE_LAT = 28.437099;
+const STORE_LNG = 77.072771;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDist(km) {
+  if (km < 1) return `${Math.round(km * 1000)} m away`;
+  return `${km.toFixed(1)} km away`;
+}
+
+// Google Maps route: store → customer
+function mapsRouteUrl(lat, lng) {
+  return `https://www.google.com/maps/dir/${STORE_LAT},${STORE_LNG}/${lat},${lng}`;
+}
 
 const STATUS_OPTIONS = ['pending', 'confirmed', 'preparing', 'out-for-delivery', 'delivered', 'cancelled'];
 const STATUS_COLORS = {
@@ -513,7 +539,12 @@ function OrderCard({ order, onStatusChange, updating }) {
   const addr = order.deliveryAddress || {};
   const addrStr = [addr.fullAddress || addr.area, addr.city].filter(Boolean).join(', ') || '—';
   const subtotal = order.items?.reduce((s, i) => s + (i.price * (i.quantity || 1)), 0) || order.totalPrice;
-  const isPaid   = order.paymentStatus === 'paid';
+
+  // Distance from store
+  const hasCoords = addr.lat != null && addr.lng != null;
+  const distKm    = hasCoords ? haversineKm(STORE_LAT, STORE_LNG, addr.lat, addr.lng) : null;
+  const distLabel = distKm != null ? formatDist(distKm) : null;
+  const navUrl    = hasCoords ? mapsRouteUrl(addr.lat, addr.lng) : null;
 
   const PAYMENT_STATUS_COLORS = {
     pending: 'bg-amber-100 text-amber-700',
@@ -548,6 +579,12 @@ function OrderCard({ order, onStatusChange, updating }) {
                 {order.paymentStatus && (
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${PAYMENT_STATUS_COLORS[order.paymentStatus] || 'bg-gray-100 text-gray-600'}`}>
                     {order.paymentStatus}
+                  </span>
+                )}
+                {/* Distance badge */}
+                {distLabel && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 flex items-center gap-1">
+                    <MapPin size={8} /> {distLabel}
                   </span>
                 )}
               </div>
@@ -629,11 +666,32 @@ function OrderCard({ order, onStatusChange, updating }) {
                 <p><span className="font-semibold text-gray-700">Address: </span>{addrStr}</p>
                 {addr.landmark && <p><span className="font-semibold text-gray-700">Landmark: </span>{addr.landmark}</p>}
                 {order.phone && <p><span className="font-semibold text-gray-700">Phone: </span>+91 {order.phone}</p>}
+                {hasCoords && (
+                  <p className="flex items-center gap-1">
+                    <span className="font-semibold text-gray-700">GPS: </span>
+                    <span className="font-mono text-[10px] text-gray-500">{addr.lat.toFixed(5)}, {addr.lng.toFixed(5)}</span>
+                    {distLabel && (
+                      <span className="ml-1 font-bold text-cyan-700">· {distLabel}</span>
+                    )}
+                  </p>
+                )}
                 {order.upiRef && <p><span className="font-semibold text-gray-700">UPI Ref: </span><span className="font-mono">{order.upiRef}</span></p>}
                 {order.pickedUpAt && <p><span className="font-semibold text-gray-700">Picked up: </span>{new Date(order.pickedUpAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
                 {order.deliveredAt && <p><span className="font-semibold text-gray-700">Delivered: </span>{new Date(order.deliveredAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
                 {order.estimatedDelivery && <p><span className="font-semibold text-gray-700">ETA: </span>{order.estimatedDelivery}</p>}
                 {order.updatedAt && <p><span className="font-semibold text-gray-700">Last updated: </span>{new Date(order.updatedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
+                {/* Navigate button */}
+                {navUrl && (
+                  <a
+                    href={navUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-[11px] font-bold rounded-lg transition-colors"
+                  >
+                    <Navigation size={11} /> Navigate to Customer
+                  </a>
+                )}
               </div>
             </div>
           </div>
@@ -1550,23 +1608,29 @@ function fmt24to12Admin(val) {
 
 // ─── Store Section ────────────────────────────────────────────────────────────
 function StoreSection() {
-  const [status, setStatus]           = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [saving, setSaving]           = useState(false);
-  const [closedReason, setReason]     = useState('');
-  const [openingTime, setOpen]        = useState('10:00');
-  const [closingTime, setClose]       = useState('22:00');
-  const [notifyList, setNotifyList]   = useState([]);
-  const [notifyTotal, setNotifyTotal] = useState(0);
-  const [notifyDone, setNotifyDone]   = useState(0);
-  const [markingId, setMarkingId]     = useState(null);
+  const [status, setStatus]               = useState(null);
+  const [loading, setLoading]             = useState(true);
+  const [saving, setSaving]               = useState(false);
+  const [closedReason, setReason]         = useState('');
+  const [openingTime, setOpen]            = useState('10:00');
+  const [closingTime, setClose]           = useState('22:00');
+  const [notifyList, setNotifyList]       = useState([]);
+  const [notifyTotal, setNotifyTotal]     = useState(0);
+  const [notifyDone, setNotifyDone]       = useState(0);
+  const [markingId, setMarkingId]         = useState(null);
+  // Closed checkout captures
+  const [checkouts, setCheckouts]         = useState([]);
+  const [checkoutTotal, setCheckoutTotal] = useState(0);
+  const [expandedId, setExpandedId]       = useState(null);
+  const [markingChk, setMarkingChk]       = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [sRes, nRes] = await Promise.all([
+      const [sRes, nRes, cRes] = await Promise.all([
         admin.getStoreStatus(),
         admin.getNotifyRequests(),
+        admin.getClosedCheckouts(),
       ]);
       const s = sRes.data.status;
       setStatus(s);
@@ -1576,6 +1640,8 @@ function StoreSection() {
       setNotifyList(nRes.data.requests || []);
       setNotifyTotal(nRes.data.total || 0);
       setNotifyDone(nRes.data.notified || 0);
+      setCheckouts(cRes.data.records || []);
+      setCheckoutTotal(cRes.data.total || 0);
     } catch {}
     setLoading(false);
   };
@@ -1608,6 +1674,15 @@ function StoreSection() {
       setNotifyDone(d => d + 1);
     } catch {}
     setMarkingId(null);
+  };
+
+  const markCheckoutDone = async (id) => {
+    setMarkingChk(id);
+    try {
+      await admin.markClosedCheckoutNotified(id);
+      setCheckouts(prev => prev.filter(r => r._id !== id));
+    } catch {}
+    setMarkingChk(null);
   };
 
   if (loading) return (
@@ -1766,6 +1841,96 @@ function StoreSection() {
           </div>
         </div>
       )}
+
+      {/* ── Closed-store Checkout Captures ─────────────────────────────── */}
+      <div className="card overflow-hidden">
+        <div className="px-5 py-4 border-b border-surface-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShoppingCart size={15} className="text-red-500" />
+            <h3 className="font-bold text-gray-900">Missed Orders</h3>
+            {checkouts.length > 0 && (
+              <span className="text-xs bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full">{checkouts.length} pending</span>
+            )}
+          </div>
+          <span className="text-xs text-gray-400">{checkoutTotal} total captured</span>
+        </div>
+
+        {checkouts.length === 0 ? (
+          <div className="flex flex-col items-center py-10 text-gray-400 gap-2">
+            <ShoppingCart size={28} className="opacity-30" />
+            <p className="text-sm">No pending missed orders</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-surface-100">
+            {checkouts.map(rec => {
+              const isExpanded = expandedId === rec._id;
+              const recTotal   = rec.total || rec.items.reduce((s, i) => s + i.price * i.qty, 0);
+              return (
+                <div key={rec._id} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      onClick={() => setExpandedId(isExpanded ? null : rec._id)}
+                      className="flex items-center gap-3 flex-1 text-left"
+                    >
+                      <div className="w-8 h-8 bg-red-50 rounded-full flex items-center justify-center flex-shrink-0">
+                        <ShoppingCart size={14} className="text-red-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {rec.phone || <span className="text-gray-400 font-normal">No phone</span>}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {rec.items.length} item{rec.items.length !== 1 ? 's' : ''} · ₹{recTotal} · {new Date(rec.createdAt).toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : rec._id)}
+                        className="text-xs font-semibold text-gray-400 hover:text-gray-700 px-2 py-1 rounded-lg hover:bg-surface-50 transition-colors"
+                      >
+                        {isExpanded ? 'Hide' : 'View cart'}
+                      </button>
+                      <button
+                        onClick={() => markCheckoutDone(rec._id)}
+                        disabled={markingChk === rec._id}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {markingChk === rec._id
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCircle2 size={12} />}
+                        Done
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 ml-11 rounded-xl border border-surface-200 overflow-hidden">
+                      <div className="divide-y divide-surface-50">
+                        {rec.items.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 bg-surface-100 text-gray-500 text-[10px] font-bold rounded flex items-center justify-center">
+                                {item.qty}
+                              </span>
+                              <span className="text-xs text-gray-700">{item.name}</span>
+                            </div>
+                            <span className="text-xs font-bold text-gray-900">₹{item.price * item.qty}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2 bg-surface-50 border-t border-surface-100">
+                        <span className="text-xs font-bold text-gray-600">Total</span>
+                        <span className="text-sm font-extrabold text-gray-900">₹{recTotal}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2015,7 +2180,562 @@ function UsersSection() {
   );
 }
 
-// ─── Save icon import fix ─────────────────────────────────────────────────────
+// ─── Delivery Zones Section ───────────────────────────────────────────────────
+
+const ZONE_BANDS = [
+  { label: '0–1 km',   min: 0,  max: 1,          color: '#10b981', bg: '#ecfdf5', text: '#065f46' },
+  { label: '1–2 km',   min: 1,  max: 2,           color: '#22c55e', bg: '#f0fdf4', text: '#14532d' },
+  { label: '2–3 km',   min: 2,  max: 3,           color: '#84cc16', bg: '#f7fee7', text: '#365314' },
+  { label: '3–4 km',   min: 3,  max: 4,           color: '#eab308', bg: '#fefce8', text: '#713f12' },
+  { label: '4–5 km',   min: 4,  max: 5,           color: '#f97316', bg: '#fff7ed', text: '#7c2d12' },
+  { label: '5–6 km',   min: 5,  max: 6,           color: '#ef4444', bg: '#fef2f2', text: '#7f1d1d' },
+  { label: '6–7 km',   min: 6,  max: 7,           color: '#dc2626', bg: '#fef2f2', text: '#7f1d1d' },
+  { label: '7–8 km',   min: 7,  max: 8,           color: '#be123c', bg: '#fff1f2', text: '#881337' },
+  { label: '8–9 km',   min: 8,  max: 9,           color: '#9f1239', bg: '#fff1f2', text: '#881337' },
+  { label: '9–10 km',  min: 9,  max: 10,          color: '#7e22ce', bg: '#faf5ff', text: '#581c87' },
+  { label: '10+ km',   min: 10, max: Infinity,     color: '#6b7280', bg: '#f9fafb', text: '#374151' },
+];
+
+function getZoneBand(km) {
+  return ZONE_BANDS.find(b => km >= b.min && km < b.max) || ZONE_BANDS[ZONE_BANDS.length - 1];
+}
+
+function CoverageMap({ geoOrders, selectedZone, onSelectZone, hoveredOrder, onHoverOrder }) {
+  const W = 480, H = 480;
+  const CX = W / 2, CY = H / 2;
+  const PX_PER_KM = 22;
+  const RINGS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+  const LAT_KM = 111;
+  const LNG_KM = 111 * Math.cos(STORE_LAT * Math.PI / 180);
+
+  const toSVG = (lat, lng) => ({
+    x: CX + (lng - STORE_LNG) * LNG_KM * PX_PER_KM,
+    y: CY - (lat - STORE_LAT) * LAT_KM * PX_PER_KM,
+  });
+
+  return (
+    <div className="relative select-none">
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`}
+        style={{ background: '#f8fafc', borderRadius: 16, border: '1px solid #e2e8f0' }}>
+        <defs>
+          <pattern id="zgrid" width="24" height="24" patternUnits="userSpaceOnUse">
+            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#f1f5f9" strokeWidth="0.6" />
+          </pattern>
+        </defs>
+        <rect width={W} height={H} fill="url(#zgrid)" rx="12" />
+
+        {/* Rings */}
+        {RINGS.map((km, i) => {
+          const band = ZONE_BANDS[i] || ZONE_BANDS[ZONE_BANDS.length - 2];
+          const r = km * PX_PER_KM;
+          const isActive = selectedZone?.label === band.label;
+          return (
+            <g key={km} onClick={() => onSelectZone(band)} style={{ cursor: 'pointer' }}>
+              <circle cx={CX} cy={CY} r={r}
+                fill={band.color + (isActive ? '1a' : '0a')}
+                stroke={band.color + (isActive ? 'cc' : '55')}
+                strokeWidth={isActive ? 2 : 1}
+                strokeDasharray={km > 5 ? '5 3' : 'none'} />
+              <text x={CX + r + 3} y={CY - 3} fontSize="8" fill="#94a3b8" fontWeight="600">{km}km</text>
+            </g>
+          );
+        })}
+
+        {/* Crosshair */}
+        <line x1={CX} y1={CY - 225} x2={CX} y2={CY + 225} stroke="#cbd5e1" strokeWidth="0.5" />
+        <line x1={CX - 225} y1={CY} x2={CX + 225} y2={CY} stroke="#cbd5e1" strokeWidth="0.5" />
+
+        {/* Compass N */}
+        <text x={CX + 5} y={24} fontSize="11" fill="#64748b" fontWeight="800">N</text>
+        <path d={`M${CX} 28 L${CX - 4} 38 L${CX} 35 L${CX + 4} 38 Z`} fill="#64748b" />
+
+        {/* Order dots */}
+        {geoOrders.map((order, idx) => {
+          const { x, y } = toSVG(order.deliveryAddress.lat, order.deliveryAddress.lng);
+          const band = getZoneBand(order.km);
+          const isHov = hoveredOrder?._id === order._id;
+          const dimmed = selectedZone && selectedZone.label !== band.label;
+          if (x < 5 || x > W - 5 || y < 5 || y > H - 5) return null;
+          return (
+            <circle key={order._id + idx} cx={x} cy={y}
+              r={isHov ? 7 : 4.5}
+              fill={band.color}
+              fillOpacity={dimmed ? 0.15 : isHov ? 1 : 0.8}
+              stroke="white"
+              strokeWidth={isHov ? 2 : 1}
+              style={{ cursor: 'pointer', transition: 'r 0.1s, fill-opacity 0.2s' }}
+              onMouseEnter={() => onHoverOrder(order)}
+              onMouseLeave={() => onHoverOrder(null)} />
+          );
+        })}
+
+        {/* Store pin */}
+        <circle cx={CX} cy={CY} r={11} fill="#4f46e5" />
+        <circle cx={CX} cy={CY} r={6} fill="white" />
+        <circle cx={CX} cy={CY} r={3} fill="#4f46e5" />
+        <text x={CX + 14} y={CY + 4} fontSize="9" fill="#4f46e5" fontWeight="800">Store</text>
+      </svg>
+
+      {/* Hover tooltip */}
+      {hoveredOrder && (
+        <div className="absolute top-3 left-3 bg-white border border-surface-200 rounded-xl shadow-lg px-3 py-2.5 text-xs pointer-events-none z-10 space-y-0.5">
+          <p className="font-bold text-gray-900">#{hoveredOrder._id?.slice(-6).toUpperCase()}</p>
+          <p className="text-gray-600">{hoveredOrder.customerName || hoveredOrder.phone || '—'}</p>
+          <p className="font-semibold text-gray-800">₹{hoveredOrder.totalPrice}</p>
+          <p className="text-gray-400">{hoveredOrder.km?.toFixed(2)} km from store</p>
+          <p className={`font-semibold capitalize ${STATUS_COLORS[hoveredOrder.status]?.replace('bg-', 'text-').split(' ')[0] || ''}`}>
+            {hoveredOrder.status}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ZonesSection() {
+  const [orders, setOrders]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [selectedZone, setSelectedZone] = useState(null);
+  const [expandedZone, setExpandedZone] = useState(null);
+  const [hoveredOrder, setHoveredOrder] = useState(null);
+  const [sortKey, setSortKey]         = useState('count');
+
+  useEffect(() => {
+    setLoading(true);
+    admin.getOrders({})
+      .then(res => setOrders(res.data.orders || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const geoOrders = useMemo(() =>
+    orders
+      .filter(o => o.deliveryAddress?.lat != null && o.deliveryAddress?.lng != null)
+      .map(o => ({
+        ...o,
+        km: haversineKm(STORE_LAT, STORE_LNG, o.deliveryAddress.lat, o.deliveryAddress.lng),
+      })),
+  [orders]);
+
+  const noGeoCount = orders.length - geoOrders.length;
+
+  const zoneData = useMemo(() => {
+    const result = ZONE_BANDS.map(band => {
+      const zo = geoOrders.filter(o => o.km >= band.min && o.km < band.max);
+      if (!zo.length) return null;
+
+      const uniqueCustomerSet = new Set(zo.map(o => o.userId?._id || o.phone));
+      const customerFreq = {};
+      zo.forEach(o => {
+        const k = o.userId?._id || o.phone;
+        customerFreq[k] = (customerFreq[k] || 0) + 1;
+      });
+      const repeatCustomers = Object.values(customerFreq).filter(c => c > 1).length;
+
+      const itemMap = {};
+      zo.forEach(o => o.items?.forEach(item => {
+        const n = item.name || 'Unknown';
+        itemMap[n] = (itemMap[n] || 0) + (item.quantity || 1);
+      }));
+      const topItems = Object.entries(itemMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+      const totalRevenue   = zo.reduce((s, o) => s + (o.totalPrice || 0), 0);
+      const codCount       = zo.filter(o => o.paymentMethod === 'cod').length;
+      const platinumCount  = zo.filter(o => o.isPlatinumOrder).length;
+      const deliveredCount = zo.filter(o => o.status === 'delivered').length;
+      const cancelledCount = zo.filter(o => o.status === 'cancelled').length;
+      const pendingCount   = zo.filter(o => o.status === 'pending').length;
+      const avgDist        = zo.reduce((s, o) => s + o.km, 0) / zo.length;
+
+      return {
+        ...band,
+        orders: zo.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+        count:          zo.length,
+        uniqueCustomers: uniqueCustomerSet.size,
+        repeatCustomers,
+        avgOrderFreq:   (zo.length / uniqueCustomerSet.size).toFixed(1),
+        totalRevenue,
+        avgOrderValue:  Math.round(totalRevenue / zo.length),
+        codCount,
+        upiCount:       zo.length - codCount,
+        platinumCount,
+        deliveredCount,
+        cancelledCount,
+        pendingCount,
+        topItems,
+        avgDist:        avgDist.toFixed(2),
+      };
+    }).filter(Boolean);
+
+    const sortFns = {
+      count:   (a, b) => b.count - a.count,
+      revenue: (a, b) => b.totalRevenue - a.totalRevenue,
+      avg:     (a, b) => b.avgOrderValue - a.avgOrderValue,
+    };
+    return result.sort(sortFns[sortKey] || sortFns.count);
+  }, [geoOrders, sortKey]);
+
+  const totalGeoRevenue = geoOrders.reduce((s, o) => s + (o.totalPrice || 0), 0);
+  const avgDist = geoOrders.length
+    ? (geoOrders.reduce((s, o) => s + o.km, 0) / geoOrders.length).toFixed(1) : '—';
+  const maxDist = geoOrders.length
+    ? Math.max(...geoOrders.map(o => o.km)).toFixed(1) : '—';
+  const minDist = geoOrders.length
+    ? Math.min(...geoOrders.map(o => o.km)).toFixed(2) : '—';
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 size={24} className="animate-spin text-brand-500" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Delivery Zone Analytics</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {geoOrders.length} GPS-tracked · {noGeoCount} untracked · Store: {STORE_LAT.toFixed(4)}, {STORE_LNG.toFixed(4)}
+          </p>
+        </div>
+        <button onClick={() => { setLoading(true); admin.getOrders({}).then(r => setOrders(r.data.orders || [])).catch(() => {}).finally(() => setLoading(false)); }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-brand-600 transition-colors">
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Mapped Orders', value: geoOrders.length, sub: `${orders.length > 0 ? Math.round(geoOrders.length / orders.length * 100) : 0}% of total`, color: 'brand' },
+          { label: 'Avg Distance',  value: `${avgDist} km`,  sub: 'mean delivery range', color: 'blue' },
+          { label: 'Nearest Order', value: `${minDist} km`,  sub: 'closest customer', color: 'green' },
+          { label: 'Farthest Order',value: `${maxDist} km`,  sub: 'max delivery range', color: 'amber' },
+        ].map(k => (
+          <StatCard key={k.label} label={k.label} value={k.value} sub={k.sub} color={k.color}
+            icon={<MapPin size={14} />} />
+        ))}
+      </div>
+
+      {/* Map + zones */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+        {/* ── Coverage Map ── */}
+        <div className="lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-gray-700">Coverage Map</p>
+            {selectedZone && (
+              <button onClick={() => { setSelectedZone(null); setExpandedZone(null); }}
+                className="text-[11px] text-brand-600 hover:underline flex items-center gap-1">
+                <X size={10} /> Clear filter
+              </button>
+            )}
+          </div>
+
+          {geoOrders.length === 0 ? (
+            <div className="h-72 bg-surface-50 rounded-2xl border border-dashed border-surface-300 flex flex-col items-center justify-center gap-3 text-center px-6">
+              <MapPin size={32} className="text-gray-200" />
+              <p className="text-sm font-semibold text-gray-400">No GPS data yet</p>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Once customers share their location at checkout, orders will appear on this map automatically.
+              </p>
+            </div>
+          ) : (
+            <CoverageMap
+              geoOrders={geoOrders}
+              selectedZone={selectedZone}
+              onSelectZone={z => {
+                setSelectedZone(prev => prev?.label === z.label ? null : z);
+                setExpandedZone(prev => {
+                  const target = ZONE_BANDS.find(b => b.label === z.label)?.label;
+                  return prev === target ? null : target;
+                });
+              }}
+              hoveredOrder={hoveredOrder}
+              onHoverOrder={setHoveredOrder}
+            />
+          )}
+
+          {/* Colour legend */}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {ZONE_BANDS.slice(0, 8).map(b => (
+              <span key={b.label}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer hover:opacity-80 transition-opacity"
+                style={{ background: b.bg, color: b.text, borderColor: b.color + '50' }}
+                onClick={() => {
+                  setSelectedZone(prev => prev?.label === b.label ? null : b);
+                  setExpandedZone(prev => prev === b.label ? null : b.label);
+                }}>
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
+                {b.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Zone accordion ── */}
+        <div className="lg:col-span-3">
+          {/* Sort controls */}
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-gray-700">Zone Breakdown</p>
+            <div className="flex gap-1">
+              {[['count', 'Orders'], ['revenue', 'Revenue'], ['avg', 'Avg AOV']].map(([k, lbl]) => (
+                <button key={k}
+                  onClick={() => setSortKey(k)}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all ${sortKey === k ? 'bg-brand-100 text-brand-700' : 'bg-surface-100 text-gray-500 hover:bg-surface-200'}`}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {zoneData.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 text-sm">No GPS-tracked orders yet</div>
+          ) : (
+            <div className="space-y-2">
+              {zoneData.map(zone => {
+                const isExpanded = expandedZone === zone.label;
+                const isSelected = selectedZone?.label === zone.label;
+                return (
+                  <div key={zone.label}
+                    className="rounded-xl border overflow-hidden transition-shadow"
+                    style={{
+                      borderColor: isSelected ? zone.color : zone.color + '35',
+                      boxShadow: isSelected ? `0 0 0 2px ${zone.color}40` : 'none',
+                    }}>
+
+                    {/* Zone header */}
+                    <button
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors"
+                      style={{ background: zone.bg }}
+                      onClick={() => {
+                        setSelectedZone(prev => prev?.label === zone.label ? null : zone);
+                        setExpandedZone(prev => prev === zone.label ? null : zone.label);
+                      }}
+                    >
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: zone.color }} />
+                      <span className="text-xs font-extrabold flex-1" style={{ color: zone.text }}>{zone.label}</span>
+                      <span className="text-xs font-bold" style={{ color: zone.color }}>{zone.count} order{zone.count !== 1 ? 's' : ''}</span>
+                      <span className="text-xs text-gray-400">{zone.uniqueCustomers} customer{zone.uniqueCustomers !== 1 ? 's' : ''}</span>
+                      <span className="text-xs font-bold text-gray-600">₹{zone.totalRevenue.toLocaleString()}</span>
+                      <ChevronDown size={13} className="flex-shrink-0 transition-transform"
+                        style={{ color: zone.text, transform: isExpanded ? 'rotate(180deg)' : 'none' }} />
+                    </button>
+
+                    {/* Quick stats row */}
+                    <div className="bg-white px-4 py-2 border-t grid grid-cols-4 gap-2 text-center"
+                      style={{ borderColor: zone.color + '20' }}>
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase tracking-wide">Avg Order</p>
+                        <p className="text-xs font-bold text-gray-800">₹{zone.avgOrderValue}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase tracking-wide">Frequency</p>
+                        <p className="text-xs font-bold text-gray-800">{zone.avgOrderFreq}×</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase tracking-wide">Platinum</p>
+                        <p className="text-xs font-bold text-gray-800">{zone.platinumCount}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase tracking-wide">Avg Dist</p>
+                        <p className="text-xs font-bold text-gray-800">{zone.avgDist}km</p>
+                      </div>
+                    </div>
+
+                    {/* Expanded details */}
+                    {isExpanded && (
+                      <div className="bg-white border-t px-4 py-4 space-y-4"
+                        style={{ borderColor: zone.color + '20' }}>
+
+                        {/* Full analytics grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {[
+                            { label: 'Repeat Customers', value: zone.repeatCustomers },
+                            { label: 'Delivered',         value: zone.deliveredCount },
+                            { label: 'Cancelled',         value: zone.cancelledCount, red: true },
+                            { label: 'COD Orders',        value: zone.codCount },
+                            { label: 'UPI Orders',        value: zone.upiCount },
+                            { label: 'Pending',           value: zone.pendingCount },
+                          ].map(s => (
+                            <div key={s.label} className="bg-surface-50 rounded-xl p-3 text-center border border-surface-100">
+                              <p className="text-[10px] text-gray-400 mb-1">{s.label}</p>
+                              <p className={`text-base font-extrabold ${s.red && s.value > 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                                {s.value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Revenue bar */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                            <span>Zone share of tracked revenue</span>
+                            <span>{totalGeoRevenue > 0 ? ((zone.totalRevenue / totalGeoRevenue) * 100).toFixed(1) : 0}%</span>
+                          </div>
+                          <div className="h-2 bg-surface-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${totalGeoRevenue > 0 ? (zone.totalRevenue / totalGeoRevenue) * 100 : 0}%`, background: zone.color }} />
+                          </div>
+                        </div>
+
+                        {/* Top items */}
+                        {zone.topItems.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">Top Items Ordered</p>
+                            <div className="space-y-1.5">
+                              {zone.topItems.map(([name, qty], rank) => {
+                                const pct = zone.topItems[0][1] > 0 ? (qty / zone.topItems[0][1]) * 100 : 0;
+                                return (
+                                  <div key={name} className="flex items-center gap-2">
+                                    <span className="text-[9px] font-extrabold text-gray-400 w-4 flex-shrink-0">#{rank + 1}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-xs text-gray-700 font-medium truncate flex-1">{name}</span>
+                                        <span className="text-xs font-bold text-gray-500 ml-2 flex-shrink-0">{qty}×</span>
+                                      </div>
+                                      <div className="h-1.5 bg-surface-100 rounded-full overflow-hidden">
+                                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: zone.color }} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Customer profiles */}
+                        {zone.orders.length > 0 && (() => {
+                          const custMap = {};
+                          zone.orders.forEach(o => {
+                            const k = o.userId?._id || o.phone || 'unknown';
+                            if (!custMap[k]) {
+                              custMap[k] = {
+                                name: o.customerName || o.userId?.name || '—',
+                                phone: o.phone || o.userId?.phone || '—',
+                                orders: 0,
+                                revenue: 0,
+                                isPlatinum: o.isPlatinumOrder,
+                              };
+                            }
+                            custMap[k].orders++;
+                            custMap[k].revenue += o.totalPrice || 0;
+                          });
+                          const customers = Object.values(custMap)
+                            .sort((a, b) => b.orders - a.orders)
+                            .slice(0, 5);
+                          return (
+                            <div>
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">Top Customers in Zone</p>
+                              <div className="space-y-1.5">
+                                {customers.map((c, i) => (
+                                  <div key={i} className="flex items-center gap-2.5 py-1.5 border-b border-surface-50 last:border-0">
+                                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-extrabold flex-shrink-0"
+                                      style={{ background: zone.bg, color: zone.text }}>
+                                      {i + 1}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-semibold text-gray-800 truncate">{c.name}</p>
+                                      <p className="text-[10px] text-gray-400">{c.phone}</p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      <p className="text-xs font-bold text-gray-700">{c.orders} order{c.orders !== 1 ? 's' : ''}</p>
+                                      <p className="text-[10px] text-gray-400">₹{c.revenue.toLocaleString()}</p>
+                                    </div>
+                                    {c.isPlatinum && (
+                                      <Crown size={10} className="text-orange-400 flex-shrink-0" />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Order list */}
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+                            All Orders in Zone ({zone.orders.length})
+                          </p>
+                          <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                            {zone.orders.map(o => (
+                              <div key={o._id}
+                                className="flex items-center gap-2.5 py-1.5 border-b border-surface-50 last:border-0 text-xs">
+                                <span className="font-mono text-gray-400 flex-shrink-0">#{o._id?.slice(-6).toUpperCase()}</span>
+                                <span className="text-gray-600 flex-1 truncate">{o.customerName || o.phone || '—'}</span>
+                                <span className="text-gray-500 flex-shrink-0">{o.km.toFixed(1)} km</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold flex-shrink-0 ${STATUS_COLORS[o.status] || 'bg-gray-100 text-gray-600'}`}>
+                                  {o.status?.replace(/-/g, ' ')}
+                                </span>
+                                <span className="font-bold text-gray-800 flex-shrink-0">₹{o.totalPrice}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Revenue by zone bar chart */}
+      {zoneData.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-bold text-gray-700">Revenue Distribution by Zone</p>
+            <p className="text-xs text-gray-400">Total tracked: ₹{totalGeoRevenue.toLocaleString()}</p>
+          </div>
+          <div className="space-y-2.5">
+            {zoneData.map(zone => {
+              const pct = totalGeoRevenue > 0 ? (zone.totalRevenue / totalGeoRevenue) * 100 : 0;
+              return (
+                <div key={zone.label} className="flex items-center gap-3">
+                  <div className="w-[72px] text-xs font-semibold text-gray-500 flex-shrink-0">{zone.label}</div>
+                  <div className="flex-1 h-5 bg-surface-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full flex items-center justify-end pr-1.5 transition-all duration-700"
+                      style={{ width: `${Math.max(pct, 0.5)}%`, background: zone.color }}>
+                      {pct > 8 && (
+                        <span className="text-[9px] font-extrabold text-white">{pct.toFixed(0)}%</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-600 w-24 text-right flex-shrink-0">
+                    <span className="font-bold">₹{zone.totalRevenue.toLocaleString()}</span>
+                    <span className="text-gray-400"> · {zone.count} ord</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Untracked warning */}
+      {noGeoCount > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-xl">
+          <AlertTriangle size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">
+              {noGeoCount} order{noGeoCount !== 1 ? 's' : ''} without GPS coordinates
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              These are older orders placed before location capture was enabled.
+              All new orders from customers who grant location permission will appear on the map automatically.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { isLoggedIn, isAdmin, logout } = useAuth();
@@ -2043,6 +2763,7 @@ export default function AdminPage() {
       case 'overview':      return <OverviewSection stats={stats} onRefresh={loadStats} />;
       case 'store':         return <StoreSection />;
       case 'orders':        return <OrdersSection />;
+      case 'zones':         return <ZonesSection />;
       case 'payments':      return <PaymentsSection />;
       case 'platinum':      return <PlatinumSection />;
       case 'subscriptions': return <SubscriptionsSection />;

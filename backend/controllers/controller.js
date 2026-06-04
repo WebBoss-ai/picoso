@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest } from '../models/Model.js';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 
 // Auth Controllers
@@ -1142,6 +1142,37 @@ export const getNotifyRequests = async (req, res) => {
 export const markNotified = async (req, res) => {
   try {
     await NotifyRequest.findByIdAndUpdate(req.params.id, { notified: true });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// ── Closed Checkout Captures ─────────────────────────────────────────────────
+export const saveClosedCheckout = async (req, res) => {
+  try {
+    const { phone, userId, items, total } = req.body;
+    if (!items || !items.length) return res.status(400).json({ error: 'No items' });
+    const record = await ClosedCheckout.create({
+      phone: phone || '',
+      userId: userId || null,
+      items,
+      total: total || 0,
+    });
+    res.json({ record });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getClosedCheckouts = async (req, res) => {
+  try {
+    const pending  = await ClosedCheckout.find({ notified: false }).sort('-createdAt');
+    const total    = await ClosedCheckout.countDocuments();
+    const notified = await ClosedCheckout.countDocuments({ notified: true });
+    res.json({ records: pending, total, notified });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const markClosedCheckoutNotified = async (req, res) => {
+  try {
+    await ClosedCheckout.findByIdAndUpdate(req.params.id, { notified: true });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

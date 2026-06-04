@@ -4,9 +4,9 @@ import Link from 'next/link';
 import {
   Search, X, Leaf, Star, ChefHat, Clock,
   Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee,
-  LayoutGrid, BellRing, AlertTriangle, PhoneCall, CheckCircle2 as CheckCircleIcon,
+  LayoutGrid,
 } from 'lucide-react';
-import { bowls, categories, healthySubscription, storeStatus as storeApi } from '@/lib/api';
+import { bowls, categories, healthySubscription } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
@@ -225,30 +225,9 @@ export default function MenuPage() {
   const [catsLoading, setCatsLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [subModalOpen, setSubModalOpen] = useState(false);
-  const [store, setStore]             = useState(null); // null = loading
-  const [notifyPhone, setNotifyPhone] = useState('');
-  const [notifyDone, setNotifyDone]   = useState(false);
-  const [notifySending, setNotifySend] = useState(false);
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
-
-  // Load store status
-  useEffect(() => {
-    storeApi.get()
-      .then(res => setStore(res.data.status))
-      .catch(() => setStore({ isOpen: true })); // fail-safe: assume open
-  }, []);
-
-  const submitNotify = async () => {
-    if (!notifyPhone.trim()) return;
-    setNotifySend(true);
-    try {
-      await storeApi.notifyMe({ phone: notifyPhone.trim() });
-      setNotifyDone(true);
-    } catch {}
-    setNotifySend(false);
-  };
 
   // Load categories
   useEffect(() => {
@@ -469,60 +448,6 @@ export default function MenuPage() {
           </div>
         </div>
       </div>
-
-      {/* ── Store Closed Banner ──────────────────────────────────── */}
-      {store && !store.isOpen && (
-        <div className="bg-red-50 border-b border-red-200">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              {/* Message */}
-              <div className="flex items-start gap-3 flex-1">
-                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <AlertTriangle size={18} className="text-red-500" />
-                </div>
-                <div>
-                  <p className="font-bold text-red-800 text-sm">We&apos;re currently closed</p>
-                  <p className="text-red-600 text-xs mt-0.5 leading-snug">{store.closedReason}</p>
-                  <p className="text-red-400 text-[11px] mt-1">Operating hours: {store.openingTime} – {store.closingTime}</p>
-                </div>
-              </div>
-
-              {/* Notify-me form */}
-              <div className="sm:w-80">
-                {notifyDone ? (
-                  <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-3">
-                    <CheckCircleIcon size={16} className="text-brand-500 flex-shrink-0" />
-                    <p className="text-sm font-semibold text-brand-700">
-                      We&apos;ll notify you when we&apos;re back!
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <PhoneCall size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="tel"
-                        value={notifyPhone}
-                        onChange={e => setNotifyPhone(e.target.value)}
-                        placeholder="Your phone number"
-                        className="w-full pl-8 pr-3 py-2.5 text-sm border border-red-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-red-300"
-                      />
-                    </div>
-                    <button
-                      onClick={submitNotify}
-                      disabled={notifySending || !notifyPhone.trim()}
-                      className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors whitespace-nowrap"
-                    >
-                      <BellRing size={13} />
-                      Notify me
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Content area ─────────────────────────────────────────── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 pb-28">

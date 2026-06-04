@@ -63,11 +63,14 @@ router.put('/admin/platinum/:id/approve', authenticate, isAdmin, controller.appr
 router.put('/admin/platinum/:id/reject', authenticate, isAdmin, controller.rejectPlatinumPayment);
 
 // Store status (public read, admin write)
-router.get('/store/status',                             controller.getStoreStatus);
-router.post('/store/notify',                            controller.addNotifyRequest);
-router.put('/admin/store/status',  authenticate, isAdmin, controller.updateStoreStatus);
-router.get('/admin/store/notify-requests', authenticate, isAdmin, controller.getNotifyRequests);
+router.get('/store/status',                                        controller.getStoreStatus);
+router.post('/store/notify',                                       controller.addNotifyRequest);
+router.post('/store/closed-checkout',                              controller.saveClosedCheckout);
+router.put('/admin/store/status',           authenticate, isAdmin, controller.updateStoreStatus);
+router.get('/admin/store/notify-requests',  authenticate, isAdmin, controller.getNotifyRequests);
 router.put('/admin/store/notify-requests/:id/notified', authenticate, isAdmin, controller.markNotified);
+router.get('/admin/store/closed-checkouts', authenticate, isAdmin, controller.getClosedCheckouts);
+router.put('/admin/store/closed-checkouts/:id/notified', authenticate, isAdmin, controller.markClosedCheckoutNotified);
 
 // Admin — Stats
 router.get('/admin/stats', authenticate, isAdmin, controller.getDashboardStats);

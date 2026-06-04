@@ -8,6 +8,25 @@ import {
 } from 'lucide-react';
 import { delivery } from '@/lib/api';
 
+// ─── Store location & distance ───────────────────────────────────────────────
+const STORE_LAT = 28.437099;
+const STORE_LNG = 77.072771;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDist(km) {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 const fmt = (d) => {
   if (!d) return '—';
@@ -33,12 +52,20 @@ const STATUS_LABEL = {
   'out-for-delivery': 'Out for Delivery', delivered: 'Delivered', cancelled: 'Cancelled',
 };
 
-// ─── Map component (OpenStreetMap + Nominatim, no API key) ──────────────────
-function AddressMap({ address }) {
-  const [coords, setCoords] = useState(null);
-  const [mapLoading, setMapLoading] = useState(true);
+// ─── Map component (OpenStreetMap, uses GPS coords when available) ───────────
+function AddressMap({ address, lat, lng }) {
+  const [coords, setCoords] = useState(
+    lat != null && lng != null ? { lat, lon: lng } : null
+  );
+  const [mapLoading, setMapLoading] = useState(lat == null || lng == null);
 
   useEffect(() => {
+    // If we already have GPS coords, skip geocoding
+    if (lat != null && lng != null) {
+      setCoords({ lat, lon: lng });
+      setMapLoading(false);
+      return;
+    }
     if (!address) { setMapLoading(false); return; }
     const q = encodeURIComponent(address);
     fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
@@ -50,9 +77,14 @@ function AddressMap({ address }) {
       })
       .catch(() => {})
       .finally(() => setMapLoading(false));
-  }, [address]);
+  }, [address, lat, lng]);
 
-  const gmaps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || '')}`;
+  // Route from store to customer
+  const navRoute = coords
+    ? `https://www.google.com/maps/dir/${STORE_LAT},${STORE_LNG}/${coords.lat},${coords.lon}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || '')}`;
+
+  const dist = coords ? haversineKm(STORE_LAT, STORE_LNG, coords.lat, coords.lon) : null;
 
   if (mapLoading) {
     return <div className="h-44 rounded-2xl shimmer" />;
@@ -68,8 +100,14 @@ function AddressMap({ address }) {
             className="w-full h-44 pointer-events-none"
             loading="lazy"
           />
+          {/* Distance pill */}
+          {dist != null && (
+            <div className="absolute top-2 left-2 flex items-center gap-1 bg-white/95 border border-cyan-200 text-cyan-700 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+              <MapPin size={10} /> {formatDist(dist)} from store
+            </div>
+          )}
           <div className="absolute bottom-2 right-2">
-            <a href={gmaps} target="_blank" rel="noopener noreferrer"
+            <a href={navRoute} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 bg-white text-gray-800 text-xs font-bold px-3 py-1.5 rounded-xl shadow-md border border-gray-200 hover:bg-gray-50 transition-colors">
               <Navigation size={12} className="text-blue-600" /> Navigate
             </a>
@@ -79,7 +117,7 @@ function AddressMap({ address }) {
         <div className="h-44 rounded-2xl bg-surface-50 border border-dashed border-surface-300 flex flex-col items-center justify-center gap-2">
           <MapPin size={22} className="text-gray-300" />
           <p className="text-xs text-gray-400">Map unavailable for this address</p>
-          <a href={gmaps} target="_blank" rel="noopener noreferrer"
+          <a href={navRoute} target="_blank" rel="noopener noreferrer"
             className="text-xs font-semibold text-brand-600 hover:underline flex items-center gap-1">
             <Navigation size={11} /> Open in Google Maps
           </a>
@@ -121,8 +159,8 @@ function OrderModal({ order, onClose, onPickup, onDeliver, loading }) {
 
             <div className="px-5 py-4 space-y-5">
 
-              {/* Map */}
-              <AddressMap address={fullAddr} />
+              {/* Map — pass GPS coords when available for instant accurate map */}
+              <AddressMap address={fullAddr} lat={addr?.lat} lng={addr?.lng} />
 
               {/* Address */}
               <div className="flex gap-3 p-4 bg-surface-50 rounded-2xl border border-surface-100">
@@ -136,6 +174,14 @@ function OrderModal({ order, onClose, onPickup, onDeliver, loading }) {
                   {(addr?.area || addr?.city) && (
                     <p className="text-xs text-gray-500 mt-0.5">{[addr.area, addr.city].filter(Boolean).join(', ')}</p>
                   )}
+                  {addr?.lat != null && addr?.lng != null && (() => {
+                    const km = haversineKm(STORE_LAT, STORE_LNG, addr.lat, addr.lng);
+                    return (
+                      <span className="inline-flex items-center gap-1 mt-1.5 bg-cyan-50 border border-cyan-200 text-cyan-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                        <Navigation size={9} /> {formatDist(km)} from store
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -275,6 +321,9 @@ function OrderCard({ order, onView, compact = false }) {
   const isCOD = order.paymentMethod === 'cod';
   const grandTotal = (order.totalPrice || 0) + (order.deliveryFee || 0);
 
+  const hasCoords = addr?.lat != null && addr?.lng != null;
+  const distKm    = hasCoords ? haversineKm(STORE_LAT, STORE_LNG, addr.lat, addr.lng) : null;
+
   return (
     <div
       onClick={() => onView(order)}
@@ -282,12 +331,17 @@ function OrderCard({ order, onView, compact = false }) {
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-bold text-gray-400">#</span>
             <span className="text-sm font-bold text-gray-900">{order._id?.slice(-6).toUpperCase()}</span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-500'}`}>
               {STATUS_LABEL[order.status] || order.status}
             </span>
+            {distKm != null && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-cyan-50 border border-cyan-200 text-cyan-700 px-1.5 py-0.5 rounded-full">
+                <Navigation size={8} /> {formatDist(distKm)}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 text-xs text-gray-500">
             <User size={11} /> {order.customerName || 'Customer'}
@@ -329,6 +383,12 @@ function ActiveDeliveryBanner({ order, onView, onDeliver, actionLoading }) {
   const isCOD = order.paymentMethod === 'cod';
   const grandTotal = (order.totalPrice || 0) + (order.deliveryFee || 0);
 
+  const hasCoords = addr?.lat != null && addr?.lng != null;
+  const distKm    = hasCoords ? haversineKm(STORE_LAT, STORE_LNG, addr.lat, addr.lng) : null;
+  const navRoute  = hasCoords
+    ? `https://www.google.com/maps/dir/${STORE_LAT},${STORE_LNG}/${addr.lat},${addr.lng}`
+    : null;
+
   return (
     <div className="rounded-3xl overflow-hidden shadow-xl mb-6"
       style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%)' }}>
@@ -339,6 +399,11 @@ function ActiveDeliveryBanner({ order, onView, onDeliver, actionLoading }) {
         <div className="flex items-center gap-2 mb-4">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
           <span className="text-green-300 text-xs font-bold uppercase tracking-widest">Active Delivery</span>
+          {distKm != null && (
+            <span className="ml-auto flex items-center gap-1 bg-white/15 text-green-200 text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20">
+              <Navigation size={10} /> {formatDist(distKm)} away
+            </span>
+          )}
         </div>
 
         <div className="flex items-start justify-between gap-4 mb-4">
@@ -362,6 +427,12 @@ function ActiveDeliveryBanner({ order, onView, onDeliver, actionLoading }) {
             <p className="text-white text-sm font-semibold leading-snug">{addr?.fullAddress}</p>
             {addr?.landmark && <p className="text-green-200 text-xs mt-0.5">Near: {addr.landmark}</p>}
             {(addr?.area || addr?.city) && <p className="text-green-200 text-xs">{[addr?.area, addr?.city].filter(Boolean).join(', ')}</p>}
+            {navRoute && (
+              <a href={navRoute} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-2 text-[11px] font-bold text-green-200 hover:text-white underline underline-offset-2 transition-colors">
+                <Navigation size={10} /> Open route in Maps
+              </a>
+            )}
           </div>
         </div>
 

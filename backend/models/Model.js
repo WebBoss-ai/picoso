@@ -220,5 +220,16 @@ export const PlatinumCard = mongoose.model('PlatinumCard', platinumCardSchema);
 export const HealthySubscription = mongoose.model('HealthySubscription', healthySubscriptionSchema);
 export const CategoryConfig = mongoose.model('CategoryConfig', categoryConfigSchema);
 export const DeliveryPartner = mongoose.model('DeliveryPartner', deliveryPartnerSchema);
-export const StoreStatus = mongoose.model('StoreStatus', storeStatusSchema);
-export const NotifyRequest = mongoose.model('NotifyRequest', notifyRequestSchema);
+// ── Closed-store checkout captures ──────────────────────────────────────────
+const closedCheckoutSchema = new mongoose.Schema({
+  phone:    { type: String, default: '' },
+  userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  items:    [{ name: String, price: Number, qty: Number }],
+  total:    { type: Number, default: 0 },
+  notified: { type: Boolean, default: false },  // admin marked as notified
+  createdAt:{ type: Date, default: Date.now },
+});
+
+export const StoreStatus     = mongoose.model('StoreStatus',    storeStatusSchema);
+export const NotifyRequest   = mongoose.model('NotifyRequest',  notifyRequestSchema);
+export const ClosedCheckout  = mongoose.model('ClosedCheckout', closedCheckoutSchema);
