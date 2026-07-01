@@ -117,4 +117,36 @@ export const delivery = {
   deliver:        (id)    => deliveryApi.put(`/delivery/orders/${id}/deliver`),
 };
 
+const agentApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+});
+agentApi.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('picoso_agent_token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export const agentAuth = {
+  login: (data) => agentApi.post('/agents/auth', data),
+  getProfile: () => agentApi.get('/agents/me'),
+};
+
+export const agentRef = {
+  trackScan:    (agentCode) => api.post(`/ref/${agentCode}/scan`),
+  register:     (agentCode, phone) => api.post(`/ref/${agentCode}/register`, { phone }),
+};
+
+export const adminAgents = {
+  getAll:         ()         => api.get('/admin/agents'),
+  getStats:       ()         => api.get('/admin/agents/stats'),
+  getSettings:    ()         => api.get('/admin/agents/settings'),
+  updateSettings: (data)     => api.put('/admin/agents/settings', data),
+  getById:        (id)       => api.get(`/admin/agents/${id}`),
+  update:         (id, data) => api.put(`/admin/agents/${id}`, data),
+  adjustWallet:   (id, data) => api.put(`/admin/agents/${id}/wallet`, data),
+  delete:         (id)       => api.delete(`/admin/agents/${id}`),
+};
+
 export default api;

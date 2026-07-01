@@ -10,9 +10,10 @@ import {
   Activity, PieChart, BarChart2, Zap, AlertTriangle,
   ToggleLeft, ToggleRight, GripVertical, Tag,
   Store, BellRing, PhoneCall, CheckCheck, Power, ShoppingCart,
-  MapPin, Navigation,
+  MapPin, Navigation, QrCode, Wallet, ScanLine, IndianRupee,
+  UserCheck, BadgeDollarSign, ChevronRight,
 } from 'lucide-react';
-import { admin } from '@/lib/api';
+import { admin, adminAgents, agentAuth as agentAuthApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const SIDEBAR_ITEMS = [
@@ -26,6 +27,7 @@ const SIDEBAR_ITEMS = [
   { id: 'products',       label: 'Products',         icon: UtensilsCrossed },
   { id: 'categories',     label: 'Categories',       icon: Menu },
   { id: 'users',          label: 'Users',            icon: Users },
+  { id: 'agents',         label: 'Ad Agents',        icon: QrCode },
 ];
 
 // ─── Store location & distance utilities ─────────────────────────────────────
@@ -2180,6 +2182,553 @@ function UsersSection() {
   );
 }
 
+// ─── Ad Agents Section ───────────────────────────────────────────────────────
+
+const BASE_URL_ADMIN = typeof window !== 'undefined' ? window.location.origin : 'https://picoso.in';
+
+function AgentDetailModal({ agentId, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [walletAmt, setWalletAmt] = useState('');
+  const [walletNote, setWalletNote] = useState('');
+  const [adjusting, setAdjusting] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    adminAgents.getById(agentId)
+      .then(r => setData(r.data))
+      .finally(() => setLoading(false));
+  }, [agentId]);
+
+  const handleWalletAdjust = async () => {
+    if (!walletAmt) return;
+    setAdjusting(true);
+    try {
+      const res = await adminAgents.adjustWallet(agentId, { amount: parseFloat(walletAmt), note: walletNote });
+      setData(prev => ({ ...prev, agent: res.data.agent }));
+      setWalletAmt('');
+      setWalletNote('');
+    } catch {}
+    setAdjusting(false);
+  };
+
+  const handleToggleActive = async () => {
+    if (!data) return;
+    try {
+      const res = await adminAgents.update(agentId, { isActive: !data.agent.isActive });
+      setData(prev => ({ ...prev, agent: res.data.agent }));
+    } catch {}
+  };
+
+  const fmtDt = (d) => d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h2 className="font-bold text-gray-900 text-lg">{data?.agent?.name || 'Loading…'}</h2>
+            <p className="text-gray-500 text-sm">{data?.agent?.phone} &nbsp;·&nbsp; Code: <span className="font-mono font-bold">{data?.agent?.agentCode}</span></p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+            <X size={18} className="text-gray-400" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center py-12">
+            <Loader2 size={24} className="animate-spin text-emerald-500" />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {/* Stats row */}
+            <div className="grid grid-cols-4 gap-px bg-gray-100 border-b">
+              {[
+                { label: 'Wallet', value: `₹${data.agent.wallet?.toLocaleString('en-IN') || 0}`, color: 'text-emerald-600' },
+                { label: 'Scans', value: data.agent.totalScans || 0, color: 'text-blue-600' },
+                { label: 'Leads', value: data.agent.totalLeads || 0, color: 'text-violet-600' },
+                { label: 'Orders', value: data.agent.totalOrders || 0, color: 'text-amber-600' },
+              ].map(s => (
+                <div key={s.label} className="bg-white p-4 text-center">
+                  <div className={`text-xl font-bold ${s.color}`}>{s.value}</div>
+                  <div className="text-gray-400 text-xs">{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Status + Wallet controls */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 bg-gray-50 rounded-xl p-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</p>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${data.agent.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                      {data.agent.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                    <button onClick={handleToggleActive} className="text-xs px-3 py-1 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                      {data.agent.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">Joined {fmtDt(data.agent.createdAt)}</p>
+                </div>
+
+                <div className="flex-1 bg-gray-50 rounded-xl p-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Adjust Wallet</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Amount (+ or -)"
+                      value={walletAmt}
+                      onChange={e => setWalletAmt(e.target.value)}
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      onClick={handleWalletAdjust}
+                      disabled={adjusting || !walletAmt}
+                      className="px-3 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-400 disabled:opacity-50 transition-colors"
+                    >
+                      {adjusting ? <Loader2 size={14} className="animate-spin" /> : 'Apply'}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Note (optional)"
+                    value={walletNote}
+                    onChange={e => setWalletNote(e.target.value)}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+              </div>
+
+              {/* QR Preview */}
+              <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-4">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`${BASE_URL_ADMIN}/ref/${data.agent.agentCode}`)}&bgcolor=ffffff&color=065f46`}
+                  alt="QR"
+                  className="w-20 h-20 rounded-lg border"
+                />
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Agent Referral Link</p>
+                  <p className="text-xs font-mono text-gray-700 break-all">{BASE_URL_ADMIN}/ref/{data.agent.agentCode}</p>
+                  <div className="mt-2 flex gap-2">
+                    <a href={`${BASE_URL_ADMIN}/ref/${data.agent.agentCode}`} target="_blank" rel="noopener noreferrer"
+                      className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors">
+                      Preview page
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                {[
+                  { id: 'overview', label: 'Scans' },
+                  { id: 'leads', label: 'Leads' },
+                  { id: 'commissions', label: 'Commissions' },
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === 'overview' && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-2">Recent QR scans</p>
+                  {data.analytics.scans.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">No scans yet</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                      {data.analytics.scans.map((s, i) => (
+                        <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                          <span className="text-gray-600 text-xs">QR Scanned</span>
+                          <span className="text-gray-400 text-xs">{fmtDt(s.scannedAt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'leads' && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-2">Registered leads</p>
+                  {data.analytics.leads.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">No leads yet</p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {data.analytics.leads.map((l, i) => (
+                        <div key={i} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2.5">
+                          <div>
+                            <div className="text-sm font-medium text-gray-800">{l.userId?.name || 'User'}</div>
+                            <div className="text-xs text-gray-400">{l.userId?.phone}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-gray-400">{fmtDt(l.registeredAt)}</div>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${l.userId?.giftRedeemed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {l.userId?.giftRedeemed ? 'Gift used' : 'Gift pending'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'commissions' && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-2">Commission history</p>
+                  {data.analytics.commissions.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">No commissions yet</p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {data.analytics.commissions.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2.5">
+                          <div>
+                            <div className="text-sm font-medium text-gray-800">{c.userId?.name || c.userId?.phone}</div>
+                            <div className="text-xs text-gray-400">Order • {fmtDt(c.createdAt)}</div>
+                          </div>
+                          <span className="text-emerald-600 font-bold text-sm">+₹{c.amount}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentsSection() {
+  const [agents, setAgents] = useState([]);
+  const [overallStats, setOverallStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
+  const [addingAgent, setAddingAgent] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // Settings state
+  const [settings, setSettings] = useState({ displayEarningPerOrder: 0, actualCommissionPerOrder: 20 });
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [displayInput, setDisplayInput] = useState('');
+  const [actualInput, setActualInput] = useState('');
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
+  const loadAll = () => {
+    setLoading(true);
+    Promise.all([adminAgents.getAll(), adminAgents.getStats()])
+      .then(([agRes, stRes]) => {
+        setAgents(agRes.data.agents || []);
+        setOverallStats(stRes.data.stats || {});
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  const loadSettings = () => {
+    setSettingsLoading(true);
+    adminAgents.getSettings()
+      .then(r => {
+        const s = r.data.settings;
+        setSettings(s);
+        setDisplayInput(String(s.displayEarningPerOrder ?? 0));
+        setActualInput(String(s.actualCommissionPerOrder ?? 20));
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoading(false));
+  };
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      const res = await adminAgents.updateSettings({
+        displayEarningPerOrder:   parseFloat(displayInput)  || 0,
+        actualCommissionPerOrder: parseFloat(actualInput) || 0,
+      });
+      setSettings(res.data.settings);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 2000);
+    } catch {}
+    setSavingSettings(false);
+  };
+  useEffect(() => { loadAll(); loadSettings(); }, []);
+
+  const filtered = agents.filter(a => {
+    if (filterStatus === 'active' && !a.isActive) return false;
+    if (filterStatus === 'inactive' && a.isActive) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return a.name?.toLowerCase().includes(q) || a.phone?.includes(q) || a.agentCode?.toLowerCase().includes(q);
+  });
+
+  const handleDeactivate = async (id) => {
+    try {
+      await adminAgents.delete(id);
+      setAgents(prev => prev.map(a => a._id === id ? { ...a, isActive: false } : a));
+    } catch {}
+  };
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Advertisement Agents</h2>
+          <p className="text-sm text-gray-500">Manage door-to-door agents and their QR campaigns</p>
+        </div>
+        <button
+          onClick={() => setAddingAgent(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-xl font-medium text-sm hover:bg-emerald-400 transition-colors shadow-sm"
+        >
+          <Plus size={15} /> Add Agent
+        </button>
+      </div>
+
+      {/* Overview Stats */}
+      {overallStats && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {[
+            { label: 'Total Agents', value: overallStats.totalAgents, icon: <Users size={16} />, color: 'text-blue-600 bg-blue-50' },
+            { label: 'Active', value: overallStats.activeAgents, icon: <UserCheck size={16} />, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Total Scans', value: overallStats.totalScans, icon: <ScanLine size={16} />, color: 'text-violet-600 bg-violet-50' },
+            { label: 'Total Leads', value: overallStats.totalLeads, icon: <Users size={16} />, color: 'text-amber-600 bg-amber-50' },
+            { label: 'Commissions Paid', value: `₹${overallStats.totalCommissionsPaid?.toLocaleString('en-IN') || 0}`, icon: <IndianRupee size={16} />, color: 'text-rose-600 bg-rose-50' },
+          ].map(s => (
+            <div key={s.label} className="card p-4">
+              <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${s.color} mb-2`}>{s.icon}</div>
+              <div className="text-xl font-bold text-gray-900">{s.value}</div>
+              <div className="text-gray-400 text-xs">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Commission Settings */}
+      <div className="card p-5 border border-emerald-100 bg-emerald-50/50">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-gray-900 text-sm">Commission Rate Settings</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Control what agents see vs. what gets actually credited</p>
+          </div>
+          {settingsLoading && <Loader2 size={14} className="animate-spin text-emerald-500 mt-1" />}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Displayed to Agent (₹ per order)
+              <span className="font-normal text-gray-400 ml-1">— what agents see on their dashboard</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={displayInput}
+              onChange={e => setDisplayInput(e.target.value)}
+              placeholder="e.g. 40"
+              className="input-field w-full"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Currently showing: <span className="font-semibold text-emerald-600">₹{settings.displayEarningPerOrder}</span>
+              {settings.displayEarningPerOrder === 0 && ' (hidden from agents)'}
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Actual Wallet Credit (₹ per order)
+              <span className="font-normal text-gray-400 ml-1">— what gets credited to wallet</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={actualInput}
+              onChange={e => setActualInput(e.target.value)}
+              placeholder="e.g. 20"
+              className="input-field w-full"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Currently crediting: <span className="font-semibold text-blue-600">₹{settings.actualCommissionPerOrder}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-4">
+          <button
+            onClick={saveSettings}
+            disabled={savingSettings}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-medium text-sm hover:bg-emerald-400 disabled:opacity-50 transition-colors"
+          >
+            {savingSettings
+              ? <><Loader2 size={13} className="animate-spin" /> Saving…</>
+              : settingsSaved
+              ? <><CheckCircle2 size={13} /> Saved!</>
+              : <><Save size={13} /> Save Settings</>
+            }
+          </button>
+          <p className="text-xs text-gray-400">
+            Changes take effect immediately for all new commissions.
+          </p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
+          <input className="input-field pl-10" placeholder="Search by name, phone, code…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="input-field sm:w-40" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <option value="">All Agents</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button onClick={loadAll} className="btn-secondary flex items-center gap-1.5 px-4 py-2.5 text-sm">
+          <RefreshCw size={14} /> Refresh
+        </button>
+      </div>
+
+      {/* Add Agent Form */}
+      {addingAgent && (
+        <div className="card p-4 border-2 border-emerald-200 bg-emerald-50">
+          <h3 className="font-semibold text-gray-900 mb-3">Add New Agent</h3>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              className="input-field flex-1"
+              placeholder="Full name"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+            />
+            <input
+              className="input-field flex-1"
+              placeholder="Phone number"
+              value={newPhone}
+              onChange={e => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              type="tel"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  if (!newName || !newPhone) return;
+                  setCreating(true);
+                  try {
+                    await agentAuthApi.login({ name: newName.trim(), phone: newPhone });
+                    loadAll();
+                    setAddingAgent(false);
+                    setNewName('');
+                    setNewPhone('');
+                  } catch {}
+                  setCreating(false);
+                }}
+                disabled={creating || !newName || newPhone.length !== 10}
+                className="px-4 py-2.5 bg-emerald-500 text-white rounded-xl font-medium text-sm hover:bg-emerald-400 disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {creating ? <Loader2 size={14} className="animate-spin" /> : 'Create'}
+              </button>
+              <button onClick={() => setAddingAgent(false)} className="px-4 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Agents Table */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <QrCode size={32} className="mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No agents found</p>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Agent</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Code</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Wallet</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Scans</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Leads</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Orders</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filtered.map(a => (
+                  <tr key={a._id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{a.name}</div>
+                      <div className="text-xs text-gray-400">{a.phone}</div>
+                      <div className="text-xs text-gray-300 hidden sm:block">Joined {fmtDate(a.createdAt)}</div>
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded-lg text-gray-700">{a.agentCode}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="font-semibold text-emerald-600">₹{(a.wallet || 0).toLocaleString('en-IN')}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600 hidden sm:table-cell">{a.totalScans || 0}</td>
+                    <td className="px-4 py-3 text-right text-gray-600 hidden sm:table-cell">{a.totalLeads || 0}</td>
+                    <td className="px-4 py-3 text-right text-gray-600 hidden md:table-cell">{a.totalOrders || 0}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${a.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {a.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={() => setSelectedAgentId(a._id)}
+                          className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 transition-colors"
+                          title="View details"
+                        >
+                          <ChevronRight size={14} />
+                        </button>
+                        {a.isActive && (
+                          <button
+                            onClick={() => handleDeactivate(a._id)}
+                            className="p-1.5 hover:bg-red-50 rounded-lg text-red-400 transition-colors"
+                            title="Deactivate"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {selectedAgentId && (
+        <AgentDetailModal agentId={selectedAgentId} onClose={() => { setSelectedAgentId(null); loadAll(); }} />
+      )}
+    </div>
+  );
+}
+
 // ─── Delivery Zones Section ───────────────────────────────────────────────────
 
 const ZONE_BANDS = [
@@ -2770,6 +3319,7 @@ export default function AdminPage() {
       case 'products':      return <ProductsSection />;
       case 'categories':    return <CategoriesSection />;
       case 'users':         return <UsersSection />;
+      case 'agents':        return <AgentsSection />;
       default: return null;
     }
   };

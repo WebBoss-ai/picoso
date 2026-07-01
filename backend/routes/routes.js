@@ -1,6 +1,8 @@
 import express from 'express';
 import * as controller from '../controllers/controller.js';
+import * as agentController from '../controllers/agentController.js';
 import { authenticate, isAdmin, authenticateDelivery } from '../middleware/auth.js';
+import { authenticateAgent } from '../middleware/agentAuth.js';
 import { uploadToS3 } from '../utils/s3.js';
 
 const router = express.Router();
@@ -101,5 +103,24 @@ router.get('/delivery/orders/history',   authenticateDelivery,      controller.g
 router.put('/delivery/orders/:id/pickup',  authenticateDelivery,    controller.pickupOrder);
 router.put('/delivery/orders/:id/deliver', authenticateDelivery,    controller.markDelivered);
 router.get('/delivery/stats',            authenticateDelivery,      controller.getDeliveryStats);
+
+// ── Advertisement Agents ───────────────────────────────────────────────────
+// Public — lead capture
+router.post('/agents/auth',                                        agentController.agentLogin);
+router.post('/ref/:agentCode/scan',                                agentController.trackAgentScan);
+router.post('/ref/:agentCode/register',                            agentController.registerAgentLead);
+
+// Authenticated agent
+router.get('/agents/me', authenticateAgent,                        agentController.getAgentProfile);
+
+// Admin — agents management
+router.get('/admin/agents',                authenticate, isAdmin,  agentController.adminGetAllAgents);
+router.get('/admin/agents/stats',          authenticate, isAdmin,  agentController.adminAgentStats);
+router.get('/admin/agents/settings',       authenticate, isAdmin,  agentController.adminGetAgentSettings);
+router.put('/admin/agents/settings',       authenticate, isAdmin,  agentController.adminUpdateAgentSettings);
+router.get('/admin/agents/:id',            authenticate, isAdmin,  agentController.adminGetAgentDetail);
+router.put('/admin/agents/:id',            authenticate, isAdmin,  agentController.adminUpdateAgent);
+router.put('/admin/agents/:id/wallet',     authenticate, isAdmin,  agentController.adminAdjustWallet);
+router.delete('/admin/agents/:id',         authenticate, isAdmin,  agentController.adminDeleteAgent);
 
 export default router;

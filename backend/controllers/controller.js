@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
+import { processAgentCommission } from './agentController.js';
 
 // Auth Controllers
 export const sendOTPController = async (req, res) => {
@@ -194,7 +195,8 @@ export const createOrder = async (req, res) => {
       deliveryAddress,
       customerName: customerName || req.user.name,
       phone: req.user.phone,
-      estimatedDelivery
+      estimatedDelivery,
+      referredByAgent: req.user.referredByAgent || null
     });
 
     res.json({ success: true, order });
@@ -962,6 +964,7 @@ export const markDelivered = async (req, res) => {
     if (order.paymentMethod === 'cod') order.paymentStatus = 'paid';
     await order.save();
     await DeliveryPartner.findByIdAndUpdate(req.deliveryPartner._id, { $inc: { totalDeliveries: 1 } });
+    await processAgentCommission(order);
     res.json({ success: true, order });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

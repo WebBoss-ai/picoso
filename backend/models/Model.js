@@ -22,11 +22,15 @@ const userSchema = new mongoose.Schema({
     coordinates: { lat: Number, lng: Number }
   },
   savedAddresses: [savedAddressSchema],
-  role: { type: String, enum: ['user', 'admin'], default: 'user' },
-  lastLoginAt: { type: Date },
-  lastActiveAt: { type: Date },
-  cartSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
-  createdAt: { type: Date, default: Date.now }
+  role:          { type: String, enum: ['user', 'admin'], default: 'user' },
+  lastLoginAt:   { type: Date },
+  lastActiveAt:  { type: Date },
+  cartSnapshot:  { type: mongoose.Schema.Types.Mixed, default: null },
+  referredByAgent:  { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+  referredAt:       { type: Date, default: null },
+  giftEligible:     { type: Boolean, default: false },
+  giftRedeemed:     { type: Boolean, default: false },
+  createdAt:     { type: Date, default: Date.now }
 });
 
 const otpSchema = new mongoose.Schema({
@@ -77,6 +81,40 @@ const ingredientSchema = new mongoose.Schema({
   category: { type: String, default: 'base' }
 });
 
+const agentSchema = new mongoose.Schema({
+  name:          { type: String, required: true },
+  phone:         { type: String, required: true, unique: true },
+  agentCode:     { type: String, required: true, unique: true },
+  wallet:        { type: Number, default: 0 },
+  isActive:      { type: Boolean, default: true },
+  totalScans:    { type: Number, default: 0 },
+  totalLeads:    { type: Number, default: 0 },
+  totalOrders:   { type: Number, default: 0 },
+  totalEarnings: { type: Number, default: 0 },
+  createdAt:     { type: Date, default: Date.now }
+});
+
+const agentScanSchema = new mongoose.Schema({
+  agentId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', required: true },
+  ip:        { type: String, default: '' },
+  userAgent: { type: String, default: '' },
+  scannedAt: { type: Date, default: Date.now }
+});
+
+const agentLeadSchema = new mongoose.Schema({
+  agentId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', required: true },
+  userId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  registeredAt: { type: Date, default: Date.now }
+});
+
+const agentCommissionSchema = new mongoose.Schema({
+  agentId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', required: true },
+  userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  orderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
+  amount:    { type: Number, default: 20 },
+  createdAt: { type: Date, default: Date.now }
+});
+
 const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
@@ -121,11 +159,13 @@ const orderSchema = new mongoose.Schema({
   customerName: String,
   phone: { type: String, required: true },
   estimatedDelivery: { type: Date },
-  deliveryPartnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryPartner' },
-  pickedUpAt: { type: Date },
-  deliveredAt: { type: Date },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  deliveryPartnerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryPartner' },
+  pickedUpAt:         { type: Date },
+  deliveredAt:        { type: Date },
+  referredByAgent:    { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+  agentCommissionPaid:{ type: Boolean, default: false },
+  createdAt:          { type: Date, default: Date.now },
+  updatedAt:          { type: Date, default: Date.now }
 });
 
 const feedbackSchema = new mongoose.Schema({
@@ -233,3 +273,16 @@ const closedCheckoutSchema = new mongoose.Schema({
 export const StoreStatus     = mongoose.model('StoreStatus',    storeStatusSchema);
 export const NotifyRequest   = mongoose.model('NotifyRequest',  notifyRequestSchema);
 export const ClosedCheckout  = mongoose.model('ClosedCheckout', closedCheckoutSchema);
+
+export const Agent           = mongoose.model('Agent',           agentSchema);
+export const AgentScan       = mongoose.model('AgentScan',       agentScanSchema);
+export const AgentLead       = mongoose.model('AgentLead',       agentLeadSchema);
+export const AgentCommission = mongoose.model('AgentCommission', agentCommissionSchema);
+
+const agentSettingsSchema = new mongoose.Schema({
+  displayEarningPerOrder:  { type: Number, default: 0 },
+  actualCommissionPerOrder:{ type: Number, default: 20 },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+export const AgentSettings = mongoose.model('AgentSettings', agentSettingsSchema);
