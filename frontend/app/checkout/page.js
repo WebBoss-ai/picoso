@@ -10,27 +10,44 @@ import {
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
-import { orders, profile, expansion } from '@/lib/api';
+import { orders, profile, expansion, storeStatus as storeApi } from '@/lib/api';
 
-function getISTInfo() {
+function parseHour(timeStr, fallback) {
+  if (!timeStr) return fallback;
+  const [h] = timeStr.split(':').map(Number);
+  return isNaN(h) ? fallback : h;
+}
+
+function formatTime12h(timeStr, fallback = '') {
+  if (!timeStr) return fallback;
+  const [h, mm] = timeStr.split(':').map(Number);
+  if (isNaN(h)) return fallback;
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  const mins = mm && mm !== 0 ? `:${String(mm).padStart(2, '0')}` : '';
+  return `${hour12}${mins} ${suffix}`;
+}
+
+function getISTInfo(openHour = 10, closeHour = 22) {
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const ist = new Date(utc + 5.5 * 3600000);
   const h = ist.getHours();
   const m = ist.getMinutes();
-  const isOpen = h >= 10 && h < 22;
+  const isOpen = h >= openHour && h < closeHour;
 
-  let minutesUntil10AM;
-  if (h < 10) {
-    minutesUntil10AM = (10 - h) * 60 - m;
+  // Minutes until next opening
+  let minutesUntilOpen;
+  if (h < openHour) {
+    minutesUntilOpen = (openHour - h) * 60 - m;
   } else {
-    minutesUntil10AM = (34 - h) * 60 - m;
+    minutesUntilOpen = (24 - h + openHour) * 60 - m;
   }
 
   return {
     isOpen,
-    hoursLeft: Math.floor(minutesUntil10AM / 60),
-    minsLeft: minutesUntil10AM % 60,
+    hoursLeft: Math.floor(minutesUntilOpen / 60),
+    minsLeft: minutesUntilOpen % 60,
   };
 }
 
@@ -295,6 +312,7 @@ export default function CheckoutPage() {
   const [orderingOpen, setOrderingOpen] = useState(true);
   const [timeLeft, setTimeLeft] = useState({ hoursLeft: 0, minsLeft: 0 });
   const [showClosedModal, setShowClosedModal] = useState(false);
+  const [storeData, setStoreData] = useState(null);
 
   // Location capture
   const [geoCoords, setGeoCoords] = useState(null);
@@ -327,16 +345,28 @@ export default function CheckoutPage() {
     }).catch(() => {});
   }, [isLoggedIn, authLoading, user, items.length, orderPlaced, router]);
 
+  // Fetch store status from backend (respects admin-configured hours + manual toggle)
   useEffect(() => {
+    storeApi.get()
+      .then(res => setStoreData(res.data.status))
+      .catch(() => setStoreData(null));
+  }, []);
+
+  useEffect(() => {
+    const openHour  = parseHour(storeData?.openingTime, 10);
+    const closeHour = parseHour(storeData?.closingTime, 22);
+
     const tick = () => {
-      const { isOpen, hoursLeft, minsLeft } = getISTInfo();
-      setOrderingOpen(isOpen);
+      const { isOpen, hoursLeft, minsLeft } = getISTInfo(openHour, closeHour);
+      // Respect manual admin override: if admin force-closed, always closed
+      const effectivelyOpen = storeData?.isOpen === false ? false : isOpen;
+      setOrderingOpen(effectivelyOpen);
       setTimeLeft({ hoursLeft, minsLeft });
     };
     tick();
     const interval = setInterval(tick, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [storeData]);
 
   // Radius timer countdown
   useEffect(() => {
@@ -906,7 +936,7 @@ export default function CheckoutPage() {
               {!orderingOpen && (
                 <p className="text-center text-xs text-slate-400 mt-2.5 flex items-center justify-center gap-1.5">
                   <Clock size={11} />
-                  Open daily 10:00 AM – 10:00 PM IST
+                  Open daily {formatTime12h(storeData?.openingTime, '10:00 AM')} – {formatTime12h(storeData?.closingTime, '10:00 PM')} IST
                 </p>
               )}
             </div>
@@ -963,7 +993,7 @@ export default function CheckoutPage() {
               </div>
 
               <h2 className="text-2xl font-bold text-white mb-1.5 tracking-tight">Kitchen is Closed</h2>
-              <p className="text-indigo-300 text-sm mb-7">We&apos;ll be back at <span className="font-semibold text-indigo-200">10:00 AM IST</span></p>
+              <p className="text-indigo-300 text-sm mb-7">We&apos;ll be back at <span className="font-semibold text-indigo-200">{formatTime12h(storeData?.openingTime, '10:00 AM')} IST</span></p>
 
               <div className="rounded-2xl px-6 py-4 mb-6 mx-auto"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -992,7 +1022,7 @@ export default function CheckoutPage() {
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-300"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
                   <Clock size={11} className="text-indigo-400" />
-                  Open 10 AM – 10 PM IST · Every day
+                  Open {formatTime12h(storeData?.openingTime, '10 AM')} – {formatTime12h(storeData?.closingTime, '10 PM')} IST · Every day
                 </div>
                 <div className="h-px flex-1 rounded" style={{ background: 'rgba(255,255,255,0.08)' }} />
               </div>
