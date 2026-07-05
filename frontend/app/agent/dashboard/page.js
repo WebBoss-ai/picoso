@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import {
   QrCode, IndianRupee, Users, ScanLine, TrendingUp, LogOut,
   Copy, Check, Loader2, RefreshCw, ChevronRight, Star,
-  ShoppingBag, Activity, Calendar, Phone, User, ExternalLink,
+  ShoppingBag, Activity, Calendar, ExternalLink,
   Wallet, BarChart2, Eye, Gift
 } from 'lucide-react';
 import { agentAuth } from '@/lib/api';
@@ -134,7 +134,6 @@ export default function AgentDashboard() {
     { id: 'overview', label: 'Overview', icon: <BarChart2 className="w-4 h-4" /> },
     { id: 'qr', label: 'My QR', icon: <QrCode className="w-4 h-4" /> },
     { id: 'earnings', label: 'Earnings', icon: <Wallet className="w-4 h-4" /> },
-    { id: 'leads', label: 'Leads', icon: <Users className="w-4 h-4" /> },
   ];
 
   return (
@@ -388,52 +387,6 @@ export default function AgentDashboard() {
           </div>
         )}
 
-        {/* Tab: Leads */}
-        {activeTab === 'leads' && (
-          <div className="space-y-4">
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-white text-sm font-semibold">Registered Leads</h3>
-                <span className="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-0.5 rounded-full">
-                  {agent?.totalLeads || 0} total
-                </span>
-              </div>
-              {analytics?.recentLeads?.length > 0 ? (
-                <div className="space-y-2">
-                  {analytics.recentLeads.map((l, i) => (
-                    <div key={i} className="flex items-center justify-between py-2.5 border-b border-white/5 last:border-0">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-violet-500/20 rounded-xl flex items-center justify-center">
-                          <User className="w-3.5 h-3.5 text-violet-400" />
-                        </div>
-                        <div>
-                          <div className="text-white text-sm">
-                            {l.userId?.name || 'User'}
-                          </div>
-                          <div className="text-white/40 text-xs">{l.userId?.phone}</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-white/40 text-xs">{formatDate(l.registeredAt)}</div>
-                        {l.userId?.giftEligible && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${l.userId?.giftRedeemed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                            {l.userId?.giftRedeemed ? '✓ Gift used' : 'Gift pending'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Users className="w-8 h-8 text-white/20 mx-auto mb-2" />
-                  <p className="text-white/30 text-sm">No leads yet</p>
-                  <p className="text-white/20 text-xs mt-1">Share your QR to capture leads</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -433,9 +433,25 @@ export default function OrderSuccessPage() {
                       <p className="text-sm font-semibold text-gray-900">₹{item.price * item.quantity}</p>
                     </div>
                   ))}
-                  <div className="border-t border-surface-100 pt-3 flex justify-between font-bold text-gray-900">
-                    <span>Total Paid</span>
-                    <span>₹{order.totalPrice}</span>
+                  <div className="border-t border-surface-100 pt-3 space-y-1.5">
+                    <div className="flex justify-between text-sm text-gray-500">
+                      <span>Subtotal</span>
+                      <span>₹{order.totalPrice}</span>
+                    </div>
+                    {order.discountAmount > 0 && (
+                      <div className="flex justify-between text-sm text-brand-600 font-medium">
+                        <span>Discount</span>
+                        <span>−₹{order.discountAmount}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm text-gray-500">
+                      <span>Delivery Fee</span>
+                      <span>₹{order.deliveryFee ?? 15}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-surface-100">
+                      <span>Total Paid</span>
+                      <span>₹{(order.totalPrice || 0) + (order.deliveryFee ?? 15)}</span>
+                    </div>
                   </div>
                 </div>
               </div>

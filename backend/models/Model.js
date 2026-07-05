@@ -274,6 +274,24 @@ export const StoreStatus     = mongoose.model('StoreStatus',    storeStatusSchem
 export const NotifyRequest   = mongoose.model('NotifyRequest',  notifyRequestSchema);
 export const ClosedCheckout  = mongoose.model('ClosedCheckout', closedCheckoutSchema);
 
+// ── Out-of-radius interest capture (for expansion analytics) ─────────────────
+const outOfRadiusSchema = new mongoose.Schema({
+  phone:      { type: String, default: '' },
+  userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  lat:        { type: Number },
+  lng:        { type: Number },
+  address:    { type: String, default: '' },
+  area:       { type: String, default: '' },
+  city:       { type: String, default: '' },
+  distanceKm: { type: Number },
+  notified:   { type: Boolean, default: false },
+  createdAt:  { type: Date, default: Date.now },
+});
+outOfRadiusSchema.index({ createdAt: -1 });
+outOfRadiusSchema.index({ lat: 1, lng: 1 });
+
+export const OutOfRadiusAttempt = mongoose.model('OutOfRadiusAttempt', outOfRadiusSchema);
+
 export const Agent           = mongoose.model('Agent',           agentSchema);
 export const AgentScan       = mongoose.model('AgentScan',       agentScanSchema);
 export const AgentLead       = mongoose.model('AgentLead',       agentLeadSchema);

@@ -55,13 +55,11 @@ export const agentLogin = async (req, res) => {
 export const getAgentProfile = async (req, res) => {
   try {
     const agent = await Agent.findById(req.agent._id);
-    const [recentScans, recentLeads, recentCommissions, scansByDay, settings] = await Promise.all([
+    const [recentScans, recentCommissions, scansByDay, settings] = await Promise.all([
       AgentScan.find({ agentId: agent._id }).sort({ scannedAt: -1 }).limit(20),
-      AgentLead.find({ agentId: agent._id }).sort({ registeredAt: -1 }).limit(10)
-        .populate('userId', 'name phone createdAt'),
+      // Leads PII (name/phone) is never sent to agents — only commission amount & order info
       AgentCommission.find({ agentId: agent._id }).sort({ createdAt: -1 }).limit(20)
-        .populate('orderId', 'totalPrice createdAt status')
-        .populate('userId', 'name phone'),
+        .populate('orderId', 'totalPrice createdAt status'),
       AgentScan.aggregate([
         { $match: { agentId: agent._id } },
         { $group: {
@@ -80,7 +78,7 @@ export const getAgentProfile = async (req, res) => {
       displayEarningPerOrder: settings.displayEarningPerOrder,
       analytics: {
         recentScans,
-        recentLeads,
+        recentLeads: [],   // leads are never exposed to agents
         recentCommissions,
         scansByDay: scansByDay.reverse()
       }

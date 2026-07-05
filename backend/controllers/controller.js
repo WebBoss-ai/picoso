@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout } from '../models/Model.js';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout, OutOfRadiusAttempt } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 import { processAgentCommission } from './agentController.js';
 
@@ -1177,5 +1177,32 @@ export const markClosedCheckoutNotified = async (req, res) => {
   try {
     await ClosedCheckout.findByIdAndUpdate(req.params.id, { notified: true });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// ── Expansion / Out-of-radius tracking ───────────────────────────────────────
+export const saveOutOfRadiusAttempt = async (req, res) => {
+  try {
+    const { lat, lng, address, area, city, distanceKm } = req.body;
+    await OutOfRadiusAttempt.create({
+      phone: req.user.phone,
+      userId: req.user._id,
+      lat, lng, address, area, city, distanceKm,
+    });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const getExpansionData = async (req, res) => {
+  try {
+    const [outOfRadius, notifyRequests, closedCheckouts, ordersWithGeo] = await Promise.all([
+      OutOfRadiusAttempt.find().sort('-createdAt').limit(1000),
+      NotifyRequest.find().sort('-createdAt'),
+      ClosedCheckout.find().sort('-createdAt'),
+      Order.find({ 'deliveryAddress.lat': { $ne: null } })
+        .select('deliveryAddress totalPrice deliveryFee status createdAt customerName phone items isPlatinumOrder')
+        .sort('-createdAt').limit(1000),
+    ]);
+    res.json({ outOfRadius, notifyRequests, closedCheckouts, ordersWithGeo });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

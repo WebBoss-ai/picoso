@@ -11,7 +11,7 @@ import {
   ToggleLeft, ToggleRight, GripVertical, Tag,
   Store, BellRing, PhoneCall, CheckCheck, Power, ShoppingCart,
   MapPin, Navigation, QrCode, Wallet, ScanLine, IndianRupee,
-  UserCheck, BadgeDollarSign, ChevronRight,
+  UserCheck, BadgeDollarSign, ChevronRight, Globe, Target, Radar,
 } from 'lucide-react';
 import { admin, adminAgents, agentAuth as agentAuthApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -21,6 +21,7 @@ const SIDEBAR_ITEMS = [
   { id: 'store',          label: 'Store',            icon: Store },
   { id: 'orders',         label: 'Orders',           icon: Package },
   { id: 'zones',          label: 'Delivery Zones',   icon: MapPin },
+  { id: 'expansion',      label: 'Expansion',        icon: TrendingUp },
   { id: 'payments',       label: 'Payments',         icon: CreditCard },
   { id: 'platinum',       label: 'Platinum',         icon: Crown },
   { id: 'subscriptions',  label: 'Subscriptions',    icon: Zap },
@@ -3285,6 +3286,590 @@ function ZonesSection() {
   );
 }
 
+// ─── Expansion Section ────────────────────────────────────────────────────────
+const DELIVERY_RADIUS_KM = 3;
+
+function ExpansionSection() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    setLoading(true);
+    admin.getExpansionData()
+      .then(res => setData(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const expansionData = useMemo(() => {
+    if (!data) return null;
+    const { outOfRadius = [], notifyRequests = [], closedCheckouts = [], ordersWithGeo = [] } = data;
+
+    // Enrich orders with distance
+    const ordersWithDist = ordersWithGeo.map(o => ({
+      ...o,
+      km: haversineKm(STORE_LAT, STORE_LNG, o.deliveryAddress.lat, o.deliveryAddress.lng),
+    }));
+
+    const inRadiusOrders = ordersWithDist.filter(o => o.km <= DELIVERY_RADIUS_KM);
+    const outRadiusOrders = ordersWithDist.filter(o => o.km > DELIVERY_RADIUS_KM);
+
+    // Location frequency from outOfRadius attempts
+    const areaFreq = {};
+    outOfRadius.forEach(r => {
+      const key = r.area || r.city || 'Unknown';
+      areaFreq[key] = (areaFreq[key] || 0) + 1;
+    });
+    const topAreas = Object.entries(areaFreq).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+    // City frequency
+    const cityFreq = {};
+    outOfRadius.forEach(r => {
+      const key = r.city || 'Unknown';
+      cityFreq[key] = (cityFreq[key] || 0) + 1;
+    });
+    const topCities = Object.entries(cityFreq).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+    // Distance buckets for out-of-radius attempts
+    const distBuckets = [
+      { label: '3–5 km', min: 3, max: 5, color: '#f97316' },
+      { label: '5–10 km', min: 5, max: 10, color: '#ef4444' },
+      { label: '10–20 km', min: 10, max: 20, color: '#dc2626' },
+      { label: '20+ km', min: 20, max: Infinity, color: '#991b1b' },
+    ].map(b => ({
+      ...b,
+      count: outOfRadius.filter(r => r.distanceKm >= b.min && r.distanceKm < b.max).length,
+    })).filter(b => b.count > 0);
+
+    // Unique requesters
+    const uniquePhones = new Set(outOfRadius.map(r => r.phone));
+    const notifyPhones = new Set(notifyRequests.map(r => r.phone));
+    const totalWaiting = new Set([...uniquePhones, ...notifyPhones]).size;
+
+    return {
+      outOfRadius,
+      notifyRequests,
+      closedCheckouts,
+      ordersWithDist,
+      inRadiusOrders,
+      outRadiusOrders,
+      topAreas,
+      topCities,
+      distBuckets,
+      totalWaiting,
+      coveragePct: ordersWithDist.length > 0
+        ? Math.round((inRadiusOrders.length / ordersWithDist.length) * 100)
+        : 0,
+    };
+  }, [data]);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 size={24} className="animate-spin text-brand-500" />
+    </div>
+  );
+
+  if (!expansionData) return (
+    <div className="text-center py-20 text-gray-400">Failed to load expansion data</div>
+  );
+
+  const { outOfRadius, notifyRequests, closedCheckouts, ordersWithDist, inRadiusOrders, outRadiusOrders,
+    topAreas, topCities, distBuckets, totalWaiting, coveragePct } = expansionData;
+
+  // ── SVG Dot Map ──────────────────────────────────────────────────────────────
+  const MapDots = () => {
+    const allPoints = [
+      ...ordersWithDist.map(o => ({
+        lat: o.deliveryAddress.lat, lng: o.deliveryAddress.lng,
+        km: o.km, type: 'order',
+        label: o.customerName || o.phone || '—',
+      })),
+      ...outOfRadius.filter(r => r.lat && r.lng).map(r => ({
+        lat: r.lat, lng: r.lng, km: r.distanceKm || 0, type: 'attempt',
+        label: r.area || r.city || r.phone || '—',
+      })),
+    ];
+
+    if (!allPoints.length) return (
+      <div className="h-64 flex items-center justify-center text-xs text-gray-400 bg-surface-50 rounded-2xl">
+        No GPS data available yet
+      </div>
+    );
+
+    // Normalize to SVG space
+    const lats = allPoints.map(p => p.lat);
+    const lngs = allPoints.map(p => p.lng);
+    const minLat = Math.min(...lats, STORE_LAT) - 0.01;
+    const maxLat = Math.max(...lats, STORE_LAT) + 0.01;
+    const minLng = Math.min(...lngs, STORE_LNG) - 0.01;
+    const maxLng = Math.max(...lngs, STORE_LNG) + 0.01;
+
+    const svgW = 400; const svgH = 280;
+    const toX = (lng) => ((lng - minLng) / (maxLng - minLng)) * (svgW - 40) + 20;
+    const toY = (lat) => ((maxLat - lat) / (maxLat - minLat)) * (svgH - 40) + 20;
+
+    const storeX = toX(STORE_LNG);
+    const storeY = toY(STORE_LAT);
+
+    // 1km in SVG units
+    const kmInDeg = 1 / 111;
+    const onekm = (kmInDeg / (maxLng - minLng)) * (svgW - 40);
+
+    return (
+      <div className="relative rounded-2xl overflow-hidden border border-surface-200" style={{ background: '#f8fafc' }}>
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500 bg-white/80 backdrop-blur rounded-lg px-2.5 py-1.5">
+            <div className="w-2 h-2 rounded-full bg-brand-500" /> In-zone orders
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500 bg-white/80 backdrop-blur rounded-lg px-2.5 py-1.5">
+            <div className="w-2 h-2 rounded-full bg-red-400" /> Out-zone orders
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500 bg-white/80 backdrop-blur rounded-lg px-2.5 py-1.5">
+            <div className="w-2 h-2 rounded-full bg-orange-400" /> Unserved attempts
+          </div>
+        </div>
+        <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: 'block' }}>
+          {/* Radius rings */}
+          {[1, 2, 3, 5, 10].map(km => (
+            <circle key={km} cx={storeX} cy={storeY} r={onekm * km}
+              fill="none" stroke={km <= 3 ? '#22c55e' : '#e2e8f0'} strokeWidth={km === 3 ? 1.5 : 0.8}
+              strokeDasharray={km > 3 ? '4 4' : 'none'} opacity={0.6} />
+          ))}
+          {/* Ring labels */}
+          {[1, 2, 3].map(km => (
+            <text key={km} x={storeX + onekm * km + 2} y={storeY - 2}
+              fontSize="5.5" fill="#22c55e" opacity="0.7">{km} km</text>
+          ))}
+          {/* Data dots */}
+          {allPoints.map((pt, i) => {
+            const x = toX(pt.lng); const y = toY(pt.lat);
+            const color = pt.type === 'attempt' ? '#f97316'
+              : pt.km <= DELIVERY_RADIUS_KM ? '#22c55e' : '#ef4444';
+            return (
+              <circle key={i} cx={x} cy={y} r="3.5" fill={color} opacity="0.75"
+                style={{ cursor: 'pointer' }}>
+                <title>{pt.label} — {pt.km.toFixed(1)} km</title>
+              </circle>
+            );
+          })}
+          {/* Store marker */}
+          <circle cx={storeX} cy={storeY} r="7" fill="#1f2937" opacity="0.95" />
+          <circle cx={storeX} cy={storeY} r="3" fill="white" />
+          <text x={storeX + 9} y={storeY + 3} fontSize="6.5" fontWeight="600" fill="#1f2937">Kitchen</text>
+        </svg>
+      </div>
+    );
+  };
+
+  // ── Tab content ───────────────────────────────────────────────────────────────
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'waitlist', label: `Waitlist (${totalWaiting})` },
+    { id: 'attempts', label: `Out-of-Zone (${outOfRadius.length})` },
+    { id: 'map', label: 'Coverage Map' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Globe size={18} className="text-brand-600" />
+            Expansion Intelligence
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Location analytics · Demand signals · Coverage planning
+          </p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold"
+          style={{ background: coveragePct >= 80 ? '#dcfce7' : '#fef9c3', color: coveragePct >= 80 ? '#15803d' : '#854d0e' }}>
+          <Target size={12} />
+          {coveragePct}% in-zone
+        </div>
+      </div>
+
+      {/* KPI Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Served Orders</span>
+            <div className="w-7 h-7 rounded-xl bg-brand-50 flex items-center justify-center">
+              <CheckCircle2 size={14} className="text-brand-600" />
+            </div>
+          </div>
+          <p className="text-2xl font-extrabold text-gray-900">{inRadiusOrders.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">within {DELIVERY_RADIUS_KM} km</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missed Demand</span>
+            <div className="w-7 h-7 rounded-xl bg-red-50 flex items-center justify-center">
+              <AlertTriangle size={14} className="text-red-500" />
+            </div>
+          </div>
+          <p className="text-2xl font-extrabold text-gray-900">{outOfRadius.length + outRadiusOrders.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">out-of-zone signals</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Waitlist</span>
+            <div className="w-7 h-7 rounded-xl bg-amber-50 flex items-center justify-center">
+              <BellRing size={14} className="text-amber-600" />
+            </div>
+          </div>
+          <p className="text-2xl font-extrabold text-gray-900">{totalWaiting}</p>
+          <p className="text-xs text-gray-400 mt-0.5">unique users waiting</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coverage</span>
+            <div className="w-7 h-7 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Radar size={14} className="text-blue-600" />
+            </div>
+          </div>
+          <p className="text-2xl font-extrabold text-gray-900">{DELIVERY_RADIUS_KM} km</p>
+          <p className="text-xs text-gray-400 mt-0.5">current delivery radius</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-surface-100 p-1 rounded-xl overflow-x-auto">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Overview Tab ── */}
+      {activeTab === 'overview' && (
+        <div className="space-y-5">
+          {/* Coverage donut + stats */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="card p-5">
+              <p className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+                <Target size={15} className="text-brand-600" />
+                Order Coverage Split
+              </p>
+              <div className="flex items-center gap-6">
+                <DonutChart segments={[
+                  { label: 'In Zone', value: inRadiusOrders.length, color: '#22c55e' },
+                  { label: 'Out Zone', value: outRadiusOrders.length + outOfRadius.length, color: '#ef4444' },
+                ]} size={100} />
+                <div className="space-y-2.5 flex-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-brand-500" /><span className="text-xs font-medium text-gray-600">In Zone Orders</span></div>
+                    <span className="text-xs font-bold text-gray-900">{inRadiusOrders.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-400" /><span className="text-xs font-medium text-gray-600">Out-Zone Orders</span></div>
+                    <span className="text-xs font-bold text-gray-900">{outRadiusOrders.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-orange-400" /><span className="text-xs font-medium text-gray-600">Blocked Attempts</span></div>
+                    <span className="text-xs font-bold text-gray-900">{outOfRadius.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-amber-400" /><span className="text-xs font-medium text-gray-600">Notify Requests</span></div>
+                    <span className="text-xs font-bold text-gray-900">{notifyRequests.length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Top cities by demand */}
+            <div className="card p-5">
+              <p className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+                <Globe size={15} className="text-blue-600" />
+                Top Cities Requesting Service
+              </p>
+              {topCities.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-8">No location data yet</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {topCities.slice(0, 5).map(([city, count], i) => (
+                    <ProgressBar
+                      key={city}
+                      label={city}
+                      value={count}
+                      max={topCities[0][1]}
+                      color={i === 0 ? '#22c55e' : i === 1 ? '#3b82f6' : '#f97316'}
+                      subLabel={`${count} req`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Distance distribution */}
+          {distBuckets.length > 0 && (
+            <div className="card p-5">
+              <p className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+                <MapPin size={15} className="text-red-500" />
+                Out-of-Zone Distance Distribution
+              </p>
+              <div className="space-y-2.5">
+                {distBuckets.map(b => (
+                  <ProgressBar
+                    key={b.label}
+                    label={b.label}
+                    value={b.count}
+                    max={Math.max(...distBuckets.map(x => x.count), 1)}
+                    color={b.color}
+                    subLabel={`${b.count} attempts`}
+                  />
+                ))}
+              </div>
+              {distBuckets.length > 0 && (
+                <p className="text-xs text-gray-400 mt-3 flex items-center gap-1.5">
+                  <AlertTriangle size={11} />
+                  Orders that were blocked because the delivery address was outside the {DELIVERY_RADIUS_KM} km radius
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Top areas */}
+          {topAreas.length > 0 && (
+            <div className="card p-5">
+              <p className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+                <MapPin size={15} className="text-orange-500" />
+                Top Demand Areas (Out-of-Zone)
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {topAreas.map(([area, count], i) => (
+                  <div key={area} className="flex items-center justify-between p-3 rounded-xl border border-surface-100 bg-surface-50">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 truncate max-w-[90px]">{area}</p>
+                      <p className="text-[10px] text-gray-400">{count} request{count > 1 ? 's' : ''}</p>
+                    </div>
+                    {i < 3 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                        style={{ background: i === 0 ? '#dcfce7' : i === 1 ? '#dbeafe' : '#fef9c3',
+                          color: i === 0 ? '#15803d' : i === 1 ? '#1d4ed8' : '#854d0e' }}>
+                        #{i + 1}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Waitlist Tab ── */}
+      {activeTab === 'waitlist' && (
+        <div className="space-y-5">
+          {/* Notify requests */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <BellRing size={15} className="text-amber-500" />
+                Notify Requests ({notifyRequests.length})
+              </p>
+              <p className="text-xs text-gray-400">Customers who asked to be notified when we open</p>
+            </div>
+            {notifyRequests.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-8">No notify requests yet</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {notifyRequests.map((r, i) => (
+                  <div key={r._id || i} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-surface-100 bg-surface-50">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${r.notified ? 'bg-brand-100 text-brand-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {r.notified ? <CheckCircle2 size={13} /> : <BellRing size={13} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800">{r.phone || '—'}</p>
+                      <p className="text-[10px] text-gray-400">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}</p>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${r.notified ? 'bg-brand-100 text-brand-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {r.notified ? 'Notified' : 'Pending'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Closed checkout captures */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <ShoppingCart size={15} className="text-slate-500" />
+                Closed-Store Checkouts ({closedCheckouts.length})
+              </p>
+              <p className="text-xs text-gray-400">Tried to order when kitchen was closed</p>
+            </div>
+            {closedCheckouts.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-8">No closed checkout captures yet</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {closedCheckouts.map((c, i) => (
+                  <div key={c._id || i} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-surface-100 bg-surface-50">
+                    <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <ShoppingCart size={13} className="text-slate-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800">{c.phone || '—'}</p>
+                      <p className="text-[10px] text-gray-400">
+                        {c.items?.length || 0} items · ₹{c.total || 0} · {c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-IN') : '—'}
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${c.notified ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {c.notified ? 'Contacted' : 'Pending'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Out-of-Zone Attempts Tab ── */}
+      {activeTab === 'attempts' && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+              <Navigation size={15} className="text-red-500" />
+              Out-of-Zone Order Attempts ({outOfRadius.length})
+            </p>
+            <p className="text-xs text-gray-400">Customers blocked by radius check</p>
+          </div>
+          {outOfRadius.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <Globe size={32} className="mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-medium">No out-of-zone attempts yet</p>
+              <p className="text-xs mt-1">Data appears when users outside the {DELIVERY_RADIUS_KM} km radius try to order</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-surface-100">
+                      <th className="text-left font-semibold py-2 pr-3">Phone</th>
+                      <th className="text-left font-semibold py-2 pr-3">Area</th>
+                      <th className="text-left font-semibold py-2 pr-3">City</th>
+                      <th className="text-right font-semibold py-2 pr-3">Distance</th>
+                      <th className="text-right font-semibold py-2">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-50">
+                    {outOfRadius.slice(0, 100).map((r, i) => (
+                      <tr key={r._id || i} className="hover:bg-surface-50 transition-colors">
+                        <td className="py-2 pr-3 font-medium text-gray-700">{r.phone || '—'}</td>
+                        <td className="py-2 pr-3 text-gray-500">{r.area || '—'}</td>
+                        <td className="py-2 pr-3 text-gray-500">{r.city || '—'}</td>
+                        <td className="py-2 pr-3 text-right">
+                          <span className="font-semibold text-red-500">{r.distanceKm ? `${r.distanceKm.toFixed(1)} km` : '—'}</span>
+                        </td>
+                        <td className="py-2 text-right text-gray-400">
+                          {r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {outOfRadius.length > 100 && (
+                <p className="text-[10px] text-gray-400 mt-2 text-center">Showing latest 100 of {outOfRadius.length} records</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Coverage Map Tab ── */}
+      {activeTab === 'map' && (
+        <div className="space-y-4">
+          <div className="card p-5">
+            <p className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+              <MapPin size={15} className="text-brand-600" />
+              Order Distribution Map
+            </p>
+            <MapDots />
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 rounded-full bg-brand-500" /> 1–3 km radius rings (delivery zone)</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 border-t-2 border-dashed border-surface-300" /> 5–10 km rings (future zones)</span>
+            </div>
+          </div>
+
+          {/* Summary by distance rings */}
+          <div className="card p-5">
+            <p className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+              <Radar size={15} className="text-blue-600" />
+              Orders by Distance Ring
+            </p>
+            <div className="space-y-2.5">
+              {[
+                { label: '0–1 km', min: 0, max: 1, color: '#22c55e' },
+                { label: '1–2 km', min: 1, max: 2, color: '#4ade80' },
+                { label: '2–3 km', min: 2, max: 3, color: '#86efac' },
+                { label: '3–5 km', min: 3, max: 5, color: '#f97316' },
+                { label: '5–10 km', min: 5, max: 10, color: '#ef4444' },
+                { label: '10+ km', min: 10, max: Infinity, color: '#991b1b' },
+              ].map(band => {
+                const count = ordersWithDist.filter(o => o.km >= band.min && o.km < band.max).length;
+                const attemptCount = outOfRadius.filter(r => r.distanceKm >= band.min && r.distanceKm < band.max).length;
+                if (!count && !attemptCount) return null;
+                return (
+                  <div key={band.label} className="flex items-center gap-3">
+                    <div className="w-16 text-xs font-semibold text-gray-500 flex-shrink-0">{band.label}</div>
+                    <div className="flex-1 h-5 bg-surface-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full flex items-center justify-end pr-1.5 transition-all duration-700"
+                        style={{ width: `${Math.max(((count + attemptCount) / Math.max(ordersWithDist.length + outOfRadius.length, 1)) * 100, 0.5)}%`, background: band.color }}>
+                        {((count + attemptCount) / Math.max(ordersWithDist.length + outOfRadius.length, 1)) * 100 > 8 && (
+                          <span className="text-[9px] font-extrabold text-white">{count + attemptCount}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600 w-20 text-right flex-shrink-0">
+                      {count > 0 && <span className="text-brand-600 font-bold">{count} ord</span>}
+                      {count > 0 && attemptCount > 0 && <span className="text-gray-400"> · </span>}
+                      {attemptCount > 0 && <span className="text-orange-500 font-bold">{attemptCount} att</span>}
+                    </div>
+                  </div>
+                );
+              }).filter(Boolean)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expansion Opportunity Banner */}
+      {outOfRadius.length + outRadiusOrders.length >= 5 && (
+        <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1px solid #bbf7d0' }}>
+          <div className="w-8 h-8 rounded-xl bg-brand-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <TrendingUp size={15} className="text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-green-900">Expansion Opportunity Detected</p>
+            <p className="text-xs text-green-700 mt-0.5 leading-relaxed">
+              <strong>{outOfRadius.length + outRadiusOrders.length}</strong> orders / attempts from outside your delivery zone.
+              {topCities.length > 0 && ` Highest demand from ${topCities.slice(0, 2).map(([c]) => c).join(' & ')}.`}
+              {' '}Consider expanding coverage to capture this demand.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { isLoggedIn, isAdmin, logout } = useAuth();
@@ -3313,6 +3898,7 @@ export default function AdminPage() {
       case 'store':         return <StoreSection />;
       case 'orders':        return <OrdersSection />;
       case 'zones':         return <ZonesSection />;
+      case 'expansion':     return <ExpansionSection />;
       case 'payments':      return <PaymentsSection />;
       case 'platinum':      return <PlatinumSection />;
       case 'subscriptions': return <SubscriptionsSection />;

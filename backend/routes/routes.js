@@ -77,6 +77,12 @@ router.put('/admin/store/closed-checkouts/:id/notified', authenticate, isAdmin, 
 // Admin — Stats
 router.get('/admin/stats', authenticate, isAdmin, controller.getDashboardStats);
 
+// Expansion — out-of-radius interest capture (authenticated user)
+router.post('/expansion/attempt', authenticate, controller.saveOutOfRadiusAttempt);
+
+// Admin — Expansion analytics
+router.get('/admin/expansion-data', authenticate, isAdmin, controller.getExpansionData);
+
 // Admin — Users
 router.get('/admin/users', authenticate, isAdmin, controller.getAllUsers);
 router.get('/admin/users/:userId/orders', authenticate, isAdmin, controller.getUserOrders);

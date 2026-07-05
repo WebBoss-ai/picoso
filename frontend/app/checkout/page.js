@@ -1,15 +1,16 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   MapPin, Home, User, Phone, CreditCard, Smartphone, Banknote,
   Copy, CheckCircle2, ArrowLeft, Flame, Crown, Plus, Loader2,
-  Moon, Clock, X, Navigation, LocateFixed, AlertCircle
+  Moon, Clock, X, Navigation, LocateFixed, AlertCircle,
+  CheckCheck, AlertTriangle, Sparkles, Bell
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
-import { orders, profile } from '@/lib/api';
+import { orders, profile, expansion } from '@/lib/api';
 
 function getISTInfo() {
   const now = new Date();
@@ -36,13 +37,244 @@ function getISTInfo() {
 const PLATINUM_DISCOUNT = 0.20;
 const DELIVERY_FEE = 15;
 const UPI_ID = '8210823753@ybl';
+const STORE_LAT = 28.437099;
+const STORE_LNG = 77.072771;
+const DELIVERY_RADIUS_KM = 3;
 
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Delivery Radius Modal ─────────────────────────────────────────────────────
+function DeliveryRadiusModal({ modalState, timer, maxTimer, distance, onConfirm, onClose, placing, orderError }) {
+  const progress = maxTimer > 0 ? timer / maxTimer : 0;
+  const r = 44;
+  const circumference = 2 * Math.PI * r;
+  const strokeOffset = circumference * (1 - progress);
+
+  const inRadius = modalState === 'in_radius';
+  const outRadius = modalState === 'out_radius';
+  const isPlacing = modalState === 'placing';
+  const isSuccess = modalState === 'success';
+  const isError = modalState === 'error';
+
+  const strokeColor = inRadius ? '#22c55e' : '#94a3b8';
+  const secondsLeft = maxTimer - timer;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-6"
+      style={{ backdropFilter: 'blur(24px)', backgroundColor: 'rgba(15,23,42,0.55)' }}
+    >
+      <div
+        className="w-full sm:max-w-sm rounded-t-[32px] sm:rounded-[32px] bg-white overflow-hidden"
+        style={{
+          boxShadow: '0 40px 80px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.04)',
+        }}
+      >
+        {/* Top pill indicator (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="w-10 h-1 rounded-full bg-gray-200" />
+        </div>
+
+        <div className="px-7 pt-5 pb-7">
+
+          {/* ── Placing State ── */}
+          {isPlacing && (
+            <div className="flex flex-col items-center text-center py-4">
+              <div className="w-20 h-20 rounded-full bg-brand-50 flex items-center justify-center mb-5">
+                <Loader2 size={34} className="text-brand-500 animate-spin" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-1.5">Placing Your Order</h2>
+              <p className="text-sm text-gray-500">Hold tight — confirming your order now...</p>
+            </div>
+          )}
+
+          {/* ── Success State ── */}
+          {isSuccess && (
+            <div className="flex flex-col items-center text-center py-4">
+              <div className="w-20 h-20 rounded-full bg-brand-50 flex items-center justify-center mb-5">
+                <CheckCheck size={34} className="text-brand-500" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-1.5">Order Confirmed!</h2>
+              <p className="text-sm text-gray-500">Redirecting to your order...</p>
+            </div>
+          )}
+
+          {/* ── Error State ── */}
+          {isError && (
+            <div className="flex flex-col items-center text-center py-4">
+              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mb-5">
+                <AlertTriangle size={34} className="text-red-400" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-1.5">Order Failed</h2>
+              <p className="text-sm text-red-500 mb-5">{orderError || 'Something went wrong. Please try again.'}</p>
+              <button onClick={onClose} className="w-full py-3 rounded-2xl text-sm font-semibold bg-gray-900 text-white">
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {/* ── In Radius State ── */}
+          {inRadius && (
+            <>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center">
+                    <CheckCircle2 size={15} className="text-brand-600" />
+                  </div>
+                  <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Area Verified</span>
+                </div>
+                <span className="text-xs text-gray-400 font-medium">{distance?.toFixed(1)} km away</span>
+              </div>
+
+              {/* Circular Timer */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="relative w-36 h-36">
+                  {/* Outer glow ring */}
+                  <div className="absolute inset-0 rounded-full"
+                    style={{ background: 'radial-gradient(circle, rgba(34,197,94,0.08) 0%, transparent 70%)' }} />
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                    {/* Track */}
+                    <circle cx="50" cy="50" r={r} fill="none" stroke="#f1f5f9" strokeWidth="5" />
+                    {/* Animated progress */}
+                    <circle
+                      cx="50" cy="50" r={r}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={strokeOffset}
+                      style={{ transition: 'stroke-dashoffset 1s linear' }}
+                    />
+                  </svg>
+                  {/* Center content */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-4xl font-black text-gray-900 leading-none tabular-nums">{secondsLeft}</span>
+                    <span className="text-[11px] font-semibold text-gray-400 mt-1">seconds</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Message */}
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-1.5">You're in our zone!</h2>
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  Your location is within our {DELIVERY_RADIUS_KM} km delivery radius. Your order will be placed automatically in <span className="font-semibold text-gray-700">{secondsLeft}s</span>.
+                </p>
+              </div>
+
+              {/* CTA */}
+              <button
+                onClick={onConfirm}
+                className="w-full py-3.5 rounded-2xl text-sm font-bold bg-gray-900 text-white flex items-center justify-center gap-2 hover:bg-gray-800 active:scale-[0.98] transition-all"
+              >
+                <Sparkles size={15} />
+                Place Order Now
+              </button>
+              <button
+                onClick={onClose}
+                className="w-full mt-2.5 py-2.5 rounded-2xl text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+
+          {/* ── Out of Radius State ── */}
+          {outRadius && (
+            <>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center">
+                    <MapPin size={14} className="text-slate-500" />
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Location Check</span>
+                </div>
+                <button onClick={onClose} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+                  <X size={13} className="text-gray-500" />
+                </button>
+              </div>
+
+              {/* Circular Timer */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="relative w-36 h-36">
+                  <div className="absolute inset-0 rounded-full"
+                    style={{ background: 'radial-gradient(circle, rgba(148,163,184,0.07) 0%, transparent 70%)' }} />
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={r} fill="none" stroke="#f1f5f9" strokeWidth="5" />
+                    <circle
+                      cx="50" cy="50" r={r}
+                      fill="none"
+                      stroke="#94a3b8"
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={strokeOffset}
+                      style={{ transition: 'stroke-dashoffset 1s linear' }}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <MapPin size={22} className="text-slate-400 mb-0.5" />
+                    <span className="text-xs font-semibold text-slate-400">{distance?.toFixed(1)} km</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2 font-medium">Auto-closing in {secondsLeft}s</p>
+              </div>
+
+              {/* Message */}
+              <div className="text-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Outside Our Zone Right Now</h2>
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  We currently deliver within <span className="font-semibold text-gray-700">{DELIVERY_RADIUS_KM} km</span> of our kitchen to guarantee the freshest, fastest experience.
+                </p>
+              </div>
+
+              {/* Noted card */}
+              <div className="rounded-2xl p-4 mb-5" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Bell size={14} className="text-slate-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 mb-0.5">We've Noted Your Interest</p>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      Your location has been recorded. As we expand our delivery coverage, you'll be among the <span className="font-medium text-gray-700">first to be notified</span>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={onClose}
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 active:scale-[0.98] transition-all"
+              >
+                Got it, I'll Wait
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Checkout Page ────────────────────────────────────────────────────────
 export default function CheckoutPage() {
   const { items, cartTotal, clearCart, isPlatinum: cartIsPlatinum } = useCart();
   const { user, isLoggedIn, isPlatinum, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [step, setStep] = useState(1); // 1: address, 2: payment
+  const [step, setStep] = useState(1);
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [form, setForm] = useState({
@@ -70,6 +302,15 @@ export default function CheckoutPage() {
   const [geoError, setGeoError] = useState('');
   const [geoGranted, setGeoGranted] = useState(false);
 
+  // Delivery radius modal
+  const [showRadiusModal, setShowRadiusModal] = useState(false);
+  const [radiusModalState, setRadiusModalState] = useState('in_radius');
+  const [radiusTimer, setRadiusTimer] = useState(0);
+  const [radiusTimerMax, setRadiusTimerMax] = useState(10);
+  const [orderDistance, setOrderDistance] = useState(null);
+  const [orderError, setOrderError] = useState('');
+  const radiusIntervalRef = useRef(null);
+
   useEffect(() => {
     if (authLoading) return;
     if (!isLoggedIn) { router.replace('/'); return; }
@@ -96,6 +337,37 @@ export default function CheckoutPage() {
     const interval = setInterval(tick, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Radius timer countdown
+  useEffect(() => {
+    if (!showRadiusModal || (radiusModalState !== 'in_radius' && radiusModalState !== 'out_radius')) {
+      clearInterval(radiusIntervalRef.current);
+      return;
+    }
+
+    radiusIntervalRef.current = setInterval(() => {
+      setRadiusTimer(prev => {
+        if (prev >= radiusTimerMax) {
+          clearInterval(radiusIntervalRef.current);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(radiusIntervalRef.current);
+  }, [showRadiusModal, radiusModalState, radiusTimerMax]);
+
+  // Auto-trigger on timer complete
+  useEffect(() => {
+    if (!showRadiusModal) return;
+    if (radiusModalState === 'in_radius' && radiusTimer >= radiusTimerMax) {
+      executeOrder();
+    }
+    if (radiusModalState === 'out_radius' && radiusTimer >= radiusTimerMax) {
+      setShowRadiusModal(false);
+    }
+  }, [radiusTimer, radiusModalState, showRadiusModal, radiusTimerMax]);
 
   const subtotal = isPlatinum ? Math.round(cartTotal * (1 - PLATINUM_DISCOUNT)) : cartTotal;
   const discountAmt = cartTotal - subtotal;
@@ -156,7 +428,60 @@ export default function CheckoutPage() {
     setTimeout(() => setUpiCopied(false), 2500);
   };
 
-  const handlePlaceOrder = async () => {
+  // Called when "Place Order" button is clicked — check radius first
+  const handlePlaceOrderClick = () => {
+    const deliveryAddress = selectedAddress
+      ? { fullAddress: selectedAddress.fullAddress }
+      : { fullAddress: form.fullAddress };
+
+    if (!deliveryAddress.fullAddress?.trim()) {
+      setError('Please enter your delivery address');
+      return;
+    }
+    setError('');
+
+    const lat = selectedAddress?.lat ?? geoCoords?.lat;
+    const lng = selectedAddress?.lng ?? geoCoords?.lng;
+
+    if (lat != null && lng != null) {
+      const dist = haversineKm(STORE_LAT, STORE_LNG, lat, lng);
+      setOrderDistance(dist);
+
+      if (dist <= DELIVERY_RADIUS_KM) {
+        // In radius: 10s countdown
+        setRadiusModalState('in_radius');
+        setRadiusTimerMax(10);
+        setRadiusTimer(0);
+      } else {
+        // Out of radius: 30s message, save attempt
+        setRadiusModalState('out_radius');
+        setRadiusTimerMax(30);
+        setRadiusTimer(0);
+        // Save interest to backend (best-effort, no blocking)
+        const addrObj = selectedAddress || form;
+        expansion.saveAttempt({
+          lat,
+          lng,
+          address: addrObj.fullAddress || '',
+          area: addrObj.area || '',
+          city: addrObj.city || '',
+          distanceKm: dist,
+        }).catch(() => {});
+      }
+      setShowRadiusModal(true);
+    } else {
+      // No coordinates — proceed without radius check
+      executeOrder();
+    }
+  };
+
+  // Actually place the order via API
+  const executeOrder = async () => {
+    clearInterval(radiusIntervalRef.current);
+    setRadiusModalState('placing');
+    setPlacing(true);
+    setOrderError('');
+
     const deliveryAddress = selectedAddress
       ? {
           label: selectedAddress.label,
@@ -176,14 +501,6 @@ export default function CheckoutPage() {
           lat: geoCoords?.lat ?? undefined,
           lng: geoCoords?.lng ?? undefined,
         };
-
-    if (!deliveryAddress.fullAddress.trim()) {
-      setError('Please enter your delivery address');
-      return;
-    }
-
-    setPlacing(true);
-    setError('');
 
     try {
       const orderItems = items.map(item => ({
@@ -210,11 +527,18 @@ export default function CheckoutPage() {
         await profile.addAddress({ ...form, isDefault: savedAddresses.length === 0 }).catch(() => {});
       }
 
+      setRadiusModalState('success');
       setOrderPlaced(true);
-      router.push(`/order-success/${res.data.order._id}`);
-      clearCart();
+      setTimeout(() => {
+        setShowRadiusModal(false);
+        router.push(`/order-success/${res.data.order._id}`);
+        clearCart();
+      }, 1200);
     } catch (e) {
-      setError(e.response?.data?.error || 'Failed to place order. Please try again.');
+      const msg = e.response?.data?.error || 'Failed to place order. Please try again.';
+      setOrderError(msg);
+      setRadiusModalState('error');
+      setError(msg);
     } finally {
       setPlacing(false);
     }
@@ -559,7 +883,7 @@ export default function CheckoutPage() {
 
               {orderingOpen ? (
                 <button
-                  onClick={handlePlaceOrder}
+                  onClick={handlePlaceOrderClick}
                   disabled={placing}
                   className="btn-primary w-full mt-5 text-base py-3.5"
                 >
@@ -590,6 +914,25 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      {/* Delivery Radius Modal */}
+      {showRadiusModal && (
+        <DeliveryRadiusModal
+          modalState={radiusModalState}
+          timer={radiusTimer}
+          maxTimer={radiusTimerMax}
+          distance={orderDistance}
+          onConfirm={executeOrder}
+          onClose={() => {
+            if (radiusModalState === 'error' || radiusModalState === 'out_radius') {
+              clearInterval(radiusIntervalRef.current);
+              setShowRadiusModal(false);
+            }
+          }}
+          placing={placing}
+          orderError={orderError}
+        />
+      )}
+
       {/* Closed Modal */}
       {showClosedModal && (
         <div
@@ -602,11 +945,9 @@ export default function CheckoutPage() {
             style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e1b4b 60%, #0f172a 100%)' }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Subtle top glow */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-24 rounded-full opacity-30 pointer-events-none"
               style={{ background: 'radial-gradient(ellipse, #818cf8 0%, transparent 70%)', filter: 'blur(20px)' }} />
 
-            {/* Close button */}
             <button
               onClick={() => setShowClosedModal(false)}
               className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors z-10"
@@ -616,7 +957,6 @@ export default function CheckoutPage() {
             </button>
 
             <div className="px-8 pt-10 pb-8 text-center relative">
-              {/* Moon icon */}
               <div className="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center"
                 style={{ background: 'linear-gradient(135deg, #312e81, #1e1b4b)', boxShadow: '0 0 40px rgba(129,140,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1)' }}>
                 <Moon size={34} className="text-indigo-300" strokeWidth={1.5} />
@@ -625,7 +965,6 @@ export default function CheckoutPage() {
               <h2 className="text-2xl font-bold text-white mb-1.5 tracking-tight">Kitchen is Closed</h2>
               <p className="text-indigo-300 text-sm mb-7">We&apos;ll be back at <span className="font-semibold text-indigo-200">10:00 AM IST</span></p>
 
-              {/* Countdown pill */}
               <div className="rounded-2xl px-6 py-4 mb-6 mx-auto"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <p className="text-xs text-slate-400 uppercase tracking-widest mb-2 font-medium">Time until we open</p>
@@ -648,7 +987,6 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Hours badge */}
               <div className="flex items-center justify-center gap-2 mb-8">
                 <div className="h-px flex-1 rounded" style={{ background: 'rgba(255,255,255,0.08)' }} />
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-300"

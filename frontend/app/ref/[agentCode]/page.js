@@ -20,7 +20,7 @@ export default function LeadCapturePage() {
       try {
         const already = localStorage.getItem('picoso_token');
         if (already) {
-          router.replace('/');
+          router.replace('/menu');
           return;
         }
         const res = await agentRef.trackScan(agentCode);
@@ -48,7 +48,7 @@ export default function LeadCapturePage() {
       localStorage.setItem('picoso_token', res.data.token);
       localStorage.setItem('picoso_user', JSON.stringify(res.data.user));
       setPhase('success');
-      setTimeout(() => router.replace('/'), 2500);
+      setTimeout(() => router.replace('/menu'), 2500);
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong. Please try again.');
       setPhase('form');

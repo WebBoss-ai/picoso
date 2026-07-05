@@ -89,6 +89,11 @@ export const admin = {
   createCategory: (data) => api.post('/admin/categories', data),
   updateCategory: (id, data) => api.put(`/admin/categories/${id}`, data),
   deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
+  getExpansionData: () => api.get('/admin/expansion-data'),
+};
+
+export const expansion = {
+  saveAttempt: (data) => api.post('/expansion/attempt', data),
 };
 
 export const user = {
