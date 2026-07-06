@@ -6,7 +6,7 @@ import {
   MapPin, Home, User, Phone, CreditCard, Smartphone, Banknote,
   Copy, CheckCircle2, ArrowLeft, Flame, Crown, Plus, Loader2,
   Moon, Clock, X, Navigation, LocateFixed, AlertCircle,
-  CheckCheck, AlertTriangle, Sparkles, Bell
+  CheckCheck, AlertTriangle, Sparkles, Bell, Shield
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -313,6 +313,8 @@ export default function CheckoutPage() {
   const [timeLeft, setTimeLeft] = useState({ hoursLeft: 0, minsLeft: 0 });
   const [showClosedModal, setShowClosedModal] = useState(false);
   const [storeData, setStoreData] = useState(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const pendingOrderRef = useRef(false);
 
   // Location capture
   const [geoCoords, setGeoCoords] = useState(null);
@@ -403,6 +405,31 @@ export default function CheckoutPage() {
   const discountAmt = cartTotal - subtotal;
   const grandTotal = subtotal + DELIVERY_FEE;
 
+  // Shared radius-check + show-modal logic, accepts fresh coords directly
+  const runRadiusOrOrder = useCallback((lat, lng) => {
+    const dist = haversineKm(STORE_LAT, STORE_LNG, lat, lng);
+    setOrderDistance(dist);
+    if (dist <= DELIVERY_RADIUS_KM) {
+      setRadiusModalState('in_radius');
+      setRadiusTimerMax(10);
+      setRadiusTimer(0);
+    } else {
+      setRadiusModalState('out_radius');
+      setRadiusTimerMax(30);
+      setRadiusTimer(0);
+      const addrObj = selectedAddress || form;
+      expansion.saveAttempt({
+        lat,
+        lng,
+        address: addrObj.fullAddress || '',
+        area: addrObj.area || '',
+        city: addrObj.city || '',
+        distanceKm: dist,
+      }).catch(() => {});
+    }
+    setShowRadiusModal(true);
+  }, [selectedAddress, form]);
+
   const detectLocation = () => {
     if (!navigator.geolocation) {
       setGeoError('Geolocation is not supported by your browser.');
@@ -416,6 +443,16 @@ export default function CheckoutPage() {
         const lng = position.coords.longitude;
         setGeoCoords({ lat, lng });
         setGeoGranted(true);
+
+        // If triggered from the location-required modal, auto-proceed with order
+        if (pendingOrderRef.current) {
+          pendingOrderRef.current = false;
+          setShowLocationModal(false);
+          setGeoLoading(false);
+          runRadiusOrOrder(lat, lng);
+          return;
+        }
+
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
@@ -441,6 +478,7 @@ export default function CheckoutPage() {
         setGeoLoading(false);
       },
       (err) => {
+        pendingOrderRef.current = false;
         setGeoError(
           err.code === 1
             ? 'Location access denied. Please allow location and try again.'
@@ -474,34 +512,10 @@ export default function CheckoutPage() {
     const lng = selectedAddress?.lng ?? geoCoords?.lng;
 
     if (lat != null && lng != null) {
-      const dist = haversineKm(STORE_LAT, STORE_LNG, lat, lng);
-      setOrderDistance(dist);
-
-      if (dist <= DELIVERY_RADIUS_KM) {
-        // In radius: 10s countdown
-        setRadiusModalState('in_radius');
-        setRadiusTimerMax(10);
-        setRadiusTimer(0);
-      } else {
-        // Out of radius: 30s message, save attempt
-        setRadiusModalState('out_radius');
-        setRadiusTimerMax(30);
-        setRadiusTimer(0);
-        // Save interest to backend (best-effort, no blocking)
-        const addrObj = selectedAddress || form;
-        expansion.saveAttempt({
-          lat,
-          lng,
-          address: addrObj.fullAddress || '',
-          area: addrObj.area || '',
-          city: addrObj.city || '',
-          distanceKm: dist,
-        }).catch(() => {});
-      }
-      setShowRadiusModal(true);
+      runRadiusOrOrder(lat, lng);
     } else {
-      // No coordinates — proceed without radius check
-      executeOrder();
+      // No coordinates — require location before placing order
+      setShowLocationModal(true);
     }
   };
 
@@ -1036,6 +1050,137 @@ export default function CheckoutPage() {
               >
                 Got it, see you soon!
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location Required Modal */}
+      {showLocationModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(15,23,42,0.5)' }}
+          onClick={() => { if (!geoLoading) setShowLocationModal(false); }}
+        >
+          <div
+            className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Top accent bar */}
+            <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #10b981, #059669)' }} />
+
+            {/* Close button */}
+            {!geoLoading && (
+              <button
+                onClick={() => setShowLocationModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors z-10"
+              >
+                <X size={14} className="text-gray-500" />
+              </button>
+            )}
+
+            {/* Illustration */}
+            <div className="px-8 pt-8 pb-4 flex justify-center" style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)' }}>
+              <svg viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg" className="w-44 h-36">
+                {/* Map card background */}
+                <rect x="10" y="10" width="180" height="140" rx="16" fill="#f0fdf4" />
+
+                {/* Grid lines */}
+                <g stroke="#d1fae5" strokeWidth="0.8">
+                  <line x1="50" y1="10" x2="50" y2="150" />
+                  <line x1="100" y1="10" x2="100" y2="150" />
+                  <line x1="150" y1="10" x2="150" y2="150" />
+                  <line x1="10" y1="50" x2="190" y2="50" />
+                  <line x1="10" y1="90" x2="190" y2="90" />
+                  <line x1="10" y1="130" x2="190" y2="130" />
+                </g>
+
+                {/* Roads */}
+                <path d="M10,80 Q70,65 100,80 Q130,95 190,80" stroke="#bbf7d0" strokeWidth="9" fill="none" strokeLinecap="round" />
+                <path d="M95,10 Q100,55 100,80 Q100,105 92,150" stroke="#bbf7d0" strokeWidth="7" fill="none" strokeLinecap="round" />
+
+                {/* Road center dashes */}
+                <path d="M10,80 Q70,65 100,80 Q130,95 190,80" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeDasharray="8 8" />
+
+                {/* Pulse rings */}
+                <circle cx="100" cy="72" r="44" fill="#10b981" opacity="0.07">
+                  <animate attributeName="r" values="36;46;36" dur="2.4s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.1;0.04;0.1" dur="2.4s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="100" cy="72" r="30" fill="#10b981" opacity="0.11">
+                  <animate attributeName="r" values="24;32;24" dur="2.4s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.15;0.07;0.15" dur="2.4s" repeatCount="indefinite" />
+                </circle>
+
+                {/* Pin shadow */}
+                <ellipse cx="100" cy="114" rx="14" ry="4" fill="#10b981" opacity="0.2" />
+
+                {/* Pin body */}
+                <path d="M100,36 C85,36 74,47 74,61 C74,79 100,112 100,112 C100,112 126,79 126,61 C126,47 115,36 100,36Z" fill="#10b981" />
+                <path d="M100,36 C85,36 74,47 74,61 C74,79 100,112 100,112 C100,112 126,79 126,61 C126,47 115,36 100,36Z" fill="url(#pinGrad)" />
+
+                {/* Pin inner white circle */}
+                <circle cx="100" cy="61" r="13" fill="white" />
+
+                {/* Location dot inside pin */}
+                <circle cx="100" cy="61" r="5.5" fill="#059669" />
+
+                {/* Small building icons on map */}
+                <rect x="28" y="40" width="14" height="12" rx="2" fill="#a7f3d0" />
+                <rect x="31" y="36" width="8" height="6" rx="1" fill="#6ee7b7" />
+                <rect x="155" y="95" width="12" height="10" rx="2" fill="#a7f3d0" />
+                <rect x="158" y="91" width="6" height="6" rx="1" fill="#6ee7b7" />
+                <rect x="32" y="100" width="10" height="8" rx="1.5" fill="#bbf7d0" />
+                <rect x="158" y="40" width="16" height="14" rx="2" fill="#a7f3d0" />
+                <rect x="161" y="35" width="10" height="7" rx="1" fill="#6ee7b7" />
+
+                <defs>
+                  <linearGradient id="pinGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
+                    <stop offset="100%" stopColor="#059669" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+
+            {/* Text content */}
+            <div className="px-8 pb-8 text-center">
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Confirm Your Spot</h2>
+              <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                We need your precise location to route your order accurately and ensure it reaches you on time.
+              </p>
+
+              {/* Location error if any */}
+              {geoError && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-left">
+                  <AlertCircle size={14} className="text-red-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-red-600">{geoError}</p>
+                </div>
+              )}
+
+              {/* Allow Location button */}
+              <button
+                onClick={() => {
+                  pendingOrderRef.current = true;
+                  setGeoError('');
+                  detectLocation();
+                }}
+                disabled={geoLoading}
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all duration-200 mb-3"
+                style={{ background: geoLoading ? '#6ee7b7' : 'linear-gradient(135deg, #10b981, #059669)', boxShadow: geoLoading ? 'none' : '0 4px 14px rgba(16,185,129,0.35)' }}
+              >
+                {geoLoading ? (
+                  <><Loader2 size={15} className="animate-spin" /> Detecting location…</>
+                ) : (
+                  <><LocateFixed size={15} /> Share My Location</>
+                )}
+              </button>
+
+              {/* Privacy note */}
+              <p className="text-xs text-gray-400 flex items-center justify-center gap-1.5">
+                <Shield size={11} className="text-emerald-400" />
+                Only used for delivery · Never stored without consent
+              </p>
             </div>
           </div>
         </div>

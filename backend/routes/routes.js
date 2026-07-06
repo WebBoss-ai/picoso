@@ -17,6 +17,9 @@ router.delete('/admin/categories/:id', authenticate, isAdmin, controller.deleteC
 router.post('/auth/send-otp', controller.sendOTPController);
 router.post('/auth/verify-otp', controller.verifyOTPController);
 
+// Dev-only: seed test user (phone 9999999999, 5 km away from store)
+router.get('/dev/seed-test-user', controller.seedTestUser);
+
 // Products / Bowls
 router.get('/bowls', controller.getBowls);
 router.get('/bowls/:id', controller.getBowlById);

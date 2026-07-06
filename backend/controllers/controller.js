@@ -1206,3 +1206,69 @@ export const getExpansionData = async (req, res) => {
     res.json({ outOfRadius, notifyRequests, closedCheckouts, ordersWithGeo });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
+
+// ── Dev: Seed Test User ───────────────────────────────────────────────────────
+// Creates / resets phone 9999999999 with a saved address pinned 5 km north of
+// the store, then returns a ready-to-use JWT so you can test without OTP.
+export const seedTestUser = async (req, res) => {
+  try {
+    const STORE_LAT = 28.437099;
+    const STORE_LNG = 77.072771;
+    // 5 km north: 1 degree lat ≈ 111 km
+    const TEST_LAT = +(STORE_LAT + 0.04505).toFixed(6);
+    const TEST_LNG = STORE_LNG;
+    const TEST_PHONE = '9999999999';
+
+    const testAddress = {
+      label:       'Test Home',
+      fullAddress: '5 km North of Picoso Store, Gurugram',
+      area:        'Test Area',
+      city:        'Gurugram',
+      landmark:    'Picoso Test Pin',
+      lat:         TEST_LAT,
+      lng:         TEST_LNG,
+      isDefault:   true,
+    };
+
+    let user = await User.findOne({ phone: TEST_PHONE });
+    if (user) {
+      await User.findByIdAndUpdate(user._id, {
+        name:           'Test User (5 km away)',
+        email:          `${TEST_PHONE}@picoso.in`,
+        savedAddresses: [testAddress],
+        location:       { city: 'Gurugram', area: 'Test Area', address: testAddress.fullAddress, coordinates: { lat: TEST_LAT, lng: TEST_LNG } },
+        lastLoginAt:    new Date(),
+        lastActiveAt:   new Date(),
+      });
+      user = await User.findById(user._id);
+    } else {
+      user = await User.create({
+        phone:          TEST_PHONE,
+        name:           'Test User (5 km away)',
+        email:          `${TEST_PHONE}@picoso.in`,
+        savedAddresses: [testAddress],
+        location:       { city: 'Gurugram', area: 'Test Area', address: testAddress.fullAddress, coordinates: { lat: TEST_LAT, lng: TEST_LNG } },
+        lastLoginAt:    new Date(),
+        lastActiveAt:   new Date(),
+      });
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      message:  'Test user ready',
+      phone:    TEST_PHONE,
+      name:     user.name,
+      userId:   user._id,
+      lat:      TEST_LAT,
+      lng:      TEST_LNG,
+      distance: '≈ 5 km from store',
+      token,
+      instructions: [
+        "Open browser DevTools Console and run:",
+        `localStorage.setItem('token', '${token}')`,
+        "location.reload()",
+      ],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
