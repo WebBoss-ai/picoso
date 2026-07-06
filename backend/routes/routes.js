@@ -19,6 +19,8 @@ router.post('/auth/verify-otp', controller.verifyOTPController);
 
 // Dev-only: seed test user (phone 9999999999, 5 km away from store)
 router.get('/dev/seed-test-user', controller.seedTestUser);
+// Dev-only: push a 5 km-away saved address onto the test user
+router.get('/dev/add-far-address', controller.addFarAddressToTestUser);
 
 // Products / Bowls
 router.get('/bowls', controller.getBowls);

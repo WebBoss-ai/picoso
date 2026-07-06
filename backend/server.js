@@ -4,7 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import routes from './routes/routes.js';
-import { DeliveryPartner } from './models/Model.js';
+import { DeliveryPartner, User } from './models/Model.js';
 
 dotenv.config();
 
@@ -30,10 +30,32 @@ async function seedDeliveryPartners() {
   }
 }
 
+async function ensureTestUserAddress() {
+  const TEST_PHONE = '9999999999';
+  const FAR_LABEL  = 'Far Away (Test)';
+  const user = await User.findOne({ phone: TEST_PHONE });
+  if (!user) return;
+  const already = user.savedAddresses?.some(a => a.label === FAR_LABEL);
+  if (already) return;
+  user.savedAddresses.push({
+    label:       FAR_LABEL,
+    fullAddress: '5 km North of Picoso Store, Gurugram',
+    area:        'Test Area North',
+    city:        'Gurugram',
+    landmark:    'Picoso Test Pin',
+    lat:         28.482149,
+    lng:         77.072771,
+    isDefault:   false,
+  });
+  await user.save();
+  console.log('✅ Far-away address added to test user 9999999999');
+}
+
 mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('✅ MongoDB Connected');
     await seedDeliveryPartners();
+    await ensureTestUserAddress();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 

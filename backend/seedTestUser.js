@@ -22,7 +22,16 @@ const TEST_LNG = STORE_LNG;
 const TEST_PHONE = '9999999999';
 const TEST_NAME  = 'Test User (5 km away)';
 
-await mongoose.connect(process.env.MONGO_URI);
+// Use direct host connection to bypass SRV DNS restrictions
+const directUri = process.env.MONGO_URI.replace(
+  'mongodb+srv://',
+  'mongodb://'
+).replace(
+  '@cluster0.g7rmjy1.mongodb.net/',
+  '@ac-9jcuftu-shard-00-00.g7rmjy1.mongodb.net:27017,ac-9jcuftu-shard-00-01.g7rmjy1.mongodb.net:27017,ac-9jcuftu-shard-00-02.g7rmjy1.mongodb.net:27017/'
+) + '?ssl=true&authSource=admin&replicaSet=atlas-lldfnb-shard-0';
+
+await mongoose.connect(directUri);
 console.log('✅ Connected to MongoDB');
 
 const testAddress = {

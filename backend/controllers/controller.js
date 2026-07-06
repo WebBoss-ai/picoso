@@ -1207,6 +1207,41 @@ export const getExpansionData = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
+// ── Dev: Add Far Address to Test User ────────────────────────────────────────
+// Pushes a 5 km-away saved address onto phone 9999999999's savedAddresses.
+export const addFarAddressToTestUser = async (req, res) => {
+  try {
+    const TEST_PHONE = '9999999999';
+    const TEST_LAT   = 28.482149;
+    const TEST_LNG   = 77.072771;
+
+    const user = await User.findOne({ phone: TEST_PHONE });
+    if (!user) return res.status(404).json({ error: 'Test user not found. Run /dev/seed-test-user first.' });
+
+    // Remove any existing address with same label to avoid dupes on re-run
+    const filtered = (user.savedAddresses || []).filter(a => a.label !== 'Far Away (Test)');
+
+    filtered.push({
+      label:       'Far Away (Test)',
+      fullAddress: '5 km North of Picoso Store, Gurugram',
+      area:        'Test Area North',
+      city:        'Gurugram',
+      landmark:    'Picoso Test Pin',
+      lat:         TEST_LAT,
+      lng:         TEST_LNG,
+      isDefault:   false,
+    });
+
+    user.savedAddresses = filtered;
+    await user.save();
+
+    res.json({
+      message:   'Far address added',
+      addresses: user.savedAddresses.map(a => ({ label: a.label, lat: a.lat, lng: a.lng })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
 // ── Dev: Seed Test User ───────────────────────────────────────────────────────
 // Creates / resets phone 9999999999 with a saved address pinned 5 km north of
 // the store, then returns a ready-to-use JWT so you can test without OTP.
