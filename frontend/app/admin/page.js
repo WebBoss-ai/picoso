@@ -743,6 +743,14 @@ function OrderCard({ order, onStatusChange, updating, isNew }) {
                   </div>
                 )}
 
+                {/* No-pin warning */}
+                {!hasCoords && (
+                  <div className="mx-3 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-700 font-medium">
+                    <AlertTriangle size={12} className="flex-shrink-0" />
+                    No GPS pin — order placed without coordinates
+                  </div>
+                )}
+
                 {/* Address block */}
                 <div className="p-3 space-y-1.5">
                   <div className="flex items-start gap-1.5">
@@ -773,7 +781,7 @@ function OrderCard({ order, onStatusChange, updating, isNew }) {
                     <p className="pl-4"><span className="font-semibold text-gray-700">UPI Ref: </span><span className="font-mono text-gray-600">{order.upiRef}</span></p>
                   )}
                   {order.estimatedDelivery && (
-                    <p className="pl-4"><span className="font-semibold text-gray-700">ETA: </span>{order.estimatedDelivery}</p>
+                    <p className="pl-4"><span className="font-semibold text-gray-700">ETA: </span>{new Date(order.estimatedDelivery).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>
                   )}
                   {order.pickedUpAt && (
                     <p className="pl-4"><span className="font-semibold text-gray-700">Picked up: </span>{new Date(order.pickedUpAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>

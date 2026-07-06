@@ -533,8 +533,9 @@ export default function CheckoutPage() {
           area: selectedAddress.area,
           city: selectedAddress.city,
           landmark: selectedAddress.landmark,
-          lat: selectedAddress.lat,
-          lng: selectedAddress.lng,
+          // Prefer saved-address coords; fall back to GPS captured via location modal
+          lat: selectedAddress.lat ?? geoCoords?.lat,
+          lng: selectedAddress.lng ?? geoCoords?.lng,
         }
       : {
           label: form.label,
