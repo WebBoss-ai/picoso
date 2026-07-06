@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, CreditCard, UtensilsCrossed, Users,
@@ -12,6 +12,7 @@ import {
   Store, BellRing, PhoneCall, CheckCheck, Power, ShoppingCart,
   MapPin, Navigation, QrCode, Wallet, ScanLine, IndianRupee,
   UserCheck, BadgeDollarSign, ChevronRight, Globe, Target, Radar,
+  Copy, ExternalLink, Truck, Phone,
 } from 'lucide-react';
 import { admin, adminAgents, agentAuth as agentAuthApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -536,7 +537,27 @@ function StatMini({ label, value, icon, sub }) {
 }
 
 // ─── Orders Section ───────────────────────────────────────────────────────────
-function OrderCard({ order, onStatusChange, updating }) {
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [[660, 0, 0.22], [880, 0.16, 0.25], [1100, 0.32, 0.35]].forEach(([freq, delay, dur]) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + delay;
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.linearRampToValueAtTime(0.38, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+    });
+  } catch {}
+}
+
+function OrderCard({ order, onStatusChange, updating, isNew }) {
   const [expanded, setExpanded] = useState(false);
 
   const addr = order.deliveryAddress || {};
@@ -555,8 +576,10 @@ function OrderCard({ order, onStatusChange, updating }) {
     failed:  'bg-red-100 text-red-600',
   };
 
+  const grandTotal = (order.totalPrice || 0) + (order.deliveryFee || 0);
+
   return (
-    <div className="card overflow-hidden">
+    <div className={`card overflow-hidden transition-all duration-300 ${isNew ? 'ring-2 ring-brand-400 shadow-lg shadow-brand-100' : ''}`}>
       {/* Header row */}
       <div
         className="p-4 cursor-pointer hover:bg-surface-50 transition-colors"
@@ -567,6 +590,9 @@ function OrderCard({ order, onStatusChange, updating }) {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-bold text-gray-900 text-sm font-mono">#{order._id.slice(-8).toUpperCase()}</p>
+                {isNew && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500 text-white animate-pulse">NEW</span>
+                )}
                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-600'}`}>
                   {order.status?.replace(/-/g, ' ')}
                 </span>
@@ -602,8 +628,8 @@ function OrderCard({ order, onStatusChange, updating }) {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="font-extrabold text-gray-900 text-base">₹{order.totalPrice}</p>
-              <p className="text-[10px] text-gray-400">{order.items?.length} item{order.items?.length !== 1 ? 's' : ''}</p>
+              <p className="font-extrabold text-gray-900 text-base">₹{grandTotal}</p>
+              <p className="text-[10px] text-gray-400">{order.items?.length} item{order.items?.length !== 1 ? 's' : ''} + ₹{order.deliveryFee || 15} delivery</p>
             </div>
             <ChevronDown size={16} className={`text-gray-400 transition-transform flex-shrink-0 ${expanded ? 'rotate-180' : ''}`} />
           </div>
@@ -657,7 +683,7 @@ function OrderCard({ order, onStatusChange, updating }) {
                   <div className="flex justify-between text-brand-600"><span>Discount</span><span>−₹{order.discountAmount}</span></div>
                 )}
                 <div className="flex justify-between font-extrabold text-gray-900 pt-1.5 border-t border-surface-100">
-                  <span>Total</span><span>₹{order.totalPrice}</span>
+                  <span>Grand Total</span><span>₹{grandTotal}</span>
                 </div>
               </div>
             </div>
@@ -665,36 +691,100 @@ function OrderCard({ order, onStatusChange, updating }) {
             {/* Delivery info */}
             <div>
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Delivery Details</p>
-              <div className="bg-white rounded-xl p-3 border border-surface-100 space-y-1.5 text-xs text-gray-600">
-                <p><span className="font-semibold text-gray-700">Address: </span>{addrStr}</p>
-                {addr.landmark && <p><span className="font-semibold text-gray-700">Landmark: </span>{addr.landmark}</p>}
-                {order.phone && <p><span className="font-semibold text-gray-700">Phone: </span>+91 {order.phone}</p>}
+              <div className="bg-white rounded-xl border border-surface-100 overflow-hidden text-xs text-gray-600">
+
+                {/* Map preview + Navigate strip */}
                 {hasCoords && (
-                  <p className="flex items-center gap-1">
-                    <span className="font-semibold text-gray-700">GPS: </span>
-                    <span className="font-mono text-[10px] text-gray-500">{addr.lat.toFixed(5)}, {addr.lng.toFixed(5)}</span>
-                    {distLabel && (
-                      <span className="ml-1 font-bold text-cyan-700">· {distLabel}</span>
-                    )}
-                  </p>
+                  <div className="relative bg-gradient-to-br from-cyan-50 to-teal-50 border-b border-surface-100 p-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-600 flex items-center justify-center flex-shrink-0 shadow">
+                        <MapPin size={16} className="text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-gray-800 text-[11px] mb-0.5">Customer Pin</p>
+                        <p className="font-mono text-[10px] text-cyan-700 font-semibold">
+                          {addr.lat.toFixed(6)}, {addr.lng.toFixed(6)}
+                        </p>
+                        {distLabel && (
+                          <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">
+                            {distLabel} from store
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(`${addr.lat.toFixed(6)},${addr.lng.toFixed(6)}`); }}
+                        className="w-7 h-7 rounded-lg bg-white border border-cyan-200 flex items-center justify-center hover:bg-cyan-50 transition-colors flex-shrink-0"
+                        title="Copy coordinates"
+                      >
+                        <Copy size={11} className="text-cyan-600" />
+                      </button>
+                    </div>
+                    {/* Action buttons */}
+                    <div className="flex gap-2 mt-2.5">
+                      <a
+                        href={navUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-600 hover:bg-cyan-700 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm"
+                      >
+                        <Navigation size={11} /> Navigate
+                      </a>
+                      <a
+                        href={`https://www.google.com/maps?q=${addr.lat},${addr.lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-gray-50 text-gray-700 text-[11px] font-bold rounded-lg transition-colors border border-surface-200"
+                      >
+                        <ExternalLink size={11} /> View on Map
+                      </a>
+                    </div>
+                  </div>
                 )}
-                {order.upiRef && <p><span className="font-semibold text-gray-700">UPI Ref: </span><span className="font-mono">{order.upiRef}</span></p>}
-                {order.pickedUpAt && <p><span className="font-semibold text-gray-700">Picked up: </span>{new Date(order.pickedUpAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
-                {order.deliveredAt && <p><span className="font-semibold text-gray-700">Delivered: </span>{new Date(order.deliveredAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
-                {order.estimatedDelivery && <p><span className="font-semibold text-gray-700">ETA: </span>{order.estimatedDelivery}</p>}
-                {order.updatedAt && <p><span className="font-semibold text-gray-700">Last updated: </span>{new Date(order.updatedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>}
-                {/* Navigate button */}
-                {navUrl && (
-                  <a
-                    href={navUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
-                    className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-[11px] font-bold rounded-lg transition-colors"
-                  >
-                    <Navigation size={11} /> Navigate to Customer
-                  </a>
-                )}
+
+                {/* Address block */}
+                <div className="p-3 space-y-1.5">
+                  <div className="flex items-start gap-1.5">
+                    <Truck size={11} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      {addr.label && <span className="font-bold text-gray-800">{addr.label} · </span>}
+                      <span>{addrStr}</span>
+                    </div>
+                  </div>
+                  {addr.landmark && (
+                    <p className="pl-4 text-gray-500"><span className="font-semibold text-gray-700">Landmark: </span>{addr.landmark}</p>
+                  )}
+                  {(order.phone || order.userId?.phone) && (
+                    <div className="flex items-center gap-1.5">
+                      <Phone size={11} className="text-gray-400 flex-shrink-0" />
+                      <span className="font-semibold text-gray-700">+91 {order.phone || order.userId?.phone}</span>
+                      <a
+                        href={`tel:+91${order.phone || order.userId?.phone}`}
+                        onClick={e => e.stopPropagation()}
+                        className="ml-1 text-brand-600 font-bold hover:underline"
+                      >Call</a>
+                    </div>
+                  )}
+                  {order.userId?.email && (
+                    <p className="pl-4 text-gray-500"><span className="font-semibold text-gray-700">Email: </span>{order.userId.email}</p>
+                  )}
+                  {order.upiRef && (
+                    <p className="pl-4"><span className="font-semibold text-gray-700">UPI Ref: </span><span className="font-mono text-gray-600">{order.upiRef}</span></p>
+                  )}
+                  {order.estimatedDelivery && (
+                    <p className="pl-4"><span className="font-semibold text-gray-700">ETA: </span>{order.estimatedDelivery}</p>
+                  )}
+                  {order.pickedUpAt && (
+                    <p className="pl-4"><span className="font-semibold text-gray-700">Picked up: </span>{new Date(order.pickedUpAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>
+                  )}
+                  {order.deliveredAt && (
+                    <p className="pl-4"><span className="font-semibold text-gray-700">Delivered: </span>{new Date(order.deliveredAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>
+                  )}
+                  {order.updatedAt && (
+                    <p className="pl-4 text-gray-400"><span className="font-semibold">Last updated: </span>{new Date(order.updatedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -718,26 +808,71 @@ function OrderCard({ order, onStatusChange, updating }) {
   );
 }
 
+const POLL_INTERVAL_MS = 6000; // refresh every 6 seconds silently
+
 function OrdersSection() {
-  const [orderList, setOrderList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [orderList, setOrderList]     = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState('');
+  const [filterStatus, setFilterStatus]   = useState('');
   const [filterPayment, setFilterPayment] = useState('');
-  const [updatingId, setUpdatingId] = useState(null);
+  const [updatingId, setUpdatingId]   = useState(null);
+  const [newOrderIds, setNewOrderIds] = useState(new Set());
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  const load = () => {
-    setLoading(true);
+  const knownIdsRef    = useRef(null); // null = first load
+  const filterStatusRef  = useRef(filterStatus);
+  const filterPaymentRef = useRef(filterPayment);
+  filterStatusRef.current  = filterStatus;
+  filterPaymentRef.current = filterPayment;
+
+  const fetchOrders = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
     const params = {};
-    if (filterStatus)  params.status = filterStatus;
-    if (filterPayment) params.paymentMethod = filterPayment;
-    admin.getOrders(params)
-      .then(res => setOrderList(res.data.orders || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  };
+    if (filterStatusRef.current)  params.status = filterStatusRef.current;
+    if (filterPaymentRef.current) params.paymentMethod = filterPaymentRef.current;
 
-  useEffect(() => { load(); }, [filterStatus, filterPayment]);
+    admin.getOrders(params)
+      .then(res => {
+        const orders = res.data.orders || [];
+        const incoming = new Set(orders.map(o => o._id));
+
+        if (knownIdsRef.current === null) {
+          // First load — seed known IDs silently
+          knownIdsRef.current = incoming;
+        } else {
+          // Detect genuinely new orders
+          const fresh = orders.filter(o => !knownIdsRef.current.has(o._id));
+          if (fresh.length > 0) {
+            playNotificationSound();
+            const freshIds = new Set(fresh.map(o => o._id));
+            setNewOrderIds(prev => new Set([...prev, ...freshIds]));
+            // Auto-clear NEW badge after 30 s
+            setTimeout(() => {
+              setNewOrderIds(prev => {
+                const next = new Set(prev);
+                freshIds.forEach(id => next.delete(id));
+                return next;
+              });
+            }, 30000);
+          }
+          knownIdsRef.current = incoming;
+        }
+
+        setOrderList(orders);
+        setLastUpdated(new Date());
+      })
+      .catch(() => {})
+      .finally(() => { if (!silent) setLoading(false); });
+  }, []);
+
+  // Initial load + live polling
+  useEffect(() => {
+    knownIdsRef.current = null; // reset on filter change so we don't false-alarm
+    fetchOrders(false);
+    const timer = setInterval(() => fetchOrders(true), POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [filterStatus, filterPayment, fetchOrders]);
 
   const handleStatusChange = async (id, status) => {
     setUpdatingId(id);
@@ -761,16 +896,32 @@ function OrdersSection() {
     );
   });
 
-  const totalRevenue = filtered.reduce((s, o) => s + (o.totalPrice || 0), 0);
+  const totalRevenue = filtered.reduce((s, o) => s + (o.totalPrice || 0) + (o.deliveryFee || 0), 0);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Orders Management</h2>
-          <p className="text-sm text-gray-500 mt-0.5">{filtered.length} orders &nbsp;•&nbsp; ₹{totalRevenue.toLocaleString()} total</p>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-bold text-gray-900">Orders Management</h2>
+            {/* Live indicator */}
+            <span className="flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
+              LIVE
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {filtered.length} orders &nbsp;•&nbsp; ₹{totalRevenue.toLocaleString()} total
+            {lastUpdated && (
+              <span className="ml-2 text-gray-400 text-xs">
+                · updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+          </p>
         </div>
-        <button onClick={load} className="btn-secondary text-xs px-3 py-2"><RefreshCw size={13} /> Refresh</button>
+        <button onClick={() => fetchOrders(false)} className="btn-secondary text-xs px-3 py-2">
+          <RefreshCw size={13} /> Refresh Now
+        </button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -799,6 +950,7 @@ function OrdersSection() {
               order={order}
               onStatusChange={handleStatusChange}
               updating={updatingId === order._id}
+              isNew={newOrderIds.has(order._id)}
             />
           ))}
           {filtered.length === 0 && (
