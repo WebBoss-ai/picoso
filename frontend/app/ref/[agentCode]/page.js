@@ -1,67 +1,32 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Phone, ArrowRight, Loader2, CheckCircle2, Coffee, ChevronRight, Sparkles, Leaf, Clock, Shield } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { Loader2, Leaf } from 'lucide-react';
 import { agentRef } from '@/lib/api';
+
+const WA_NUMBER = '918167080111';
+const WA_MESSAGE = 'Hi! I just scanned your QR! Could you please share your menu?';
+const WA_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(WA_MESSAGE)}`;
 
 export default function LeadCapturePage() {
   const { agentCode } = useParams();
-  const router = useRouter();
-
-  const [phase, setPhase] = useState('loading'); // loading | form | submitting | success | invalid
-  const [agentName, setAgentName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [error, setError] = useState('');
-  const inputRef = useRef(null);
+  const [phase, setPhase] = useState('loading'); // loading | redirecting | invalid
 
   useEffect(() => {
     const init = async () => {
       if (!agentCode) { setPhase('invalid'); return; }
       try {
-        const already = localStorage.getItem('picoso_token');
-        if (already) {
-          router.replace('/menu');
-          return;
-        }
-        const res = await agentRef.trackScan(agentCode);
-        setAgentName(res.data.agentName || '');
-        setPhase('form');
-        setTimeout(() => inputRef.current?.focus(), 300);
+        // Track the scan for agent commission attribution (fire-and-forget)
+        agentRef.trackScan(agentCode).catch(() => {});
+        setPhase('redirecting');
+        // Auto-redirect to WhatsApp; slight delay lets the page paint first
+        setTimeout(() => { window.location.href = WA_URL; }, 600);
       } catch {
         setPhase('invalid');
       }
     };
     init();
-  }, [agentCode, router]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number');
-      return;
-    }
-    setError('');
-    setPhase('submitting');
-    try {
-      const res = await agentRef.register(agentCode, cleaned);
-      localStorage.setItem('picoso_token', res.data.token);
-      localStorage.setItem('picoso_user', JSON.stringify(res.data.user));
-      setPhase('success');
-      setTimeout(() => router.replace('/menu'), 2500);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Something went wrong. Please try again.');
-      setPhase('form');
-    }
-  };
-
-  if (phase === 'loading') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-      </div>
-    );
-  }
+  }, [agentCode]);
 
   if (phase === 'invalid') {
     return (
@@ -76,146 +41,60 @@ export default function LeadCapturePage() {
     );
   }
 
-  if (phase === 'success') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 flex flex-col items-center justify-center px-6 text-center">
-        <div className="bg-emerald-500/20 border border-emerald-500/40 rounded-full p-6 mb-6 animate-bounce">
-          <CheckCircle2 className="w-12 h-12 text-emerald-400" />
-        </div>
-        <h1 className="text-white text-2xl font-bold mb-2">You're all set! 🎉</h1>
-        <p className="text-emerald-200/70 text-sm mb-1">Taking you to Picoso now…</p>
-        <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/30 rounded-xl px-4 py-2 mt-4">
-          <Coffee className="w-4 h-4 text-amber-400" />
-          <span className="text-amber-200 text-sm">Your free coffee is ready to claim!</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 flex flex-col items-center justify-center px-5">
       {/* Decorative blobs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative flex-1 flex flex-col items-center justify-center px-5 py-10 max-w-sm mx-auto w-full">
+      <div className="relative flex flex-col items-center gap-8 max-w-sm w-full text-center">
+        {/* Brand */}
+        <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-1.5">
+          <Leaf className="w-4 h-4 text-emerald-400" />
+          <span className="text-white text-sm font-medium">Picoso Foods</span>
+        </div>
 
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-1.5 mb-4">
-            <Leaf className="w-4 h-4 text-emerald-400" />
-            <span className="text-white text-sm font-medium">Picoso Cloud Kitchen</span>
+        {/* WhatsApp icon + pulse ring */}
+        <div className="relative">
+          <div className="absolute inset-0 rounded-full bg-[#25D366]/20 animate-ping" />
+          <div className="relative bg-[#25D366] rounded-full p-5 shadow-2xl shadow-[#25D366]/40">
+            {/* WhatsApp logo */}
+            <svg viewBox="0 0 32 32" className="w-10 h-10 fill-white" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16.003 2.667C8.637 2.667 2.667 8.637 2.667 16c0 2.352.636 4.558 1.742 6.46L2.667 29.333l7.085-1.718A13.28 13.28 0 0 0 16.003 29.333c7.363 0 13.33-5.97 13.33-13.333 0-7.363-5.967-13.333-13.33-13.333zm0 24.222a10.87 10.87 0 0 1-5.545-1.516l-.398-.236-4.207 1.02.998-4.097-.26-.42A10.855 10.855 0 0 1 5.111 16c0-5.999 4.893-10.889 10.892-10.889S26.889 10.001 26.889 16c0 5.999-4.886 10.889-10.886 10.889zm5.972-8.148c-.327-.165-1.934-.954-2.234-1.063-.299-.11-.516-.165-.734.165-.218.33-.842 1.063-1.032 1.282-.19.218-.38.247-.707.082-.327-.165-1.381-.509-2.63-1.622-.972-.867-1.629-1.937-1.819-2.264-.19-.327-.02-.504.143-.667.147-.147.327-.383.49-.574.164-.19.218-.328.328-.546.109-.218.054-.41-.028-.574-.082-.165-.734-1.77-1.006-2.424-.265-.636-.535-.55-.734-.56l-.625-.01c-.218 0-.572.082-.871.41-.299.328-1.142 1.117-1.142 2.722s1.169 3.158 1.332 3.376c.163.218 2.3 3.514 5.573 4.928.779.336 1.386.537 1.861.687.782.249 1.494.214 2.057.13.627-.094 1.934-.79 2.207-1.554.272-.765.272-1.42.19-1.554-.08-.136-.299-.218-.625-.383z"/>
+            </svg>
           </div>
         </div>
 
-        {/* Main Welcome Card */}
-        <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 mb-5 shadow-2xl">
-          <div className="text-center mb-5">
-            <div className="text-4xl mb-3">👋</div>
-            <h1 className="text-white text-xl font-bold leading-snug mb-3">
-              Welcome to Picoso!
-            </h1>
-            <p className="text-emerald-100/80 text-sm leading-relaxed">
-              We're your local cloud kitchen, committed to serving{' '}
-              <span className="text-emerald-300 font-semibold">fresh, delicious, no-junk meals</span>{' '}
-              made with quality ingredients and delivered to your doorstep in around{' '}
-              <span className="text-emerald-300 font-semibold">20 minutes</span>.
-            </p>
-          </div>
-
-          {/* Gift Banner */}
-          <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/10 border border-amber-500/30 rounded-2xl p-4 mb-5">
-            <div className="flex items-center gap-3">
-              <div className="bg-amber-500/30 rounded-xl p-2.5 flex-shrink-0">
-                <Coffee className="w-5 h-5 text-amber-300" />
-              </div>
-              <div>
-                <div className="text-white text-sm font-semibold">
-                  Sign up & get a{' '}
-                  <span className="bg-amber-400 text-emerald-950 px-1.5 py-0.5 rounded font-bold">FREE</span>{' '}
-                  Coffee!
-                </div>
-                <div className="text-amber-200/70 text-xs mt-0.5">
-                  Complimentary with your first order
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Phone Input Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-emerald-200 text-sm font-medium mb-2">
-                Enter your mobile number
-              </label>
-              <div className="flex items-center bg-white/10 border border-white/20 rounded-2xl overflow-hidden focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400 transition-all">
-                <div className="flex items-center gap-1.5 px-3 py-4 border-r border-white/20">
-                  <span className="text-white/50 text-sm">🇮🇳</span>
-                  <span className="text-white/60 text-sm font-medium">+91</span>
-                </div>
-                <input
-                  ref={inputRef}
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
-                  placeholder="10-digit mobile number"
-                  className="flex-1 bg-transparent px-4 py-4 text-white placeholder-white/30 text-base focus:outline-none tracking-wide"
-                  inputMode="numeric"
-                  required
-                  disabled={phase === 'submitting'}
-                />
-              </div>
-              {error && (
-                <p className="text-red-400 text-xs mt-1.5 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                  {error}
-                </p>
-              )}
-            </div>
-            <button
-              type="submit"
-              disabled={phase === 'submitting' || phone.replace(/\D/g, '').length !== 10}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-900/40 text-base"
-            >
-              {phase === 'submitting' ? (
-                <><Loader2 className="w-5 h-5 animate-spin" /> Getting you in…</>
-              ) : (
-                <>Claim my free coffee <ArrowRight className="w-5 h-5" /></>
-              )}
-            </button>
-            <p className="text-white/30 text-xs text-center">
-              By signing up, you agree to receive order updates via WhatsApp/SMS.
-            </p>
-          </form>
+        {/* Message */}
+        <div className="space-y-2">
+          {phase === 'loading' ? (
+            <Loader2 className="w-5 h-5 text-emerald-400 animate-spin mx-auto" />
+          ) : (
+            <>
+              <h1 className="text-white text-2xl font-bold">Opening WhatsApp…</h1>
+              <p className="text-emerald-200/70 text-sm leading-relaxed">
+                You'll be connected to Picoso Foods instantly.
+              </p>
+            </>
+          )}
         </div>
 
-        {/* Feature Pills */}
-        <div className="grid grid-cols-3 gap-2 w-full">
-          {[
-            { icon: <Leaf className="w-4 h-4" />, label: 'No Junk', color: 'emerald' },
-            { icon: <Clock className="w-4 h-4" />, label: '~20 min', color: 'blue' },
-            { icon: <Shield className="w-4 h-4" />, label: 'Fresh Daily', color: 'violet' },
-          ].map(({ icon, label, color }) => {
-            const cls = {
-              emerald: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300',
-              blue: 'bg-blue-500/10 border-blue-500/20 text-blue-300',
-              violet: 'bg-violet-500/10 border-violet-500/20 text-violet-300',
-            };
-            return (
-              <div key={label} className={`${cls[color]} border rounded-xl px-2 py-2.5 flex flex-col items-center gap-1`}>
-                {icon}
-                <span className="text-xs font-medium">{label}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {agentName && (
-          <p className="text-white/20 text-xs mt-5 text-center">
-            Introduced by {agentName}
-          </p>
+        {/* CTA button — fallback if auto-redirect is blocked */}
+        {phase === 'redirecting' && (
+          <a
+            href={WA_URL}
+            className="w-full flex items-center justify-center gap-3 bg-[#25D366] hover:bg-[#20bd5c] active:scale-95 text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-[#25D366]/30 text-base"
+          >
+            <svg viewBox="0 0 32 32" className="w-5 h-5 fill-white flex-shrink-0" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16.003 2.667C8.637 2.667 2.667 8.637 2.667 16c0 2.352.636 4.558 1.742 6.46L2.667 29.333l7.085-1.718A13.28 13.28 0 0 0 16.003 29.333c7.363 0 13.33-5.97 13.33-13.333 0-7.363-5.967-13.333-13.33-13.333zm0 24.222a10.87 10.87 0 0 1-5.545-1.516l-.398-.236-4.207 1.02.998-4.097-.26-.42A10.855 10.855 0 0 1 5.111 16c0-5.999 4.893-10.889 10.892-10.889S26.889 10.001 26.889 16c0 5.999-4.886 10.889-10.886 10.889zm5.972-8.148c-.327-.165-1.934-.954-2.234-1.063-.299-.11-.516-.165-.734.165-.218.33-.842 1.063-1.032 1.282-.19.218-.38.247-.707.082-.327-.165-1.381-.509-2.63-1.622-.972-.867-1.629-1.937-1.819-2.264-.19-.327-.02-.504.143-.667.147-.147.327-.383.49-.574.164-.19.218-.328.328-.546.109-.218.054-.41-.028-.574-.082-.165-.734-1.77-1.006-2.424-.265-.636-.535-.55-.734-.56l-.625-.01c-.218 0-.572.082-.871.41-.299.328-1.142 1.117-1.142 2.722s1.169 3.158 1.332 3.376c.163.218 2.3 3.514 5.573 4.928.779.336 1.386.537 1.861.687.782.249 1.494.214 2.057.13.627-.094 1.934-.79 2.207-1.554.272-.765.272-1.42.19-1.554-.08-.136-.299-.218-.625-.383z"/>
+            </svg>
+            Open WhatsApp
+          </a>
         )}
+
+        <p className="text-white/25 text-xs">Picoso Foods · Fresh cloud kitchen</p>
       </div>
     </div>
   );
