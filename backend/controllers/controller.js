@@ -184,14 +184,26 @@ export const createOrder = async (req, res) => {
     let finalDiscount = discountAmount || 0;
     let campaignRedemptionData = null;
 
-    // Campaign free-coffee logic
+    // Campaign free-coffee logic (per-user: up to 5 coffees, 1 per order)
     if (campaignCode) {
       const campaign = await Campaign.findOne({ code: campaignCode, active: true });
-      if (campaign && campaign.redeemedCount < campaign.totalBudget) {
+      if (campaign) {
         const hasBowl = items?.some(item => item.type === 'bowl');
         if (hasBowl) {
-          finalDiscount += campaign.freeItemValue;
-          campaignRedemptionData = campaign;
+          let lead = await CampaignLead.findOne({ campaignId: campaign._id, userId: req.user._id });
+          if (!lead) {
+            lead = await CampaignLead.create({
+              campaignId: campaign._id,
+              userId: req.user._id,
+              phone: req.user.phone,
+              coffeesGiven: 0,
+              maxCoffees: 5,
+            });
+          }
+          if (lead.coffeesGiven < lead.maxCoffees) {
+            finalDiscount += campaign.freeItemValue;
+            campaignRedemptionData = { campaign, lead };
+          }
         }
       }
     }
@@ -214,19 +226,27 @@ export const createOrder = async (req, res) => {
       referredByAgent: req.user.referredByAgent || null
     });
 
-    // Record campaign redemption
+    // Record campaign redemption (per-user tracking)
+    let campaignResult = null;
     if (campaignRedemptionData) {
+      const { campaign: c, lead } = campaignRedemptionData;
       await CampaignRedemption.create({
-        campaignId: campaignRedemptionData._id,
+        campaignId: c._id,
         userId: req.user._id,
         orderId: order._id,
         phone: req.user.phone,
-        discountAmount: campaignRedemptionData.freeItemValue,
+        discountAmount: c.freeItemValue,
       });
-      await Campaign.findByIdAndUpdate(campaignRedemptionData._id, { $inc: { redeemedCount: 1 } });
+      await CampaignLead.findByIdAndUpdate(lead._id, { $inc: { coffeesGiven: 1 } });
+      await Campaign.findByIdAndUpdate(c._id, { $inc: { redeemedCount: 1 } });
+      const updatedLead = await CampaignLead.findById(lead._id);
+      campaignResult = {
+        coffeesRemaining: Math.max(0, updatedLead.maxCoffees - updatedLead.coffeesGiven),
+        maxCoffees: updatedLead.maxCoffees,
+      };
     }
 
-    res.json({ success: true, order });
+    res.json({ success: true, order, campaign: campaignResult });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1381,11 +1401,41 @@ export const registerCampaignLead = async (req, res) => {
     const userId = req.user._id;
     const campaign = await Campaign.findOne({ code });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const exists = await CampaignLead.findOne({ campaignId: campaign._id, userId });
-    if (!exists) {
-      await CampaignLead.create({ campaignId: campaign._id, userId, phone: req.user.phone });
+    let lead = await CampaignLead.findOne({ campaignId: campaign._id, userId });
+    if (!lead) {
+      lead = await CampaignLead.create({
+        campaignId: campaign._id,
+        userId,
+        phone: req.user.phone,
+        coffeesGiven: 0,
+        maxCoffees: 5,
+      });
     }
-    res.json({ success: true });
+    res.json({
+      success: true,
+      coffeesRemaining: lead.maxCoffees - lead.coffeesGiven,
+      maxCoffees: lead.maxCoffees,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Authenticated: get user's campaign status (coffees remaining)
+export const getCampaignMyStatus = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const userId = req.user._id;
+    const campaign = await Campaign.findOne({ code });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const lead = await CampaignLead.findOne({ campaignId: campaign._id, userId });
+    const coffeesRemaining = lead ? (lead.maxCoffees - lead.coffeesGiven) : 5;
+    res.json({
+      active: campaign.active,
+      coffeesRemaining: Math.max(0, coffeesRemaining),
+      maxCoffees: lead?.maxCoffees ?? 5,
+      coffeesGiven: lead?.coffeesGiven ?? 0,
+      freeItemValue: campaign.freeItemValue,
+      freeItemLabel: campaign.freeItemLabel,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

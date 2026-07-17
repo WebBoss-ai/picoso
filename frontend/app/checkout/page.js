@@ -7,7 +7,7 @@ import {
   Copy, CheckCircle2, ArrowLeft, Flame, Crown, Plus, Loader2,
   Moon, Clock, X, Navigation, LocateFixed, AlertCircle,
   CheckCheck, AlertTriangle, Sparkles, Bell, Shield,
-  Coffee, Gift, ChefHat, ArrowRight,
+  Coffee, Gift,
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -361,34 +361,29 @@ function BowlRequiredModal({ freeItemLabel, onClose, onGoMenu }) {
 }
 
 // ─── Campaign Banner ───────────────────────────────────────────────────────────
-function CampaignBanner({ campaignData, hasBowl }) {
+function CampaignBanner({ campaignData }) {
+  const remaining = campaignData?.coffeesRemaining ?? 5;
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-      hasBowl
-        ? 'bg-amber-50 border border-amber-200'
-        : 'bg-orange-50 border border-orange-200'
-    }`}>
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${hasBowl ? 'bg-amber-100' : 'bg-orange-100'}`}>
-        <Coffee size={16} className={hasBowl ? 'text-amber-600' : 'text-orange-500'} />
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+      <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+        <Coffee size={16} className="text-amber-600" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className={`text-xs font-bold ${hasBowl ? 'text-amber-800' : 'text-orange-700'}`}>
-          {hasBowl ? `🎉 Free ${campaignData.freeItemLabel || 'Coffee'} Applied!` : `Add a bowl to get free ${campaignData.freeItemLabel || 'coffee'}`}
+        <p className="text-xs font-bold text-amber-800">
+          🎉 Free {campaignData?.freeItemLabel || 'Coffee'} Added!
         </p>
-        <p className={`text-[11px] ${hasBowl ? 'text-amber-600' : 'text-orange-500'}`}>
-          {hasBowl
-            ? `₹${campaignData.freeItemValue || 79} discount applied on your order`
-            : 'Campaign code active — bowl required to redeem'}
+        <p className="text-[11px] text-amber-600">
+          {remaining} of 5 free coffees remaining on your account
         </p>
       </div>
-      {hasBowl && <Gift size={16} className="text-amber-500 flex-shrink-0" />}
+      <Gift size={16} className="text-amber-500 flex-shrink-0" />
     </div>
   );
 }
 
 // ─── Main Checkout Page ────────────────────────────────────────────────────────
 export default function CheckoutPage() {
-  const { items, cartTotal, clearCart, isPlatinum: cartIsPlatinum } = useCart();
+  const { items, cartTotal, clearCart, updateCampaign, activeCampaign, isPlatinum: cartIsPlatinum } = useCart();
   const { user, isLoggedIn, isPlatinum, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -433,8 +428,9 @@ export default function CheckoutPage() {
     } catch {}
   }, []);
 
-  // "Bowl" = any non-beverage food item
-  const hasBowlInCart = items.some(item => item.pfCategory !== 'pf-beverages');
+  // Campaign free coffee — auto-added to cart via CartContext
+  const hasCampaignCoffeeInCart = items.some(i => i.isCampaignCoffee);
+  const hasBowlInCart = items.some(item => item.pfCategory !== 'pf-beverages' && !item.isCampaignCoffee && !item.isOfferCoffee);
 
   // Location capture
   const [geoCoords, setGeoCoords] = useState(null);
@@ -521,11 +517,12 @@ export default function CheckoutPage() {
     }
   }, [radiusTimer, radiusModalState, showRadiusModal, radiusTimerMax]);
 
+  // Campaign coffee is already priced at ₹0 in cart — no extra discount needed at checkout
   const subtotal = isPlatinum ? Math.round(cartTotal * (1 - PLATINUM_DISCOUNT)) : cartTotal;
   const platinumDiscount = cartTotal - subtotal;
-  const campaignDiscount = (activeCampaign && hasBowlInCart) ? (activeCampaign.freeItemValue || 79) : 0;
-  const discountAmt = platinumDiscount + campaignDiscount;
-  const grandTotal = Math.max(0, subtotal - campaignDiscount + DELIVERY_FEE);
+  const campaignDiscount = 0; // free coffee is already ₹0 in cart
+  const discountAmt = platinumDiscount;
+  const grandTotal = subtotal + DELIVERY_FEE;
 
   // Shared radius-check + show-modal logic, accepts fresh coords directly
   const runRadiusOrOrder = useCallback((lat, lng) => {
@@ -620,12 +617,6 @@ export default function CheckoutPage() {
 
   // Called when "Place Order" button is clicked — check radius first
   const handlePlaceOrderClick = () => {
-    // Campaign bowl validation
-    if (activeCampaign && !hasBowlInCart && !bowlModalDismissed) {
-      setShowBowlModal(true);
-      return;
-    }
-
     const deliveryAddress = selectedAddress
       ? { fullAddress: selectedAddress.fullAddress }
       : { fullAddress: form.fullAddress };
@@ -678,11 +669,14 @@ export default function CheckoutPage() {
     try {
       const orderItems = items.map(item => ({
         type: 'bowl',
-        bowlId: item._id,
+        bowlId: item.isCampaignCoffee || item.isOfferCoffee ? undefined : item._id,
         name: item.name,
         image: item.image,
         quantity: item.quantity,
-        price: isPlatinum ? Math.round(item.price * (1 - PLATINUM_DISCOUNT)) : item.price,
+        // Campaign & offer coffees are always ₹0 / ₹79 respectively — no platinum discount applied to them
+        price: item.isCampaignCoffee ? 0
+             : item.isOfferCoffee ? item.price
+             : isPlatinum ? Math.round(item.price * (1 - PLATINUM_DISCOUNT)) : item.price,
       }));
 
       const res = await orders.create({
@@ -694,16 +688,16 @@ export default function CheckoutPage() {
         isPlatinumOrder: isPlatinum,
         paymentMethod,
         customerName: name,
-        campaignCode: (activeCampaign && hasBowlInCart) ? activeCampaign.code : undefined,
+        campaignCode: (activeCampaign && hasCampaignCoffeeInCart && hasBowlInCart) ? activeCampaign.code : undefined,
       });
 
       if (form.saveAddress && !selectedAddress) {
         await profile.addAddress({ ...form, isDefault: savedAddresses.length === 0 }).catch(() => {});
       }
 
-      // Clear campaign from localStorage after successful redemption
-      if (activeCampaign && hasBowlInCart) {
-        localStorage.removeItem('picoso_campaign');
+      // Update campaign coffees remaining from server response
+      if (res.data.campaign) {
+        updateCampaign(res.data.campaign.coffeesRemaining);
       }
 
       setRadiusModalState('success');
@@ -1010,7 +1004,7 @@ export default function CheckoutPage() {
               <h3 className="font-bold text-gray-900 mb-4">Order Summary</h3>
 
               {/* Campaign banner */}
-              {activeCampaign && (
+              {activeCampaign && hasCampaignCoffeeInCart && (
                 <div className="mb-4">
                   <CampaignBanner campaignData={activeCampaign} hasBowl={hasBowlInCart} />
                 </div>
@@ -1050,10 +1044,10 @@ export default function CheckoutPage() {
                     <span>−₹{platinumDiscount}</span>
                   </div>
                 )}
-                {activeCampaign && hasBowlInCart && (
+                {hasCampaignCoffeeInCart && (
                   <div className="flex justify-between text-sm text-amber-600 font-medium">
-                    <span className="flex items-center gap-1"><Coffee size={12} /> Free {activeCampaign.freeItemLabel || 'Coffee'}</span>
-                    <span>−₹{campaignDiscount}</span>
+                    <span className="flex items-center gap-1"><Coffee size={12} /> Free Coffee (Campaign)</span>
+                    <span className="text-green-600 font-bold">FREE</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm text-gray-500">
@@ -1105,15 +1099,6 @@ export default function CheckoutPage() {
           </div>
         </div>
       </div>
-
-      {/* Bowl Required Modal */}
-      {showBowlModal && (
-        <BowlRequiredModal
-          freeItemLabel={activeCampaign?.freeItemLabel}
-          onClose={() => { setShowBowlModal(false); setBowlModalDismissed(true); }}
-          onGoMenu={() => { setShowBowlModal(false); router.push('/menu'); }}
-        />
-      )}
 
       {/* Delivery Radius Modal */}
       {showRadiusModal && (

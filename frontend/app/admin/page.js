@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -4033,507 +4033,453 @@ function ExpansionSection() {
 }
 
 // ─── Marketing Section ─────────────────────────────────────────────────────────
+
 function MarketingSection() {
-  const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCampaign, setSelectedCampaign] = useState(null);
-  const [detail, setDetail] = useState(null);
+  const [campaigns, setCampaigns]         = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [activeCampaignId, setActiveCampaignId] = useState(null);
+  const [detail, setDetail]               = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ code: '', name: '', description: '', freeItemLabel: 'Free Coffee', freeItemValue: 79, totalBudget: 5 });
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
+  const [tab, setTab]                     = useState('leads');
+  const [showCreate, setShowCreate]       = useState(false);
+  const [form, setForm]                   = useState({ code: '', name: '', description: '', freeItemLabel: 'Free Coffee', freeItemValue: 79, totalBudget: 5 });
+  const [creating, setCreating]           = useState(false);
+  const [createErr, setCreateErr]         = useState('');
+  const [copiedLink, setCopiedLink]       = useState(false);
 
-  useEffect(() => {
-    loadCampaigns();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const loadCampaigns = () => {
+  const load = () => {
     setLoading(true);
     adminCampaigns.getAll()
-      .then(res => {
-        const list = res.data.campaigns || [];
+      .then(r => {
+        const list = r.data.campaigns || [];
         setCampaigns(list);
-        if (list.length > 0 && !selectedCampaign) {
-          setSelectedCampaign(list[0]);
-          loadDetail(list[0]._id);
-        }
+        if (list.length > 0) { setActiveCampaignId(list[0]._id); fetchDetail(list[0]._id); }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  const loadDetail = (id) => {
+  const fetchDetail = (id) => {
     setDetailLoading(true);
+    setDetail(null);
     adminCampaigns.getDetail(id)
-      .then(res => setDetail(res.data))
+      .then(r => setDetail(r.data))
       .catch(() => {})
       .finally(() => setDetailLoading(false));
   };
 
-  const handleSelectCampaign = (c) => {
-    setSelectedCampaign(c);
-    setDetail(null);
-    setActiveTab('overview');
-    loadDetail(c._id);
+  const selectCampaign = (c) => {
+    setActiveCampaignId(c._id);
+    setTab('leads');
+    fetchDetail(c._id);
   };
 
-  const handleCreate = async () => {
-    setCreateError('');
-    if (!createForm.code || !createForm.name) { setCreateError('Code and name required'); return; }
+  const create = async () => {
+    setCreateErr('');
+    if (!form.code || !form.name) { setCreateErr('Code and name are required'); return; }
     setCreating(true);
     try {
-      await adminCampaigns.create(createForm);
-      setShowCreateModal(false);
-      setCreateForm({ code: '', name: '', description: '', freeItemLabel: 'Free Coffee', freeItemValue: 79, totalBudget: 5 });
-      loadCampaigns();
-    } catch (e) {
-      setCreateError(e.response?.data?.error || 'Failed to create campaign');
-    } finally { setCreating(false); }
+      await adminCampaigns.create(form);
+      setShowCreate(false);
+      setForm({ code: '', name: '', description: '', freeItemLabel: 'Free Coffee', freeItemValue: 79, totalBudget: 5 });
+      load();
+    } catch (e) { setCreateErr(e.response?.data?.error || 'Failed to create'); }
+    finally { setCreating(false); }
   };
 
-  const fmt = (n) => n?.toLocaleString() ?? '—';
-  const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(1) + '%' : '0%';
-
-  const renderDetailTab = () => {
-    if (!detail) return null;
-    const { stats, dailyScans, leads, redemptions, campaign: c } = detail;
-
-    if (activeTab === 'overview') {
-      return (
-        <div className="space-y-5">
-          {/* Stat cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: 'Page Visits', value: fmt(stats.totalScans), icon: <MousePointerClick size={15} />, color: 'blue' },
-              { label: 'Leads', value: fmt(stats.totalLeads), icon: <Users size={15} />, color: 'brand' },
-              { label: 'Coffees Redeemed', value: fmt(stats.totalRedemptions), icon: <Coffee size={15} />, color: 'amber' },
-              { label: 'Coffees Left', value: fmt(c.coffeesLeft), icon: <Gift size={15} />, color: c.coffeesLeft > 0 ? 'green' : 'red' },
-            ].map(s => (
-              <StatCard key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} />
-            ))}
-          </div>
-
-          {/* Conversion metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { label: 'Visit → Lead Rate', value: pct(stats.totalLeads, stats.totalScans), sub: 'Users who registered', color: '#6366f1' },
-              { label: 'Redemption Rate', value: pct(stats.totalRedemptions, stats.totalScans), sub: 'Visits that redeemed', color: '#f59e0b' },
-              { label: 'Discount Given', value: `₹${fmt(stats.totalDiscount)}`, sub: 'Total campaign spend', color: '#10b981' },
-            ].map(m => (
-              <div key={m.label} className="stat-card">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{m.label}</p>
-                <p className="text-2xl font-extrabold mb-0.5" style={{ color: m.color }}>{m.value}</p>
-                <p className="text-xs text-gray-400">{m.sub}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Device breakdown */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="stat-card">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Device Breakdown</p>
-              <div className="flex items-center gap-4">
-                <DonutChart size={80} segments={[
-                  { label: 'Mobile', value: stats.deviceBreakdown?.mobile || 0, color: '#6366f1' },
-                  { label: 'Desktop', value: stats.deviceBreakdown?.desktop || 0, color: '#22c55e' },
-                ]} />
-                <div className="space-y-2">
-                  {[
-                    { label: 'Mobile', value: stats.deviceBreakdown?.mobile || 0, color: '#6366f1' },
-                    { label: 'Desktop', value: stats.deviceBreakdown?.desktop || 0, color: '#22c55e' },
-                  ].map(d => (
-                    <div key={d.label} className="flex items-center gap-2 text-sm">
-                      <div className="w-3 h-3 rounded-full" style={{ background: d.color }} />
-                      <span className="text-gray-600">{d.label}</span>
-                      <span className="font-bold text-gray-900 ml-auto">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="stat-card">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Funnel</p>
-              {[
-                { label: 'Visits', val: stats.totalScans, max: stats.totalScans, color: '#6366f1' },
-                { label: 'Leads (OTP)', val: stats.totalLeads, max: stats.totalScans, color: '#f59e0b' },
-                { label: 'Redeemed', val: stats.totalRedemptions, max: stats.totalScans, color: '#10b981' },
-              ].map(f => (
-                <div key={f.label} className="mb-2.5">
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span className="font-medium">{f.label}</span>
-                    <span className="font-bold text-gray-800">{f.val} <span className="font-normal text-gray-400">({pct(f.val, f.max)})</span></span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{ width: f.max > 0 ? `${(f.val / f.max) * 100}%` : '0%', background: f.color }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Daily scan chart */}
-          <div className="stat-card">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Daily Page Visits (Last 14 Days)</p>
-            <BarChart data={dailyScans} valueKey="scans" color="#6366f1" height={110} />
-          </div>
-
-          {/* Share link */}
-          <div className="stat-card">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Campaign Link</p>
-            <div className="flex items-center gap-3 p-3 bg-surface-50 rounded-xl border border-surface-200">
-              <code className="flex-1 text-sm text-gray-700 font-mono truncate">
-                https://picoso.in/redeem/{c.code}
-              </code>
-              <button
-                onClick={() => navigator.clipboard.writeText(`https://picoso.in/redeem/${c.code}`)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-600 rounded-lg text-xs font-semibold hover:bg-brand-100 transition-colors flex-shrink-0"
-              >
-                <Copy size={12} /> Copy
-              </button>
-              <a
-                href={`https://picoso.in/redeem/${c.code}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold hover:bg-gray-200 transition-colors flex-shrink-0"
-              >
-                <ExternalLink size={12} /> Open
-              </a>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === 'leads') {
-      return (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-900">Registered Users ({leads.length})</h3>
-          </div>
-          {leads.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Users size={32} className="mx-auto mb-3 opacity-30" />
-              <p className="font-medium text-sm">No leads yet</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-surface-100">
-                    {['User', 'Phone', 'Registered'].map(h => (
-                      <th key={h} className="text-left pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide pr-4">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-50">
-                  {leads.map(l => (
-                    <tr key={l._id}>
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-bold text-brand-600">
-                              {(l.userId?.name || l.phone || '?')[0].toUpperCase()}
-                            </span>
-                          </div>
-                          <span className="font-medium text-gray-900">{l.userId?.name || 'Unknown'}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 text-gray-600 font-mono text-xs">{l.phone || l.userId?.phone}</td>
-                      <td className="py-3 pr-4 text-gray-400 text-xs">
-                        {new Date(l.registeredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (activeTab === 'redemptions') {
-      return (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-900">Redemptions ({redemptions.length})</h3>
-            <div className="text-xs text-gray-500 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold text-amber-700">
-              {c.coffeesLeft} of {c.totalBudget} remaining
-            </div>
-          </div>
-          {redemptions.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Coffee size={32} className="mx-auto mb-3 opacity-30" />
-              <p className="font-medium text-sm">No redemptions yet</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-surface-100">
-                    {['User', 'Phone', 'Order Total', 'Discount', 'Date'].map(h => (
-                      <th key={h} className="text-left pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide pr-4">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-50">
-                  {redemptions.map(r => (
-                    <tr key={r._id}>
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                            <Coffee size={12} className="text-amber-600" />
-                          </div>
-                          <span className="font-medium text-gray-900">{r.userId?.name || 'Unknown'}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 text-gray-600 font-mono text-xs">{r.phone || r.userId?.phone}</td>
-                      <td className="py-3 pr-4 font-semibold text-gray-900">₹{r.orderId?.totalPrice ?? '—'}</td>
-                      <td className="py-3 pr-4">
-                        <span className="text-green-600 font-bold">−₹{r.discountAmount}</span>
-                      </td>
-                      <td className="py-3 pr-4 text-gray-400 text-xs">
-                        {new Date(r.redeemedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return null;
+  const copyLink = (code) => {
+    navigator.clipboard.writeText('https://picoso.in/redeem/' + code);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 size={24} className="animate-spin text-brand-500" />
+  const n = (v) => v?.toLocaleString() ?? '0';
+  const pc = (a, b) => b > 0 ? ((a / b) * 100).toFixed(1) + '%' : '0%';
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const activeCamp = campaigns.find(c => c._id === activeCampaignId);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-24">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 size={28} className="animate-spin text-brand-400" />
+        <p className="text-sm text-gray-400">Loading campaigns...</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-extrabold text-gray-900">Marketing Campaigns</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Track performance of all active campaigns</p>
+          <h2 className="text-2xl font-extrabold text-gray-900">Marketing</h2>
+          <p className="text-sm text-gray-400 mt-0.5">Campaign analytics, leads &amp; redemptions</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors"
-        >
+        <button onClick={() => setShowCreate(true)}
+          className="self-start sm:self-auto flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-gray-900 text-white hover:bg-gray-800 transition-colors">
           <Plus size={15} /> New Campaign
         </button>
       </div>
 
       {campaigns.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-2xl border border-surface-100">
-          <Megaphone size={36} className="mx-auto mb-3 opacity-25 text-gray-400" />
-          <p className="font-semibold text-gray-500 mb-1">No campaigns yet</p>
-          <p className="text-xs text-gray-400 mb-4">Create your first marketing campaign to get started.</p>
-          <button onClick={() => setShowCreateModal(true)}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors">
-            Create Campaign
+        <div className="bg-white rounded-3xl border border-surface-100 py-24 text-center">
+          <div className="w-16 h-16 bg-amber-50 border border-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <Megaphone size={26} className="text-amber-500" />
+          </div>
+          <h3 className="font-bold text-gray-800 text-lg mb-1.5">No campaigns yet</h3>
+          <p className="text-sm text-gray-400 mb-6 max-w-xs mx-auto leading-relaxed">Create your first marketing campaign to track visits, leads, and free coffee redemptions.</p>
+          <button onClick={() => setShowCreate(true)}
+            className="px-6 py-3 rounded-xl text-sm font-semibold bg-gray-900 text-white hover:bg-gray-800 transition-colors inline-flex items-center gap-2">
+            <Plus size={15} /> Create Campaign
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-          {/* Campaign list sidebar */}
-          <div className="lg:col-span-1 space-y-2">
-            {campaigns.map(c => (
-              <button
-                key={c._id}
-                onClick={() => handleSelectCampaign(c)}
-                className={`w-full text-left p-4 rounded-2xl border transition-all ${
-                  selectedCampaign?._id === c._id
-                    ? 'border-brand-300 bg-brand-50'
-                    : 'border-surface-200 bg-white hover:border-brand-200 hover:bg-brand-50/40'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 mb-2">
-                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                    selectedCampaign?._id === c._id ? 'bg-brand-100' : 'bg-amber-100'
-                  }`}>
-                    <Coffee size={13} className={selectedCampaign?._id === c._id ? 'text-brand-600' : 'text-amber-600'} />
-                  </div>
-                  <span className="text-sm font-bold text-gray-900 truncate">{c.name}</span>
-                </div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    c.active && c.coffeesLeft > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                  }`}>
-                    {c.active && c.coffeesLeft > 0 ? 'ACTIVE' : 'ENDED'}
-                  </span>
-                  <span className="text-[10px] text-gray-400 font-mono">/{c.code}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1 text-center">
-                  {[
-                    { l: 'Visits', v: c.scans ?? 0 },
-                    { l: 'Leads', v: c.leads ?? 0 },
-                    { l: 'Left', v: c.coffeesLeft ?? 0 },
-                  ].map(s => (
-                    <div key={s.l}>
-                      <p className="text-sm font-extrabold text-gray-900">{s.v}</p>
-                      <p className="text-[9px] text-gray-400 uppercase font-semibold">{s.l}</p>
-                    </div>
-                  ))}
-                </div>
+        <>
+          {/* Campaign selector tabs */}
+          <div className="flex gap-2 flex-wrap">
+            {campaigns.map((c, i) => (
+              <button key={c._id} onClick={() => selectCampaign(c)}
+                className={"flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all " + (activeCampaignId === c._id
+                  ? 'bg-gray-900 text-white border-gray-900 shadow-sm'
+                  : 'bg-white text-gray-600 border-surface-200 hover:border-gray-300 hover:bg-surface-50')}>
+                <Coffee size={13} />
+                Campaign {i + 1}
+                <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full " + (activeCampaignId === c._id
+                  ? 'bg-white/15 text-white'
+                  : c.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600')}>
+                  {c.active ? 'LIVE' : 'ENDED'}
+                </span>
               </button>
             ))}
           </div>
 
-          {/* Campaign detail */}
-          <div className="lg:col-span-3">
-            {selectedCampaign && (
-              <div className="space-y-4">
-                {/* Campaign header */}
-                <div className="bg-white rounded-2xl border border-surface-100 p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)' }}>
-                      <Coffee size={22} className="text-white" strokeWidth={1.8} />
+          {activeCamp && (
+            <div>
+              {/* Campaign Card */}
+              <div className="bg-white rounded-3xl border border-surface-100 overflow-hidden shadow-sm">
+
+                {/* Campaign identity bar */}
+                <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4"
+                  style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%)', borderBottom: '1px solid #fde68a' }}>
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"
+                    style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', boxShadow: '0 6px 20px rgba(251,191,36,0.35)' }}>
+                    <Coffee size={26} className="text-white" strokeWidth={1.8} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5 flex-wrap mb-1">
+                      <h3 className="font-extrabold text-gray-900 text-lg leading-tight">{activeCamp.name}</h3>
+                      <span className={"text-[10px] font-extrabold px-2.5 py-0.5 rounded-full tracking-wide " + (activeCamp.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600')}>
+                        {activeCamp.active ? '● LIVE' : '● ENDED'}
+                      </span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className="font-extrabold text-gray-900 text-lg">{selectedCampaign.name}</h3>
-                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                          selectedCampaign.active && selectedCampaign.coffeesLeft > 0
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-600'
-                        }`}>
-                          {selectedCampaign.active && selectedCampaign.coffeesLeft > 0 ? 'ACTIVE' : 'ENDED'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500">{selectedCampaign.description || 'No description'}</p>
-                      <div className="flex items-center gap-4 mt-2 flex-wrap">
-                        <span className="text-xs text-gray-400 flex items-center gap-1">
-                          <Gift size={11} /> Free item: <strong className="text-gray-700 ml-1">{selectedCampaign.freeItemLabel}</strong> (₹{selectedCampaign.freeItemValue})
-                        </span>
-                        <span className="text-xs text-gray-400 flex items-center gap-1">
-                          <Coffee size={11} /> Budget: <strong className="text-gray-700 ml-1">{selectedCampaign.totalBudget} coffees</strong>
-                        </span>
-                      </div>
+                    <p className="text-sm text-amber-800/70">{activeCamp.description || 'Free coffee campaign'}</p>
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap text-xs">
+                      <span className="text-amber-700/70 flex items-center gap-1">
+                        <Gift size={11} /> {activeCamp.freeItemLabel} · ₹{activeCamp.freeItemValue} value · 5 per user
+                      </span>
+                      <code className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-lg font-mono font-bold tracking-wider">{activeCamp.code}</code>
                     </div>
                   </div>
-
-                  {/* Progress bar */}
-                  <div className="mt-4">
-                    <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                      <span className="font-medium">Redemption Progress</span>
-                      <span className="font-bold">{selectedCampaign.redeemedCount} / {selectedCampaign.totalBudget}</span>
-                    </div>
-                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${(selectedCampaign.redeemedCount / selectedCampaign.totalBudget) * 100}%`,
-                          background: 'linear-gradient(90deg,#fbbf24,#f97316)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tabs */}
-                <div className="flex gap-1 bg-surface-100 p-1 rounded-xl">
-                  {[
-                    { id: 'overview', label: 'Overview' },
-                    { id: 'leads', label: 'Leads' },
-                    { id: 'redemptions', label: 'Redemptions' },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all ${
-                        activeTab === tab.id
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      {tab.label}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => copyLink(activeCamp.code)}
+                      className={"flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border " + (copiedLink ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-amber-200 text-amber-700 hover:border-amber-400')}>
+                      {copiedLink ? <><CheckCircle2 size={12} /> Copied!</> : <><Copy size={12} /> Copy Link</>}
                     </button>
-                  ))}
+                    <a href={"https://picoso.in/redeem/" + activeCamp.code} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-amber-200 text-amber-700 hover:border-amber-400 transition-colors">
+                      <ExternalLink size={12} /> Preview
+                    </a>
+                  </div>
                 </div>
 
-                {/* Tab content */}
-                <div className="bg-white rounded-2xl border border-surface-100 p-5">
-                  {detailLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 size={20} className="animate-spin text-brand-400" />
+                {detailLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 size={22} className="animate-spin text-gray-300" />
+                  </div>
+                ) : detail ? (
+                  <>
+                    {/* ── KPI Strip ─────────────────────────────────────── */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 border-b border-surface-100">
+                      {[
+                        {
+                          label: 'Page Visits',
+                          value: n(detail.stats.totalScans),
+                          sub: 'All-time scans',
+                          icon: <MousePointerClick size={17} />,
+                          iconBg: 'bg-indigo-50', iconColor: 'text-indigo-500',
+                        },
+                        {
+                          label: 'Leads',
+                          value: n(detail.stats.totalLeads),
+                          sub: pc(detail.stats.totalLeads, detail.stats.totalScans) + ' visit-to-lead',
+                          icon: <Users size={17} />,
+                          iconBg: 'bg-emerald-50', iconColor: 'text-emerald-500',
+                        },
+                        {
+                          label: 'Coffees Redeemed',
+                          value: n(detail.stats.totalRedemptions),
+                          sub: pc(detail.stats.totalRedemptions, detail.stats.totalLeads) + ' of leads ordered',
+                          icon: <Coffee size={17} />,
+                          iconBg: 'bg-amber-50', iconColor: 'text-amber-500',
+                        },
+                        {
+                          label: 'Total Discount Given',
+                          value: '₹' + n(detail.stats.totalDiscount),
+                          sub: 'Free coffee value',
+                          icon: <Gift size={17} />,
+                          iconBg: 'bg-rose-50', iconColor: 'text-rose-500',
+                        },
+                      ].map((k, i) => (
+                        <div key={k.label} className={"px-5 py-5 " + (i < 3 ? 'border-r border-surface-100' : '') + (i >= 2 ? ' border-t border-surface-100 lg:border-t-0' : '')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{k.label}</span>
+                            <div className={"w-9 h-9 rounded-xl flex items-center justify-center " + k.iconBg + ' ' + k.iconColor}>
+                              {k.icon}
+                            </div>
+                          </div>
+                          <p className="text-2xl font-extrabold text-gray-900 mb-0.5">{k.value}</p>
+                          <p className="text-xs text-gray-400">{k.sub}</p>
+                        </div>
+                      ))}
                     </div>
-                  ) : (
-                    renderDetailTab()
-                  )}
-                </div>
+
+                    {/* ── Chart + Funnel row ──────────────────────────── */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 border-b border-surface-100">
+                      <div className="lg:col-span-2 px-6 py-5 border-r border-surface-100">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Daily Page Visits — Last 14 Days</p>
+                        <BarChart data={detail.dailyScans} valueKey="scans" color="#6366f1" height={88} />
+                      </div>
+                      <div className="px-6 py-5">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Funnel</p>
+                        <div className="space-y-4">
+                          {[
+                            { label: 'Visits',       val: detail.stats.totalScans,       color: '#6366f1' },
+                            { label: 'Leads (OTP)',  val: detail.stats.totalLeads,       color: '#22c55e' },
+                            { label: 'Orders',       val: detail.stats.totalRedemptions, color: '#f59e0b' },
+                          ].map(f => (
+                            <div key={f.label}>
+                              <div className="flex justify-between text-xs mb-1.5">
+                                <span className="font-medium text-gray-600">{f.label}</span>
+                                <span className="font-extrabold text-gray-900">{n(f.val)}</span>
+                              </div>
+                              <div className="h-2 bg-surface-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full transition-all duration-700"
+                                  style={{ width: detail.stats.totalScans > 0 ? Math.max(4, (f.val / detail.stats.totalScans) * 100) + '%' : '4%', background: f.color }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-5 pt-4 border-t border-surface-100 grid grid-cols-2 gap-3">
+                          {[
+                            { label: 'Visit→Lead', value: pc(detail.stats.totalLeads, detail.stats.totalScans) },
+                            { label: 'Lead→Order', value: pc(detail.stats.totalRedemptions, detail.stats.totalLeads) },
+                            { label: 'Mobile', value: pc(detail.stats.deviceBreakdown?.mobile, detail.stats.totalScans) },
+                            { label: 'Desktop', value: pc(detail.stats.deviceBreakdown?.desktop, detail.stats.totalScans) },
+                          ].map(m => (
+                            <div key={m.label} className="bg-surface-50 rounded-xl px-3 py-2.5">
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{m.label}</p>
+                              <p className="text-sm font-extrabold text-gray-800 mt-0.5">{m.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Tab selector ─────────────────────────────────── */}
+                    <div className="flex items-center px-6 gap-1 border-b border-surface-100 bg-surface-50/50">
+                      {[
+                        { id: 'leads',       label: 'Leads',       count: detail.stats.totalLeads },
+                        { id: 'redemptions', label: 'Redemptions', count: detail.stats.totalRedemptions },
+                      ].map(t => (
+                        <button key={t.id} onClick={() => setTab(t.id)}
+                          className={"flex items-center gap-2 px-4 py-3.5 text-sm font-semibold border-b-2 transition-all " + (tab === t.id ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-700')}>
+                          {t.label}
+                          <span className={"text-[10px] font-extrabold px-2 py-0.5 rounded-full " + (tab === t.id ? 'bg-gray-900 text-white' : 'bg-surface-200 text-gray-500')}>
+                            {t.count}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ── Leads Table ───────────────────────────────────── */}
+                    {tab === 'leads' && (
+                      detail.leads.length === 0 ? (
+                        <div className="py-16 text-center text-gray-400">
+                          <Users size={28} className="mx-auto mb-2.5 opacity-25" />
+                          <p className="text-sm font-semibold">No leads yet</p>
+                          <p className="text-xs mt-1">Share your campaign link to start collecting leads</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b border-surface-100">
+                                {['#', 'User', 'Phone', 'Registered At'].map(h => (
+                                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-surface-50">
+                              {detail.leads.map((l, i) => (
+                                <tr key={l._id} className="hover:bg-surface-50/60 transition-colors">
+                                  <td className="px-5 py-4 text-sm text-gray-400 font-medium w-10">{i + 1}</td>
+                                  <td className="px-5 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-sm font-extrabold text-brand-600">
+                                          {(l.userId?.name || l.phone || 'U')[0].toUpperCase()}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-semibold text-gray-900 leading-tight">{l.userId?.name || 'Unknown User'}</p>
+                                        <p className="text-[11px] text-gray-400">Registered via campaign</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    <span className="font-mono text-xs text-gray-600 bg-surface-100 px-2.5 py-1 rounded-lg">
+                                      {l.phone || l.userId?.phone || '—'}
+                                    </span>
+                                  </td>
+                                  <td className="px-5 py-4 text-xs text-gray-400">{fmtDate(l.registeredAt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    )}
+
+                    {/* ── Redemptions Table ─────────────────────────────── */}
+                    {tab === 'redemptions' && (
+                      detail.redemptions.length === 0 ? (
+                        <div className="py-16 text-center text-gray-400">
+                          <Coffee size={28} className="mx-auto mb-2.5 opacity-25" />
+                          <p className="text-sm font-semibold">No redemptions yet</p>
+                          <p className="text-xs mt-1">Coffees are redeemed when users order with a bowl</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b border-surface-100">
+                                {['#', 'User', 'Phone', 'Order Value', 'Coffee Discount', 'Date'].map(h => (
+                                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-surface-50">
+                              {detail.redemptions.map((r, i) => (
+                                <tr key={r._id} className="hover:bg-surface-50/60 transition-colors">
+                                  <td className="px-5 py-4 text-sm text-gray-400 font-medium w-10">{i + 1}</td>
+                                  <td className="px-5 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                        <Coffee size={14} className="text-amber-600" />
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-semibold text-gray-900 leading-tight">{r.userId?.name || 'Unknown'}</p>
+                                        <p className="text-[11px] text-gray-400">Free coffee redeemed</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    <span className="font-mono text-xs text-gray-600 bg-surface-100 px-2.5 py-1 rounded-lg">
+                                      {r.phone || r.userId?.phone || '—'}
+                                    </span>
+                                  </td>
+                                  <td className="px-5 py-4 text-sm font-bold text-gray-900">₹{r.orderId?.totalPrice ?? '—'}</td>
+                                  <td className="px-5 py-4">
+                                    <span className="inline-flex items-center gap-1 text-xs font-extrabold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full">
+                                      −₹{r.discountAmount}
+                                    </span>
+                                  </td>
+                                  <td className="px-5 py-4 text-xs text-gray-400 whitespace-nowrap">{fmtDate(r.redeemedAt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    )}
+                  </>
+                ) : null}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Create Campaign Modal */}
-      {showCreateModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backdropFilter: 'blur(12px)', backgroundColor: 'rgba(15,23,42,0.6)' }}
-          onClick={() => setShowCreateModal(false)}
-        >
-          <div
-            className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="p-6 border-b border-surface-100 flex items-center justify-between">
-              <h3 className="font-bold text-gray-900">Create Campaign</h3>
-              <button onClick={() => setShowCreateModal(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <X size={14} className="text-gray-500" />
-              </button>
+      {showCreate && (
+        <CreateCampaignModal
+          form={form} setForm={setForm}
+          creating={creating} createErr={createErr}
+          onCreate={create}
+          onClose={() => { setShowCreate(false); setCreateErr(''); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateCampaignModal({ form, setForm, creating, createErr, onCreate, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backdropFilter: 'blur(14px)', backgroundColor: 'rgba(15,23,42,0.65)' }}
+      onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-5 border-b border-surface-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+              <Megaphone size={16} className="text-amber-600" />
             </div>
-            <div className="p-6 space-y-4">
-              {[
-                { label: 'Campaign Code', key: 'code', placeholder: 'e.g. 483271', type: 'text' },
-                { label: 'Campaign Name', key: 'name', placeholder: 'e.g. Free Coffee Launch', type: 'text' },
-                { label: 'Description', key: 'description', placeholder: 'Optional description', type: 'text' },
-                { label: 'Free Item Label', key: 'freeItemLabel', placeholder: 'e.g. Free Coffee', type: 'text' },
-                { label: 'Free Item Value (₹)', key: 'freeItemValue', placeholder: '79', type: 'number' },
-                { label: 'Total Budget (qty)', key: 'totalBudget', placeholder: '5', type: 'number' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">{f.label}</label>
-                  <input
-                    type={f.type}
-                    className="input-field"
-                    placeholder={f.placeholder}
-                    value={createForm[f.key]}
-                    onChange={e => setCreateForm(p => ({ ...p, [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value }))}
-                  />
-                </div>
-              ))}
-              {createError && (
-                <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{createError}</p>
-              )}
-            </div>
-            <div className="p-5 border-t border-surface-100 flex gap-3">
-              <button onClick={() => setShowCreateModal(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-surface-100 text-gray-600 hover:bg-surface-200 transition-colors">
-                Cancel
-              </button>
-              <button onClick={handleCreate} disabled={creating}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
-                {creating ? <><Loader2 size={14} className="animate-spin" /> Creating...</> : 'Create Campaign'}
-              </button>
+            <div>
+              <h3 className="font-extrabold text-gray-900 text-base">New Campaign</h3>
+              <p className="text-xs text-gray-400">Set up a new marketing campaign</p>
             </div>
           </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full bg-surface-100 hover:bg-surface-200 flex items-center justify-center transition-colors">
+            <X size={14} className="text-gray-500" />
+          </button>
         </div>
-      )}
+        <div className="p-6 space-y-4">
+          {[
+            { label: 'Campaign Code',        key: 'code',          placeholder: 'e.g. 483271',            type: 'text',   hint: 'This appears in the URL: /redeem/CODE' },
+            { label: 'Campaign Name',        key: 'name',          placeholder: 'e.g. Free Coffee Launch', type: 'text',   hint: 'Shown in admin dashboard' },
+            { label: 'Description',          key: 'description',   placeholder: 'Optional description',    type: 'text',   hint: '' },
+            { label: 'Free Item Label',      key: 'freeItemLabel', placeholder: 'Free Coffee',             type: 'text',   hint: 'Shown to users in cart' },
+            { label: 'Free Item Value (₹)',  key: 'freeItemValue', placeholder: '79',                      type: 'number', hint: 'Discount per order' },
+          ].map(f => (
+            <div key={f.key}>
+              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">{f.label}</label>
+              <input type={f.type} className="input-field" placeholder={f.placeholder}
+                value={form[f.key]}
+                onChange={e => setForm(p => ({ ...p, [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value }))} />
+              {f.hint && <p className="text-[11px] text-gray-400 mt-1">{f.hint}</p>}
+            </div>
+          ))}
+          {createErr && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-600">
+              <AlertTriangle size={14} /> {createErr}
+            </div>
+          )}
+        </div>
+        <div className="px-6 pb-6 flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 py-3 rounded-xl text-sm font-semibold bg-surface-100 text-gray-600 hover:bg-surface-200 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onCreate} disabled={creating}
+            className="flex-1 py-3 rounded-xl text-sm font-semibold bg-gray-900 text-white hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+            {creating ? <><Loader2 size={14} className="animate-spin" /> Creating...</> : 'Launch Campaign'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4659,3 +4605,4 @@ export default function AdminPage() {
     </div>
   );
 }
+

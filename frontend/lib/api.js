@@ -158,6 +158,7 @@ export const campaign = {
   getInfo:      (code)  => api.get(`/campaign/${code}/info`),
   trackScan:    (code)  => api.post(`/campaign/${code}/scan`),
   registerLead: (code)  => api.post(`/campaign/${code}/lead`),
+  myStatus:     (code)  => api.get(`/campaign/${code}/my-status`),
 };
 
 export const adminCampaigns = {

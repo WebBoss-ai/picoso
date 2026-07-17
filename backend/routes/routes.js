@@ -138,7 +138,9 @@ router.delete('/admin/agents/:id',         authenticate, isAdmin,  agentControll
 // Public
 router.get('/campaign/:code/info',      controller.getCampaignInfo);
 router.post('/campaign/:code/scan',     controller.trackCampaignScan);
+// Authenticated
 router.post('/campaign/:code/lead',     authenticate, controller.registerCampaignLead);
+router.get('/campaign/:code/my-status', authenticate, controller.getCampaignMyStatus);
 
 // Admin
 router.get('/admin/campaigns',          authenticate, isAdmin, controller.adminGetCampaigns);

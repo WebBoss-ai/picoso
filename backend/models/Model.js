@@ -327,10 +327,12 @@ const campaignScanSchema = new mongoose.Schema({
 });
 
 const campaignLeadSchema = new mongoose.Schema({
-  campaignId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', required: true },
-  userId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  phone:         { type: String, default: '' },
-  registeredAt:  { type: Date, default: Date.now },
+  campaignId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', required: true },
+  userId:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  phone:           { type: String, default: '' },
+  coffeesGiven:    { type: Number, default: 0 },
+  maxCoffees:      { type: Number, default: 5 },
+  registeredAt:    { type: Date, default: Date.now },
 });
 
 const campaignRedemptionSchema = new mongoose.Schema({

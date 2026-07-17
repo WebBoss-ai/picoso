@@ -2,76 +2,77 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Coffee, Gift, CheckCircle2, ArrowRight, Loader2, Phone,
-  Sparkles, Star, ChefHat, Zap, Shield, X, RefreshCw,
+  Coffee, CheckCircle2, ArrowRight, Loader2,
+  Sparkles, Star, Zap, Shield, X, RefreshCw, Gift,
 } from 'lucide-react';
 import { campaign as campaignApi, auth } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
-/* ─── Floating particle animation ─────────────────────────────────────────── */
-function Particles() {
+/* ─── Background circles ───────────────────────────────────────────────────── */
+function BgCircles() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-      {Array.from({ length: 18 }).map((_, i) => (
-        <div
-          key={i}
-          className="absolute rounded-full opacity-20 animate-pulse"
-          style={{
-            width: `${4 + (i % 5) * 3}px`,
-            height: `${4 + (i % 5) * 3}px`,
-            left: `${(i * 17 + 5) % 95}%`,
-            top: `${(i * 23 + 10) % 90}%`,
-            background: i % 3 === 0 ? '#fbbf24' : i % 3 === 1 ? '#f97316' : '#fef08a',
-            animationDelay: `${i * 0.3}s`,
-            animationDuration: `${2 + (i % 3)}s`,
-          }}
-        />
-      ))}
+      <div className="absolute -top-32 -right-32 w-80 h-80 rounded-full opacity-[0.08]"
+        style={{ background: 'radial-gradient(circle, #fbbf24, transparent)' }} />
+      <div className="absolute top-1/3 -left-24 w-64 h-64 rounded-full opacity-[0.06]"
+        style={{ background: 'radial-gradient(circle, #f97316, transparent)' }} />
+      <div className="absolute bottom-0 right-1/4 w-48 h-48 rounded-full opacity-[0.07]"
+        style={{ background: 'radial-gradient(circle, #fbbf24, transparent)' }} />
     </div>
   );
 }
 
-/* ─── Coffee counter ring ──────────────────────────────────────────────────── */
-function CoffeeRing({ left, total }) {
-  const pct = total > 0 ? left / total : 0;
-  const r = 40;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - pct);
+/* ─── Animated steam lines above coffee cup ────────────────────────────────── */
+function SteamIcon() {
   return (
-    <div className="relative flex items-center justify-center" style={{ width: 100, height: 100 }}>
-      <svg width="100" height="100" className="-rotate-90">
-        <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="6" />
-        <circle
-          cx="50" cy="50" r={r}
-          fill="none"
-          stroke="#fbbf24"
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={circ}
-          strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 1s ease' }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-black text-white leading-none">{left}</span>
-        <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest mt-0.5">left</span>
+    <div className="relative w-28 h-28 mx-auto">
+      {/* Steam */}
+      <div className="absolute -top-5 left-1/2 -translate-x-1/2 flex gap-2.5">
+        {[0, 1, 2].map(i => (
+          <svg key={i} width="8" height="20" viewBox="0 0 8 20"
+            style={{ animationDelay: `${i * 0.3}s`, animation: 'steam 1.8s ease-in-out infinite' }}>
+            <path d="M4 18 C4 18 1 14 4 10 C7 6 4 2 4 2" stroke="#fbbf2488" strokeWidth="2"
+              strokeLinecap="round" fill="none" />
+          </svg>
+        ))}
       </div>
+      {/* Cup */}
+      <div className="w-28 h-28 rounded-full flex items-center justify-center"
+        style={{
+          background: 'linear-gradient(135deg, #fbbf24 0%, #f97316 100%)',
+          boxShadow: '0 16px 48px rgba(251,191,36,0.45), 0 4px 16px rgba(249,115,22,0.3)',
+        }}>
+        <Coffee size={46} className="text-white" strokeWidth={1.6} />
+      </div>
+      <style>{`
+        @keyframes steam {
+          0%,100% { transform: translateY(0) scaleX(1); opacity: 0.5; }
+          50%      { transform: translateY(-6px) scaleX(1.15); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
 
-/* ─── Step indicator ───────────────────────────────────────────────────────── */
-function StepDots({ step }) {
+/* ─── OTP Input boxes ──────────────────────────────────────────────────────── */
+function OTPBoxes({ otp, otpRefs, onChange, onKeyDown }) {
   return (
-    <div className="flex items-center gap-2 justify-center mb-8">
-      {[1, 2, 3].map(s => (
-        <div
-          key={s}
-          className="rounded-full transition-all duration-300"
+    <div className="flex gap-3 justify-center">
+      {otp.map((d, i) => (
+        <input
+          key={i}
+          ref={otpRefs[i]}
+          type="tel"
+          inputMode="numeric"
+          maxLength={1}
+          value={d}
+          onChange={e => onChange(i, e.target.value)}
+          onKeyDown={e => onKeyDown(i, e)}
+          className="w-14 h-14 text-center text-2xl font-black rounded-2xl outline-none transition-all duration-150"
           style={{
-            width: s === step ? 24 : 8,
-            height: 8,
-            background: s === step ? '#fbbf24' : 'rgba(255,255,255,0.25)',
+            background: d ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.06)',
+            border: `2px solid ${d ? 'rgba(251,191,36,0.7)' : 'rgba(255,255,255,0.15)'}`,
+            color: '#fbbf24',
           }}
         />
       ))}
@@ -79,7 +80,7 @@ function StepDots({ step }) {
   );
 }
 
-/* ─── Main Component ───────────────────────────────────────────────────────── */
+/* ─── Main Page ────────────────────────────────────────────────────────────── */
 export default function RedeemPage() {
   const { code } = useParams();
   const router = useRouter();
@@ -87,423 +88,323 @@ export default function RedeemPage() {
 
   const [campaignData, setCampaignData] = useState(null);
   const [loadingInfo, setLoadingInfo] = useState(true);
-  const [campaignError, setCampaignError] = useState('');
+  const [notFound, setNotFound] = useState(false);
 
   const [step, setStep] = useState(1); // 1=phone, 2=otp, 3=success
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '']);
-  const [loadingSend, setLoadingSend] = useState(false);
-  const [loadingVerify, setLoadingVerify] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
-  const [resendCountdown, setResendCountdown] = useState(0);
+  const [resendTimer, setResendTimer] = useState(0);
 
   const otpRefs = [useRef(), useRef(), useRef(), useRef()];
-  const hasTrackedScan = useRef(false);
+  const scannedRef = useRef(false);
 
-  // Load campaign info
+  // Fetch campaign info + track scan
   useEffect(() => {
     if (!code) return;
     campaignApi.getInfo(code)
-      .then(res => setCampaignData(res.data.campaign))
-      .catch(() => setCampaignError('Campaign not found or expired.'))
+      .then(r => setCampaignData(r.data.campaign))
+      .catch(() => setNotFound(true))
       .finally(() => setLoadingInfo(false));
 
-    // Track scan (once per page load)
-    if (!hasTrackedScan.current) {
-      hasTrackedScan.current = true;
+    if (!scannedRef.current) {
+      scannedRef.current = true;
       campaignApi.trackScan(code).catch(() => {});
     }
   }, [code]);
 
-  // If already logged in → store campaign code and go to menu
+  // If already logged in, store campaign and bounce to menu
   useEffect(() => {
-    if (isLoggedIn && step === 1) {
-      if (campaignData?.active) {
-        localStorage.setItem('picoso_campaign', JSON.stringify({ code, ...campaignData }));
-      }
+    if (isLoggedIn && campaignData && step === 1) {
+      localStorage.setItem('picoso_campaign', JSON.stringify({
+        code,
+        active: campaignData.active,
+        freeItemLabel: campaignData.freeItemLabel,
+        freeItemValue: campaignData.freeItemValue,
+        coffeesRemaining: 5,
+      }));
       router.push('/menu');
     }
   }, [isLoggedIn, campaignData]);
 
   // Resend countdown
   useEffect(() => {
-    if (resendCountdown <= 0) return;
-    const t = setTimeout(() => setResendCountdown(c => c - 1), 1000);
+    if (resendTimer <= 0) return;
+    const t = setTimeout(() => setResendTimer(c => c - 1), 1000);
     return () => clearTimeout(t);
-  }, [resendCountdown]);
+  }, [resendTimer]);
 
-  const handleSendOTP = async () => {
+  const sendOTP = async () => {
     setError('');
     const clean = phone.replace(/\D/g, '').slice(-10);
-    if (clean.length !== 10) { setError('Enter a valid 10-digit phone number'); return; }
-    setLoadingSend(true);
+    if (clean.length !== 10) { setError('Enter a valid 10-digit mobile number'); return; }
+    setSending(true);
     try {
       await auth.sendOTP(clean);
       setStep(2);
-      setResendCountdown(30);
-      setTimeout(() => otpRefs[0].current?.focus(), 100);
+      setResendTimer(30);
+      setTimeout(() => otpRefs[0].current?.focus(), 80);
     } catch (e) {
-      setError(e.response?.data?.error || 'Failed to send OTP. Try again.');
-    } finally { setLoadingSend(false); }
+      setError(e.response?.data?.error || 'Could not send OTP. Please try again.');
+    } finally { setSending(false); }
   };
 
-  const handleOTPChange = (idx, val) => {
+  const handleOTPChange = (i, val) => {
     if (!/^\d?$/.test(val)) return;
     const next = [...otp];
-    next[idx] = val;
+    next[i] = val;
     setOtp(next);
-    if (val && idx < 3) otpRefs[idx + 1].current?.focus();
-    if (next.every(d => d !== '')) handleVerify(next.join(''));
+    if (val && i < 3) otpRefs[i + 1].current?.focus();
+    if (next.every(d => d !== '')) verifyOTP(next.join(''));
   };
 
-  const handleOTPKeyDown = (idx, e) => {
-    if (e.key === 'Backspace' && !otp[idx] && idx > 0) otpRefs[idx - 1].current?.focus();
+  const handleOTPKey = (i, e) => {
+    if (e.key === 'Backspace' && !otp[i] && i > 0) otpRefs[i - 1].current?.focus();
   };
 
-  const handleVerify = async (otpStr) => {
+  const verifyOTP = async (otpStr) => {
     const clean = phone.replace(/\D/g, '').slice(-10);
     setError('');
-    setLoadingVerify(true);
+    setVerifying(true);
     try {
       const res = await auth.verifyOTP(clean, otpStr || otp.join(''));
-      const { token, user: userObj } = res.data;
-      login(token, userObj);
-      // Store campaign code in localStorage
-      if (campaignData?.active) {
-        localStorage.setItem('picoso_campaign', JSON.stringify({ code, ...campaignData }));
-      }
+      const { token, user: u } = res.data;
+      login(token, u);
+
+      // Store campaign with 5 coffees remaining
+      localStorage.setItem('picoso_campaign', JSON.stringify({
+        code,
+        active: true,
+        freeItemLabel: campaignData?.freeItemLabel || 'Free Coffee',
+        freeItemValue: campaignData?.freeItemValue || 79,
+        coffeesRemaining: 5,
+      }));
+
       // Register as lead
       try { await campaignApi.registerLead(code); } catch {}
+
       setStep(3);
       setTimeout(() => router.push('/menu'), 1800);
     } catch (e) {
-      setError(e.response?.data?.error || 'Invalid OTP. Please try again.');
+      setError(e.response?.data?.error || 'Wrong OTP. Please try again.');
       setOtp(['', '', '', '']);
-      otpRefs[0].current?.focus();
-    } finally { setLoadingVerify(false); }
+      setTimeout(() => otpRefs[0].current?.focus(), 50);
+    } finally { setVerifying(false); }
   };
 
-  // ── Loading state ──────────────────────────────────────────────────────────
+  /* ── Loading ── */
   if (loadingInfo) {
     return (
       <div className="min-h-screen flex items-center justify-center"
-        style={{ background: 'linear-gradient(160deg,#1a0a00,#3d1c00,#7c2d12)' }}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-          <p className="text-amber-200/70 text-sm font-medium">Loading your offer...</p>
+        style={{ background: 'linear-gradient(160deg,#130800,#2d1000,#7c2d12)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-[3px] border-amber-400/25 border-t-amber-400 rounded-full animate-spin" />
+          <p className="text-amber-300/60 text-xs font-medium">Loading your offer...</p>
         </div>
       </div>
     );
   }
 
-  // ── Campaign not found ─────────────────────────────────────────────────────
-  if (campaignError || !campaignData) {
+  /* ── Not found ── */
+  if (notFound || !campaignData) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4"
-        style={{ background: 'linear-gradient(160deg,#1a0a00,#3d1c00,#7c2d12)' }}>
-        <div className="text-center">
-          <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-5">
-            <X size={32} className="text-white/60" />
+      <div className="min-h-screen flex items-center justify-center px-5"
+        style={{ background: 'linear-gradient(160deg,#130800,#2d1000,#7c2d12)' }}>
+        <div className="text-center max-w-xs">
+          <div className="w-16 h-16 rounded-full bg-white/8 border border-white/12 flex items-center justify-center mx-auto mb-5">
+            <X size={28} className="text-white/40" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Offer Not Found</h2>
-          <p className="text-white/60 text-sm mb-6">This campaign link is invalid or has expired.</p>
-          <button onClick={() => router.push('/')}
-            className="px-6 py-3 rounded-2xl text-sm font-semibold text-amber-900 bg-amber-400 hover:bg-amber-300 transition-colors">
-            Go to Menu
+          <h2 className="text-xl font-bold text-white mb-2">Link Not Found</h2>
+          <p className="text-white/50 text-sm mb-5">This campaign link is invalid or has expired.</p>
+          <button onClick={() => router.push('/menu')}
+            className="px-6 py-3 rounded-2xl text-sm font-bold text-amber-900 transition-all active:scale-[0.97]"
+            style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)' }}>
+            Browse Menu
           </button>
         </div>
       </div>
     );
   }
 
-  const coffeesLeft = campaignData.coffeesLeft ?? 0;
-  const isExpired = !campaignData.active || coffeesLeft <= 0;
+  /* ── Success ── */
+  if (step === 3) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-5"
+        style={{ background: 'linear-gradient(160deg,#130800,#2d1000,#7c2d12)' }}>
+        <div className="text-center max-w-xs">
+          <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5"
+            style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)', boxShadow: '0 12px 36px rgba(34,197,94,0.4)' }}>
+            <CheckCircle2 size={36} className="text-white" />
+          </div>
+          <h2 className="text-2xl font-black text-white mb-2">You're In! 🎉</h2>
+          <p className="text-white/60 text-sm mb-5 leading-relaxed">
+            Your 5 free coffees are ready. They'll be added automatically when you order.
+          </p>
+          <div className="flex items-center justify-center gap-2 text-amber-300/80 text-xs font-semibold">
+            <Loader2 size={12} className="animate-spin" /> Taking you to the menu…
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  /* ── Main ── */
   return (
     <div className="min-h-screen flex flex-col"
-      style={{ background: 'linear-gradient(160deg,#1a0a00 0%,#3d1400 30%,#7c2d12 65%,#92400e 100%)' }}>
-      <Particles />
+      style={{ background: 'linear-gradient(160deg,#130800 0%,#2d1000 25%,#7c2d12 60%,#92400e 100%)' }}>
+      <BgCircles />
 
-      {/* ── Hero Section ───────────────────────────────────────────────────── */}
-      <div className="relative flex-1 flex flex-col items-center justify-start pt-14 pb-6 px-5 max-w-md mx-auto w-full">
+      <div className="relative flex-1 flex flex-col items-center justify-start pt-12 pb-8 px-5 max-w-sm mx-auto w-full">
 
-        {/* Brand chip */}
-        <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-1.5 mb-8">
-          <div className="w-5 h-5 rounded-lg bg-white/20 flex items-center justify-center">
+        {/* Brand pill */}
+        <div className="flex items-center gap-2 bg-white/10 border border-white/15 rounded-full px-4 py-1.5 mb-10">
+          <div className="w-5 h-5 rounded-md bg-white/15 flex items-center justify-center">
             <span className="text-white font-black text-[10px]">P</span>
           </div>
-          <span className="text-white/90 text-xs font-bold tracking-wide">Picoso × Free Coffee</span>
+          <span className="text-white/80 text-xs font-semibold tracking-wide">Picoso</span>
+          <div className="w-px h-3 bg-white/20" />
+          <Sparkles size={11} className="text-amber-400" />
+          <span className="text-amber-300 text-xs font-semibold">Special Offer</span>
         </div>
 
-        {/* Title */}
-        <div className="text-center mb-6">
-          <div className="relative inline-block mb-4">
-            {/* Glow */}
-            <div className="absolute inset-0 rounded-full blur-2xl opacity-40"
-              style={{ background: 'radial-gradient(circle, #fbbf24, transparent)' }} />
-            <div className="relative w-24 h-24 rounded-full flex items-center justify-center mx-auto"
-              style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', boxShadow: '0 12px 40px rgba(251,191,36,0.35)' }}>
-              <Coffee size={40} className="text-white" strokeWidth={1.8} />
-            </div>
-          </div>
-          <h1 className="text-4xl font-black text-white leading-tight tracking-tight">
-            Free Coffee<br />
-            <span className="text-amber-300">On Us!</span>
+        {/* Hero */}
+        <SteamIcon />
+
+        <div className="text-center mt-7 mb-8">
+          <p className="text-amber-300/70 text-xs font-bold uppercase tracking-[0.2em] mb-2">Exclusive for you</p>
+          <h1 className="text-4xl font-black text-white leading-[1.1] tracking-tight mb-3">
+            5 Free<br />
+            <span style={{ backgroundImage: 'linear-gradient(90deg,#fbbf24,#f97316)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Coffees
+            </span>
           </h1>
-          <p className="text-white/65 text-sm mt-3 leading-relaxed max-w-xs mx-auto">
-            Order any bowl and get one coffee absolutely free — our launch gift to you.
+          <p className="text-white/55 text-sm leading-relaxed max-w-[260px] mx-auto">
+            Claim your gift — one free coffee added automatically with every order, just for you.
           </p>
         </div>
 
-        {/* Offer highlights row */}
-        <div className="grid grid-cols-3 gap-2 w-full mb-6">
+        {/* Trust badges */}
+        <div className="flex items-center gap-3 mb-8 flex-wrap justify-center">
           {[
-            { icon: Gift, label: '1 Free Coffee', sub: 'Per order' },
-            { icon: ChefHat, label: 'Add a Bowl', sub: 'Required' },
-            { icon: Zap, label: 'Instant', sub: 'Auto-applied' },
-          ].map(({ icon: Icon, label, sub }) => (
-            <div key={label}
-              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl text-center"
-              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
-              <div className="w-8 h-8 rounded-xl bg-amber-400/20 flex items-center justify-center">
-                <Icon size={14} className="text-amber-300" />
-              </div>
-              <span className="text-white text-[11px] font-bold leading-tight">{label}</span>
-              <span className="text-white/45 text-[9px] font-semibold uppercase tracking-wide">{sub}</span>
+            { icon: Coffee,   text: '1 free per order' },
+            { icon: Star,     text: '4.9★ rated' },
+            { icon: Zap,      text: '30-min delivery' },
+          ].map(({ icon: Icon, text }) => (
+            <div key={text} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold text-white/60"
+              style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <Icon size={11} className="text-amber-400/80" /> {text}
             </div>
           ))}
         </div>
 
-        {/* Coffee counter */}
-        <div className="flex items-center gap-5 mb-8 py-5 px-6 rounded-3xl w-full"
-          style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(251,191,36,0.2)' }}>
-          <CoffeeRing left={coffeesLeft} total={campaignData.totalBudget} />
-          <div className="flex-1">
-            <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest mb-1">Campaign Status</p>
-            <p className="text-white font-extrabold text-lg leading-tight">
-              {isExpired ? 'All claimed!' : `${coffeesLeft} of ${campaignData.totalBudget} coffees`}
-            </p>
-            <p className="text-amber-300/80 text-xs font-semibold mt-1">
-              {isExpired ? 'Offer has ended' : coffeesLeft === 1 ? '⚡ Last one! Grab it now' : '🔥 Grab yours before it\'s gone'}
-            </p>
-            {/* Progress bar */}
-            <div className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-amber-400 rounded-full transition-all duration-700"
-                style={{ width: `${campaignData.totalBudget > 0 ? (coffeesLeft / campaignData.totalBudget) * 100 : 0}%` }} />
-            </div>
-          </div>
-        </div>
+        {/* Form card */}
+        <div className="w-full rounded-3xl p-6"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(24px)' }}>
 
-        {/* ── Form Card ──────────────────────────────────────────────────────── */}
-        <div className="w-full rounded-3xl overflow-hidden"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(20px)' }}>
+          {step === 1 && (
+            <div>
+              <h2 className="text-white font-extrabold text-lg mb-1">Claim Your Coffees</h2>
+              <p className="text-white/45 text-xs mb-5">Enter your number and we'll get you started</p>
 
-          {isExpired ? (
-            /* Campaign ended */
-            <div className="p-7 text-center">
-              <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4">
-                <Coffee size={24} className="text-white/40" />
+              {/* Phone input */}
+              <div className="mb-5">
+                <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl transition-all"
+                  style={{ background: 'rgba(255,255,255,0.08)', border: `2px solid ${phone.length === 10 ? 'rgba(251,191,36,0.6)' : 'rgba(255,255,255,0.15)'}` }}>
+                  <span className="text-white/40 text-sm flex-shrink-0">🇮🇳 +91</span>
+                  <div className="w-px h-4 bg-white/20 flex-shrink-0" />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="Mobile number"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onKeyDown={e => e.key === 'Enter' && sendOTP()}
+                    className="flex-1 bg-transparent text-white placeholder-white/25 text-base font-bold outline-none"
+                    autoFocus
+                  />
+                  {phone.length === 10 && (
+                    <CheckCircle2 size={16} className="text-emerald-400 flex-shrink-0" />
+                  )}
+                </div>
               </div>
-              <h3 className="text-white font-bold text-lg mb-2">Offer Ended</h3>
-              <p className="text-white/55 text-sm mb-5 leading-relaxed">
-                All free coffees have been claimed. But you can still enjoy our delicious menu!
-              </p>
-              <button onClick={() => router.push('/menu')}
-                className="w-full py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0a00' }}>
-                Browse Menu <ArrowRight size={15} />
+
+              {error && (
+                <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs text-red-300"
+                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <X size={12} className="flex-shrink-0" /> {error}
+                </div>
+              )}
+
+              <button
+                onClick={sendOTP}
+                disabled={sending || phone.replace(/\D/g, '').length !== 10}
+                className="w-full py-4 rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0800', boxShadow: '0 10px 30px rgba(251,191,36,0.3)' }}
+              >
+                {sending
+                  ? <><Loader2 size={18} className="animate-spin" /> Sending…</>
+                  : <>Get My Free Coffees <ArrowRight size={18} /></>}
               </button>
-            </div>
-          ) : step === 3 ? (
-            /* Success */
-            <div className="p-7 text-center">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
-                style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)', boxShadow: '0 8px 24px rgba(34,197,94,0.3)' }}>
-                <CheckCircle2 size={28} className="text-white" />
-              </div>
-              <h3 className="text-white font-bold text-xl mb-2">You're In!</h3>
-              <p className="text-white/65 text-sm mb-4 leading-relaxed">
-                Your free coffee is locked in. Add a bowl at checkout to redeem it.
+
+              <p className="text-white/25 text-[10px] text-center mt-4 flex items-center justify-center gap-1.5">
+                <Shield size={10} className="text-white/30" />
+                Verified via OTP · No spam, ever
               </p>
-              <div className="flex items-center justify-center gap-2 text-amber-300 text-xs font-semibold">
-                <Loader2 size={13} className="animate-spin" />
-                Redirecting to menu...
-              </div>
             </div>
-          ) : (
-            <div className="p-6">
-              <StepDots step={step} />
+          )}
 
-              {step === 1 && (
-                /* Phone step */
-                <div>
-                  <h3 className="text-white font-extrabold text-xl text-center mb-1">
-                    Claim Your Free Coffee
-                  </h3>
-                  <p className="text-white/50 text-xs text-center mb-6">
-                    Enter your phone number to get started
-                  </p>
+          {step === 2 && (
+            <div>
+              <h2 className="text-white font-extrabold text-lg mb-1">Enter OTP</h2>
+              <p className="text-white/45 text-xs mb-5">
+                Sent to +91 {phone}
+                <button onClick={() => { setStep(1); setOtp(['','','','']); setError(''); }}
+                  className="text-amber-400 font-semibold ml-1.5 hover:underline">
+                  Change
+                </button>
+              </p>
 
-                  {/* Code field (read-only) */}
-                  <div className="mb-4">
-                    <label className="text-white/50 text-[10px] font-bold uppercase tracking-widest mb-2 block">
-                      Campaign Code
-                    </label>
-                    <div className="flex items-center gap-3 px-4 py-3.5 rounded-2xl"
-                      style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)' }}>
-                      <Gift size={16} className="text-amber-400 flex-shrink-0" />
-                      <span className="text-amber-300 font-extrabold text-lg tracking-[0.2em] flex-1">{code}</span>
-                      <div className="w-5 h-5 rounded-full bg-amber-400/20 flex items-center justify-center">
-                        <CheckCircle2 size={12} className="text-amber-400" />
-                      </div>
-                    </div>
-                  </div>
+              <div className="mb-5">
+                <OTPBoxes otp={otp} otpRefs={otpRefs} onChange={handleOTPChange} onKeyDown={handleOTPKey} />
+              </div>
 
-                  {/* Phone field */}
-                  <div className="mb-5">
-                    <label className="text-white/50 text-[10px] font-bold uppercase tracking-widest mb-2 block">
-                      Phone Number
-                    </label>
-                    <div className="flex items-center gap-3 px-4 py-3.5 rounded-2xl"
-                      style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)' }}>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <span className="text-white/40 text-sm">🇮🇳</span>
-                        <span className="text-white/50 text-sm font-semibold">+91</span>
-                        <div className="w-px h-4 bg-white/20 ml-1" />
-                      </div>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={10}
-                        placeholder="10-digit mobile number"
-                        value={phone}
-                        onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                        onKeyDown={e => e.key === 'Enter' && handleSendOTP()}
-                        className="flex-1 bg-transparent text-white placeholder-white/30 text-sm font-semibold outline-none"
-                        autoFocus
-                      />
-                      {phone.length === 10 && (
-                        <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
-                      )}
-                    </div>
-                  </div>
-
-                  {error && (
-                    <div className="mb-4 px-3 py-2.5 rounded-xl text-xs text-red-300 flex items-center gap-2"
-                      style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
-                      <X size={13} className="flex-shrink-0" /> {error}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={handleSendOTP}
-                    disabled={loadingSend || phone.replace(/\D/g, '').length !== 10}
-                    className="w-full py-4 rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0a00', boxShadow: '0 8px 28px rgba(251,191,36,0.3)' }}
-                  >
-                    {loadingSend ? (
-                      <><Loader2 size={18} className="animate-spin" /> Sending OTP...</>
-                    ) : (
-                      <>Order Now <ArrowRight size={18} /></>
-                    )}
-                  </button>
-
-                  <p className="text-white/35 text-[10px] text-center mt-4 flex items-center justify-center gap-1.5">
-                    <Shield size={10} /> OTP verification · No spam ever
-                  </p>
+              {error && (
+                <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs text-red-300"
+                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <X size={12} className="flex-shrink-0" /> {error}
                 </div>
               )}
 
-              {step === 2 && (
-                /* OTP step */
-                <div>
-                  <h3 className="text-white font-extrabold text-xl text-center mb-1">
-                    Enter OTP
-                  </h3>
-                  <p className="text-white/50 text-xs text-center mb-6">
-                    Sent to +91 {phone}
-                    <button onClick={() => { setStep(1); setOtp(['','','','']); setError(''); }}
-                      className="text-amber-400 font-semibold ml-2 hover:underline">
-                      Change
+              <button
+                onClick={() => verifyOTP()}
+                disabled={verifying || otp.some(d => !d)}
+                className="w-full py-4 rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0800', boxShadow: '0 10px 30px rgba(251,191,36,0.3)' }}
+              >
+                {verifying
+                  ? <><Loader2 size={18} className="animate-spin" /> Verifying…</>
+                  : <>Confirm & Claim <Gift size={17} /></>}
+              </button>
+
+              <div className="mt-4 text-center">
+                {resendTimer > 0
+                  ? <p className="text-white/35 text-xs">Resend in {resendTimer}s</p>
+                  : <button onClick={sendOTP} disabled={sending}
+                      className="text-amber-400 text-xs font-semibold flex items-center gap-1.5 mx-auto hover:text-amber-300 transition-colors disabled:opacity-50">
+                      <RefreshCw size={11} /> Resend OTP
                     </button>
-                  </p>
-
-                  {/* 4-digit OTP boxes */}
-                  <div className="flex gap-3 justify-center mb-5">
-                    {otp.map((d, i) => (
-                      <input
-                        key={i}
-                        ref={otpRefs[i]}
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={d}
-                        onChange={e => handleOTPChange(i, e.target.value)}
-                        onKeyDown={e => handleOTPKeyDown(i, e)}
-                        className="w-14 h-14 text-center text-2xl font-black rounded-2xl outline-none transition-all"
-                        style={{
-                          background: d ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.07)',
-                          border: d ? '2px solid rgba(251,191,36,0.6)' : '2px solid rgba(255,255,255,0.15)',
-                          color: '#fbbf24',
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  {error && (
-                    <div className="mb-4 px-3 py-2.5 rounded-xl text-xs text-red-300 flex items-center gap-2"
-                      style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
-                      <X size={13} className="flex-shrink-0" /> {error}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => handleVerify()}
-                    disabled={loadingVerify || otp.some(d => !d)}
-                    className="w-full py-4 rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0a00', boxShadow: '0 8px 28px rgba(251,191,36,0.3)' }}
-                  >
-                    {loadingVerify ? (
-                      <><Loader2 size={18} className="animate-spin" /> Verifying...</>
-                    ) : (
-                      <>Verify & Claim <Sparkles size={16} /></>
-                    )}
-                  </button>
-
-                  <div className="mt-4 text-center">
-                    {resendCountdown > 0 ? (
-                      <p className="text-white/40 text-xs font-medium">
-                        Resend in {resendCountdown}s
-                      </p>
-                    ) : (
-                      <button onClick={handleSendOTP} disabled={loadingSend}
-                        className="text-amber-400 text-xs font-semibold flex items-center gap-1.5 mx-auto hover:text-amber-300 transition-colors disabled:opacity-50">
-                        <RefreshCw size={12} /> Resend OTP
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+                }
+              </div>
             </div>
           )}
         </div>
 
-        {/* Bottom trust row */}
-        <div className="flex items-center gap-4 mt-6 justify-center">
-          {[
-            { Icon: Star, text: '4.9 Rated' },
-            { Icon: Shield, text: 'FSSAI Certified' },
-            { Icon: Zap, text: '30-Min Delivery' },
-          ].map(({ Icon, text }) => (
-            <div key={text} className="flex items-center gap-1.5 text-white/40 text-[11px] font-semibold">
-              <Icon size={11} className="text-amber-400/60" /> {text}
-            </div>
-          ))}
-        </div>
-
-        {/* Footer note */}
-        <p className="text-white/25 text-[10px] text-center mt-4 px-4 leading-relaxed">
-          One free coffee per order · Valid with any bowl purchase · Limited to {campaignData.totalBudget} total redemptions
+        {/* Bottom note */}
+        <p className="text-white/20 text-[10px] text-center mt-6 px-2 leading-relaxed">
+          Offer valid for new & existing users · One free coffee per order · Up to 5 per account
         </p>
       </div>
     </div>
