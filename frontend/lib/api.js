@@ -154,4 +154,16 @@ export const adminAgents = {
   delete:         (id)       => api.delete(`/admin/agents/${id}`),
 };
 
+export const campaign = {
+  getInfo:      (code)  => api.get(`/campaign/${code}/info`),
+  trackScan:    (code)  => api.post(`/campaign/${code}/scan`),
+  registerLead: (code)  => api.post(`/campaign/${code}/lead`),
+};
+
+export const adminCampaigns = {
+  getAll:    ()     => api.get('/admin/campaigns'),
+  create:    (data) => api.post('/admin/campaigns', data),
+  getDetail: (id)   => api.get(`/admin/campaigns/${id}`),
+};
+
 export default api;

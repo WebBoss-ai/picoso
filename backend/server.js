@@ -4,7 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import routes from './routes/routes.js';
-import { DeliveryPartner, User } from './models/Model.js';
+import { DeliveryPartner, User, Campaign } from './models/Model.js';
 
 dotenv.config();
 
@@ -51,11 +51,29 @@ async function ensureTestUserAddress() {
   console.log('✅ Far-away address added to test user 9999999999');
 }
 
+async function seedCampaign1() {
+  const exists = await Campaign.findOne({ code: '483271' });
+  if (!exists) {
+    await Campaign.create({
+      code:          '483271',
+      name:          'Free Coffee Launch',
+      description:   'Get 1 free coffee on every bowl order — launch campaign.',
+      benefit:       'free_coffee',
+      freeItemLabel: 'Free Coffee',
+      freeItemValue: 79,
+      totalBudget:   5,
+      active:        true,
+    });
+    console.log('✅ Campaign 1 (Free Coffee Launch) seeded — code: 483271');
+  }
+}
+
 mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('✅ MongoDB Connected');
     await seedDeliveryPartners();
     await ensureTestUserAddress();
+    await seedCampaign1();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 

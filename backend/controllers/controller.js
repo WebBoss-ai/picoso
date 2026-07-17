@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout, OutOfRadiusAttempt } from '../models/Model.js';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout, OutOfRadiusAttempt, Campaign, CampaignScan, CampaignLead, CampaignRedemption } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 import { processAgentCommission } from './agentController.js';
 
@@ -179,7 +179,22 @@ export const getIngredients = async (req, res) => {
 // Order Controllers
 export const createOrder = async (req, res) => {
   try {
-    const { items, deliveryAddress, totalPrice, paymentMethod, customerName, isPlatinumOrder, discountAmount, deliveryFee } = req.body;
+    const { items, deliveryAddress, totalPrice, paymentMethod, customerName, isPlatinumOrder, discountAmount, deliveryFee, campaignCode } = req.body;
+
+    let finalDiscount = discountAmount || 0;
+    let campaignRedemptionData = null;
+
+    // Campaign free-coffee logic
+    if (campaignCode) {
+      const campaign = await Campaign.findOne({ code: campaignCode, active: true });
+      if (campaign && campaign.redeemedCount < campaign.totalBudget) {
+        const hasBowl = items?.some(item => item.type === 'bowl');
+        if (hasBowl) {
+          finalDiscount += campaign.freeItemValue;
+          campaignRedemptionData = campaign;
+        }
+      }
+    }
 
     const estimatedDelivery = new Date(Date.now() + 30 * 60 * 1000);
 
@@ -187,7 +202,7 @@ export const createOrder = async (req, res) => {
       userId: req.user._id,
       items,
       totalPrice,
-      discountAmount: discountAmount || 0,
+      discountAmount: finalDiscount,
       deliveryFee: deliveryFee !== undefined ? deliveryFee : 15,
       isPlatinumOrder: isPlatinumOrder || false,
       paymentMethod: paymentMethod || 'cod',
@@ -198,6 +213,18 @@ export const createOrder = async (req, res) => {
       estimatedDelivery,
       referredByAgent: req.user.referredByAgent || null
     });
+
+    // Record campaign redemption
+    if (campaignRedemptionData) {
+      await CampaignRedemption.create({
+        campaignId: campaignRedemptionData._id,
+        userId: req.user._id,
+        orderId: order._id,
+        phone: req.user.phone,
+        discountAmount: campaignRedemptionData.freeItemValue,
+      });
+      await Campaign.findByIdAndUpdate(campaignRedemptionData._id, { $inc: { redeemedCount: 1 } });
+    }
 
     res.json({ success: true, order });
   } catch (error) {
@@ -1306,4 +1333,132 @@ export const seedTestUser = async (req, res) => {
       ],
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// ── Campaign Controllers ──────────────────────────────────────────────────────
+
+// Public: get campaign info (coffees left, active status)
+export const getCampaignInfo = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const campaign = await Campaign.findOne({ code });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const coffesLeft = Math.max(0, campaign.totalBudget - campaign.redeemedCount);
+    res.json({
+      campaign: {
+        _id: campaign._id,
+        name: campaign.name,
+        description: campaign.description,
+        benefit: campaign.benefit,
+        freeItemLabel: campaign.freeItemLabel,
+        freeItemValue: campaign.freeItemValue,
+        totalBudget: campaign.totalBudget,
+        redeemedCount: campaign.redeemedCount,
+        coffeesLeft: coffesLeft,
+        active: campaign.active && coffesLeft > 0,
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Public: track page scan/visit
+export const trackCampaignScan = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const campaign = await Campaign.findOne({ code });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
+    const userAgent = req.headers['user-agent'] || '';
+    await CampaignScan.create({ campaignId: campaign._id, ip, userAgent });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Authenticated: register as a lead after OTP login
+export const registerCampaignLead = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const userId = req.user._id;
+    const campaign = await Campaign.findOne({ code });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const exists = await CampaignLead.findOne({ campaignId: campaign._id, userId });
+    if (!exists) {
+      await CampaignLead.create({ campaignId: campaign._id, userId, phone: req.user.phone });
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: list all campaigns
+export const adminGetCampaigns = async (req, res) => {
+  try {
+    const campaigns = await Campaign.find().sort({ createdAt: -1 });
+    const result = await Promise.all(campaigns.map(async (c) => {
+      const scans = await CampaignScan.countDocuments({ campaignId: c._id });
+      const leads = await CampaignLead.countDocuments({ campaignId: c._id });
+      const redemptions = await CampaignRedemption.countDocuments({ campaignId: c._id });
+      return { ...c.toObject(), scans, leads, redemptions, coffeesLeft: Math.max(0, c.totalBudget - c.redeemedCount) };
+    }));
+    res.json({ campaigns: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: get campaign detail analytics
+export const adminGetCampaignDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const campaign = await Campaign.findById(id);
+    if (!campaign) return res.status(404).json({ error: 'Not found' });
+
+    const [scans, leads, redemptions] = await Promise.all([
+      CampaignScan.find({ campaignId: id }).sort({ scannedAt: -1 }).limit(200),
+      CampaignLead.find({ campaignId: id }).populate('userId', 'name phone createdAt').sort({ registeredAt: -1 }),
+      CampaignRedemption.find({ campaignId: id }).populate('userId', 'name phone').populate('orderId', 'totalPrice status createdAt').sort({ redeemedAt: -1 }),
+    ]);
+
+    // Daily scans for last 14 days
+    const now = new Date();
+    const dailyScans = [];
+    for (let i = 13; i >= 0; i--) {
+      const day = new Date(now);
+      day.setDate(day.getDate() - i);
+      const start = new Date(day); start.setHours(0, 0, 0, 0);
+      const end = new Date(day); end.setHours(23, 59, 59, 999);
+      const count = scans.filter(s => s.scannedAt >= start && s.scannedAt <= end).length;
+      dailyScans.push({ date: start.toISOString(), scans: count });
+    }
+
+    // Device breakdown from user agents
+    const mobile = scans.filter(s => /mobile|android|iphone|ipad/i.test(s.userAgent)).length;
+    const desktop = scans.length - mobile;
+
+    res.json({
+      campaign: { ...campaign.toObject(), coffeesLeft: Math.max(0, campaign.totalBudget - campaign.redeemedCount) },
+      stats: {
+        totalScans: scans.length,
+        totalLeads: leads.length,
+        totalRedemptions: redemptions.length,
+        conversionRate: scans.length > 0 ? ((leads.length / scans.length) * 100).toFixed(1) : '0',
+        redemptionRate: scans.length > 0 ? ((redemptions.length / scans.length) * 100).toFixed(1) : '0',
+        totalDiscount: redemptions.reduce((s, r) => s + r.discountAmount, 0),
+        deviceBreakdown: { mobile, desktop },
+      },
+      dailyScans,
+      leads,
+      redemptions,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: create a campaign
+export const adminCreateCampaign = async (req, res) => {
+  try {
+    const { code, name, description, freeItemLabel, freeItemValue, totalBudget } = req.body;
+    if (!code || !name) return res.status(400).json({ error: 'Code and name required' });
+    const campaign = await Campaign.create({ code, name, description, freeItemLabel, freeItemValue, totalBudget });
+    res.json({ campaign });
+  } catch (e) {
+    if (e.code === 11000) return res.status(400).json({ error: 'Campaign code already exists' });
+    res.status(500).json({ error: e.message });
+  }
 };

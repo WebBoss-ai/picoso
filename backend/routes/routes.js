@@ -134,4 +134,15 @@ router.put('/admin/agents/:id',            authenticate, isAdmin,  agentControll
 router.put('/admin/agents/:id/wallet',     authenticate, isAdmin,  agentController.adminAdjustWallet);
 router.delete('/admin/agents/:id',         authenticate, isAdmin,  agentController.adminDeleteAgent);
 
+// ── Marketing Campaigns ─────────────────────────────────────────────────────
+// Public
+router.get('/campaign/:code/info',      controller.getCampaignInfo);
+router.post('/campaign/:code/scan',     controller.trackCampaignScan);
+router.post('/campaign/:code/lead',     authenticate, controller.registerCampaignLead);
+
+// Admin
+router.get('/admin/campaigns',          authenticate, isAdmin, controller.adminGetCampaigns);
+router.post('/admin/campaigns',         authenticate, isAdmin, controller.adminCreateCampaign);
+router.get('/admin/campaigns/:id',      authenticate, isAdmin, controller.adminGetCampaignDetail);
+
 export default router;

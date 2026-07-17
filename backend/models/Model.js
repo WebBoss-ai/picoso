@@ -304,3 +304,45 @@ const agentSettingsSchema = new mongoose.Schema({
 });
 
 export const AgentSettings = mongoose.model('AgentSettings', agentSettingsSchema);
+
+// ── Marketing Campaigns ───────────────────────────────────────────────────────
+const campaignSchema = new mongoose.Schema({
+  code:          { type: String, required: true, unique: true },
+  name:          { type: String, required: true },
+  description:   { type: String, default: '' },
+  benefit:       { type: String, default: 'free_coffee' },
+  freeItemLabel: { type: String, default: 'Free Coffee' },
+  freeItemValue: { type: Number, default: 79 },
+  totalBudget:   { type: Number, default: 5 },
+  redeemedCount: { type: Number, default: 0 },
+  active:        { type: Boolean, default: true },
+  createdAt:     { type: Date, default: Date.now },
+});
+
+const campaignScanSchema = new mongoose.Schema({
+  campaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', required: true },
+  ip:         { type: String, default: '' },
+  userAgent:  { type: String, default: '' },
+  scannedAt:  { type: Date, default: Date.now },
+});
+
+const campaignLeadSchema = new mongoose.Schema({
+  campaignId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', required: true },
+  userId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  phone:         { type: String, default: '' },
+  registeredAt:  { type: Date, default: Date.now },
+});
+
+const campaignRedemptionSchema = new mongoose.Schema({
+  campaignId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', required: true },
+  userId:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  orderId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
+  phone:          { type: String, default: '' },
+  discountAmount: { type: Number, default: 0 },
+  redeemedAt:     { type: Date, default: Date.now },
+});
+
+export const Campaign            = mongoose.model('Campaign',            campaignSchema);
+export const CampaignScan        = mongoose.model('CampaignScan',        campaignScanSchema);
+export const CampaignLead        = mongoose.model('CampaignLead',        campaignLeadSchema);
+export const CampaignRedemption  = mongoose.model('CampaignRedemption',  campaignRedemptionSchema);
