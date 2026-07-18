@@ -9,6 +9,7 @@ import {
   CheckCheck, AlertTriangle, Sparkles, Bell, Shield,
   Coffee, Gift,
 } from 'lucide-react';
+
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { orders, profile, expansion, storeStatus as storeApi } from '@/lib/api';
@@ -286,79 +287,6 @@ function DeliveryRadiusModal({ modalState, timer, maxTimer, distance, onConfirm,
   );
 }
 
-// ─── Bowl Required Modal ───────────────────────────────────────────────────────
-function BowlRequiredModal({ freeItemLabel, onClose, onGoMenu }) {
-  return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center"
-      style={{ backdropFilter: 'blur(20px)', backgroundColor: 'rgba(10,5,0,0.7)' }}
-    >
-      <div
-        className="w-full sm:max-w-sm rounded-t-[32px] sm:rounded-[32px] overflow-hidden"
-        style={{ background: 'linear-gradient(160deg,#1a0a00 0%,#3d1400 50%,#7c2d12 100%)', boxShadow: '0 40px 80px rgba(0,0,0,0.5)' }}
-      >
-        {/* Pill (mobile) */}
-        <div className="flex justify-center pt-3 sm:hidden">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
-        </div>
-
-        {/* Glow blob */}
-        <div className="relative overflow-hidden">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-56 h-28 rounded-full opacity-25 pointer-events-none"
-            style={{ background: 'radial-gradient(ellipse, #fbbf24, transparent)', filter: 'blur(24px)' }} />
-
-          <div className="relative px-7 pt-8 pb-8 text-center">
-            {/* Icon */}
-            <div className="relative inline-flex mb-5">
-              <div className="w-20 h-20 rounded-full flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', boxShadow: '0 12px 36px rgba(251,191,36,0.4)' }}>
-                <Coffee size={36} className="text-white" strokeWidth={1.8} />
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-red-500 border-2 border-[#3d1400] flex items-center justify-center">
-                <X size={14} className="text-white" strokeWidth={3} />
-              </div>
-            </div>
-
-            <h2 className="text-2xl font-black text-white mb-2 tracking-tight">
-              Add a Bowl First!
-            </h2>
-            <p className="text-white/60 text-sm leading-relaxed mb-3">
-              Your free <span className="text-amber-300 font-semibold">{freeItemLabel || 'coffee'}</span> is waiting — but it's only valid with a bowl in your order.
-            </p>
-
-            {/* Visual cue */}
-            <div className="rounded-2xl p-4 mb-6 flex items-center gap-4 text-left"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(251,191,36,0.2)' }}>
-              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-amber-400/15 flex items-center justify-center">
-                <ChefHat size={18} className="text-amber-400" />
-              </div>
-              <div>
-                <p className="text-white text-xs font-bold mb-0.5">Bowl + Coffee = Perfect Combo</p>
-                <p className="text-white/45 text-[11px] leading-relaxed">
-                  Add any bowl to your cart and the free coffee is auto-applied at checkout.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={onGoMenu}
-              className="w-full py-4 rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 mb-3 transition-all active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0a00', boxShadow: '0 8px 28px rgba(251,191,36,0.3)' }}
-            >
-              <ChefHat size={18} /> Browse Bowls <ArrowRight size={16} />
-            </button>
-            <button
-              onClick={onClose}
-              className="w-full py-3 rounded-2xl text-sm font-semibold text-white/50 hover:text-white/70 transition-colors"
-            >
-              Skip free coffee & continue
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Campaign Banner ───────────────────────────────────────────────────────────
 function CampaignBanner({ campaignData }) {
@@ -412,23 +340,8 @@ export default function CheckoutPage() {
   const [showLocationModal, setShowLocationModal] = useState(false);
   const pendingOrderRef = useRef(false);
 
-  // Campaign
-  const [activeCampaign, setActiveCampaign] = useState(null);
-  const [showBowlModal, setShowBowlModal] = useState(false);
-  const [bowlModalDismissed, setBowlModalDismissed] = useState(false);
-
-  // Load campaign from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('picoso_campaign');
-      if (stored) {
-        const data = JSON.parse(stored);
-        if (data?.active) setActiveCampaign(data);
-      }
-    } catch {}
-  }, []);
-
   // Campaign free coffee — auto-added to cart via CartContext
+  // activeCampaign comes from CartContext (reads localStorage)
   const hasCampaignCoffeeInCart = items.some(i => i.isCampaignCoffee);
   const hasBowlInCart = items.some(item => item.pfCategory !== 'pf-beverages' && !item.isCampaignCoffee && !item.isOfferCoffee);
 
