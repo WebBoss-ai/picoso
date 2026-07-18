@@ -143,12 +143,13 @@ export default function RedeemPage() {
     setSending(true);
     try {
       await auth.sendOTP(clean);
-      setStep(2);
-      setResendTimer(30);
-      setTimeout(() => otpRefs[0].current?.focus(), 80);
+      // Auto-fill 0000 and sign in immediately — no manual OTP entry needed
+      setOtp(['0', '0', '0', '0']);
+      await verifyOTP('0000');
     } catch (e) {
       setError(e.response?.data?.error || 'Could not send OTP. Please try again.');
-    } finally { setSending(false); }
+      setSending(false);
+    }
   };
 
   const handleOTPChange = (i, val) => {
@@ -340,12 +341,12 @@ export default function RedeemPage() {
 
               <button
                 onClick={sendOTP}
-                disabled={sending || phone.replace(/\D/g, '').length !== 10}
+                disabled={sending || verifying || phone.replace(/\D/g, '').length !== 10}
                 className="w-full py-4 rounded-2xl text-base font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'linear-gradient(135deg,#fbbf24,#f97316)', color: '#1a0800', boxShadow: '0 10px 30px rgba(251,191,36,0.3)' }}
               >
-                {sending
-                  ? <><Loader2 size={18} className="animate-spin" /> Sending…</>
+                {(sending || verifying)
+                  ? <><Loader2 size={18} className="animate-spin" /> Signing you in…</>
                   : <>Get My Free Coffees <ArrowRight size={18} /></>}
               </button>
 
