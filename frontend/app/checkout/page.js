@@ -58,7 +58,7 @@ const DELIVERY_FEE = 15;
 const UPI_ID = '8210823753@ybl';
 const STORE_LAT = 28.437099;
 const STORE_LNG = 77.072771;
-const DELIVERY_RADIUS_KM = 3;
+const DELIVERY_RADIUS_KM = 5;
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;

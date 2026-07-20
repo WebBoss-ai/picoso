@@ -3449,7 +3449,7 @@ function ZonesSection() {
 }
 
 // ─── Expansion Section ────────────────────────────────────────────────────────
-const DELIVERY_RADIUS_KM = 3;
+const DELIVERY_RADIUS_KM = 5;
 
 function ExpansionSection() {
   const [data, setData] = useState(null);
@@ -3965,7 +3965,7 @@ function ExpansionSection() {
             </p>
             <MapDots />
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
-              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 rounded-full bg-brand-500" /> 1–3 km radius rings (delivery zone)</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 rounded-full bg-brand-500" /> 1–5 km radius rings (delivery zone)</span>
               <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 border-t-2 border-dashed border-surface-300" /> 5–10 km rings (future zones)</span>
             </div>
           </div>
@@ -3981,7 +3981,8 @@ function ExpansionSection() {
                 { label: '0–1 km', min: 0, max: 1, color: '#22c55e' },
                 { label: '1–2 km', min: 1, max: 2, color: '#4ade80' },
                 { label: '2–3 km', min: 2, max: 3, color: '#86efac' },
-                { label: '3–5 km', min: 3, max: 5, color: '#f97316' },
+                { label: '3–4 km', min: 3, max: 4, color: '#a3e635' },
+                { label: '4–5 km', min: 4, max: 5, color: '#facc15' },
                 { label: '5–10 km', min: 5, max: 10, color: '#ef4444' },
                 { label: '10+ km', min: 10, max: Infinity, color: '#991b1b' },
               ].map(band => {
