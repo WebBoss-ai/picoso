@@ -539,23 +539,40 @@ function StatMini({ label, value, icon, sub }) {
 }
 
 // ─── Orders Section ───────────────────────────────────────────────────────────
+let _lastAlarmAt = 0;
 function playNotificationSound() {
+  const now = Date.now();
+  if (now - _lastAlarmAt < 5500) return; // debounce: don't double-fire within 5.5 s
+  _lastAlarmAt = now;
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    [[660, 0, 0.22], [880, 0.16, 0.25], [1100, 0.32, 0.35]].forEach(([freq, delay, dur]) => {
+    // Loud 5-second repeating alarm: alternating high-low beeps at maximum volume
+    const beepOn  = 0.28; // seconds each beep lasts
+    const beepOff = 0.12; // gap between beeps
+    const cycle   = beepOn + beepOff;
+    const total   = 5.0;  // total alarm duration in seconds
+    const count   = Math.floor(total / cycle); // ~11 beeps
+
+    for (let i = 0; i < count; i++) {
+      const t    = ctx.currentTime + i * cycle;
+      const freq = i % 2 === 0 ? 1050 : 750; // alternating tones for urgency
+
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.type = 'sine';
+
+      osc.type = 'square'; // square wave is much louder and more attention-grabbing than sine
       osc.frequency.value = freq;
-      const t = ctx.currentTime + delay;
-      gain.gain.setValueAtTime(0.001, t);
-      gain.gain.linearRampToValueAtTime(0.38, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(1.0, t + 0.01); // ramp to MAXIMUM volume instantly
+      gain.gain.setValueAtTime(1.0, t + beepOn - 0.02);
+      gain.gain.linearRampToValueAtTime(0, t + beepOn);
+
       osc.start(t);
-      osc.stop(t + dur + 0.05);
-    });
+      osc.stop(t + beepOn + 0.02);
+    }
   } catch {}
 }
 
@@ -4493,6 +4510,60 @@ export default function AdminPage() {
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Register Service Worker for background order notifications
+  useEffect(() => {
+    if (!isLoggedIn || !isAdmin) return;
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    let swReg = null;
+
+    async function setupOrderWatcher() {
+      // Ask for notification permission (needed for browser pop-ups when tab is in background)
+      if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+
+      try {
+        swReg = await navigator.serviceWorker.register('/order-sw.js', { scope: '/' });
+        // Wait until the SW is active
+        const sw = swReg.active || (await new Promise((resolve) => {
+          const candidate = swReg.installing || swReg.waiting;
+          if (!candidate) return resolve(swReg.active);
+          candidate.addEventListener('statechange', function handler() {
+            if (candidate.state === 'activated') {
+              candidate.removeEventListener('statechange', handler);
+              resolve(candidate);
+            }
+          });
+        }));
+
+        if (sw) {
+          const token = localStorage.getItem('picoso_token');
+          const base  = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
+          sw.postMessage({ type: 'INIT_ORDER_WATCHER', token, base });
+        }
+      } catch (err) {
+        console.warn('Order SW registration failed:', err);
+      }
+
+      // When the SW detects a new order it messages all clients — play sound here too
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'NEW_ORDER') {
+          playNotificationSound();
+        }
+      });
+    }
+
+    setupOrderWatcher();
+
+    return () => {
+      // Tell the SW to stop polling when the admin unmounts (e.g. logout)
+      if (swReg?.active) {
+        swReg.active.postMessage({ type: 'STOP_ORDER_WATCHER' });
+      }
+    };
+  }, [isLoggedIn, isAdmin]);
 
   useEffect(() => {
     if (!isLoggedIn) { router.replace('/'); return; }
