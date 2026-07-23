@@ -15,7 +15,9 @@ export default function ClientShell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const isAdminPage = pathname?.startsWith('/admin');
+  // Full-screen standalone pages that must render WITHOUT the global header/footer
+  const STANDALONE_PREFIXES = ['/admin', '/friendship', '/redeem', '/ref', '/agent', '/delivery-partner'];
+  const isAdminPage = STANDALONE_PREFIXES.some(p => pathname?.startsWith(p));
 
   const handleAuthRequired = (intent) => {
     setAuthIntent(intent);

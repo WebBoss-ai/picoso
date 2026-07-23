@@ -182,7 +182,20 @@ export default function FriendshipLandingPage() {
   const pronoun   = referrerGender === 'female' ? 'her' : referrerGender === 'male' ? 'his' : 'their';
 
   return (
-    <div className="min-h-screen bg-[#0a1a10] flex flex-col items-center justify-center px-5 py-8 relative overflow-hidden">
+    <div className="friendship-scope min-h-screen bg-[#0a1a10] flex flex-col items-center justify-center px-5 py-8 relative overflow-hidden">
+      {/* Keep inputs readable even when the browser applies its autofill background */}
+      <style>{`
+        .friendship-scope .fs-input:-webkit-autofill,
+        .friendship-scope .fs-input:-webkit-autofill:hover,
+        .friendship-scope .fs-input:-webkit-autofill:focus {
+          -webkit-text-fill-color: #ffffff !important;
+          caret-color: #34d399;
+          transition: background-color 9999s ease-in-out 0s;
+          box-shadow: 0 0 0 1000px rgba(20, 83, 45, 0.55) inset !important;
+        }
+        .friendship-scope .fs-input { color: #fff; }
+      `}</style>
+
       {/* Ambient glows */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 right-0 w-96 h-96 rounded-full bg-emerald-500/8 blur-3xl" />
@@ -234,12 +247,12 @@ export default function FriendshipLandingPage() {
         </div>
 
         {/* Login card */}
-        <div className="bg-white/4 border border-white/8 rounded-3xl p-6 backdrop-blur-sm">
+        <div className="bg-white/[0.06] border border-white/12 rounded-3xl p-6 backdrop-blur-sm">
           <div className="mb-5">
-            <p className="text-white text-base font-bold mb-1">
+            <p className="text-white text-lg font-bold mb-1">
               {!otpSent ? 'Accept the invitation' : 'Logging you in…'}
             </p>
-            <p className="text-white/35 text-xs leading-relaxed">
+            <p className="text-white/55 text-xs leading-relaxed">
               {!otpSent
                 ? `Enter your phone number to join ${pronoun} healthy circle`
                 : `Verifying +91 ${phone} — you'll be in in a moment`}
@@ -249,9 +262,9 @@ export default function FriendshipLandingPage() {
           {!otpSent ? (
             <div className="space-y-3">
               <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
-                  <span className="text-white/30 text-sm font-medium">+91</span>
-                  <div className="w-px h-4 bg-white/15" />
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none z-10">
+                  <span className="text-white/70 text-sm font-semibold">+91</span>
+                  <div className="w-px h-4 bg-white/25" />
                 </div>
                 <input
                   type="tel" inputMode="numeric" maxLength={10}
@@ -259,7 +272,8 @@ export default function FriendshipLandingPage() {
                   onChange={e => { setPhone(e.target.value.replace(/\D/g, '')); setError(''); }}
                   onKeyDown={e => e.key === 'Enter' && handleSendOtp()}
                   placeholder="Phone number"
-                  className="w-full bg-white/6 border border-white/10 rounded-2xl pl-16 pr-4 py-4 text-white placeholder-white/20 text-sm font-medium focus:outline-none focus:border-emerald-500/50 focus:bg-white/8 transition-all"
+                  className="fs-input w-full bg-white/10 border border-white/15 rounded-2xl pl-16 pr-4 py-4 text-white placeholder-white/40 text-base font-semibold focus:outline-none focus:border-emerald-400 focus:bg-white/[0.14] transition-all"
+                  style={{ WebkitTextFillColor: '#fff', caretColor: '#34d399' }}
                 />
               </div>
               {error && <p className="text-red-400 text-xs px-1">{error}</p>}
@@ -289,7 +303,8 @@ export default function FriendshipLandingPage() {
                   onKeyDown={e => !autoFilling && e.key === 'Enter' && handleVerify()}
                   placeholder="OTP"
                   readOnly={autoFilling}
-                  className="w-full bg-white/6 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-white/20 text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-emerald-500/50 transition-all"
+                  className="fs-input w-full bg-white/10 border border-white/15 rounded-2xl px-5 py-4 text-white placeholder-white/40 text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-emerald-400 transition-all"
+                  style={{ WebkitTextFillColor: '#fff', caretColor: '#34d399' }}
                 />
                 {autoFilling && (
                   <div className="absolute bottom-1.5 left-0 right-0 flex justify-center gap-1">
