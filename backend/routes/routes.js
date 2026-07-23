@@ -147,4 +147,21 @@ router.get('/admin/campaigns',          authenticate, isAdmin, controller.adminG
 router.post('/admin/campaigns',         authenticate, isAdmin, controller.adminCreateCampaign);
 router.get('/admin/campaigns/:id',      authenticate, isAdmin, controller.adminGetCampaignDetail);
 
+// ── Friend Referral System ───────────────────────────────────────────────────
+// Public
+router.get('/friendship/:code',                                       controller.getReferralInfo);
+router.post('/referral/request',                                      controller.requestReferralLink);
+// Authenticated
+router.post('/friendship/:code/join',   authenticate,                 controller.joinViaReferral);
+router.get('/my/referrals',             authenticate,                 controller.getMyReferrals);
+// Admin
+router.get('/admin/referrals',          authenticate, isAdmin,        controller.adminGetReferrals);
+router.post('/admin/referrals',         authenticate, isAdmin,        controller.adminCreateReferral);
+router.put('/admin/referrals/:id',      authenticate, isAdmin,        controller.adminUpdateReferral);
+router.get('/admin/referrals/requests', authenticate, isAdmin,        controller.adminGetReferralRequests);
+router.put('/admin/referrals/requests/:id/approve', authenticate, isAdmin, controller.adminApproveReferralRequest);
+router.put('/admin/referrals/requests/:id/reject',  authenticate, isAdmin, controller.adminRejectReferralRequest);
+router.get('/admin/referrals/settings', authenticate, isAdmin,        controller.adminGetReferralSettings);
+router.put('/admin/referrals/settings', authenticate, isAdmin,        controller.adminUpdateReferralSettings);
+
 export default router;

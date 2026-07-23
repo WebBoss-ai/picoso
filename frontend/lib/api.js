@@ -167,4 +167,22 @@ export const adminCampaigns = {
   getDetail: (id)   => api.get(`/admin/campaigns/${id}`),
 };
 
+export const friendReferral = {
+  getInfo:    (code)   => api.get(`/friendship/${code}`),
+  join:       (code)   => api.post(`/friendship/${code}/join`),
+  request:    (data)   => api.post('/referral/request', data),
+  getMyCircle: ()      => api.get('/my/referrals'),
+};
+
+export const adminReferrals = {
+  getAll:           ()       => api.get('/admin/referrals'),
+  create:           (data)   => api.post('/admin/referrals', data),
+  update:           (id, d)  => api.put(`/admin/referrals/${id}`, d),
+  getRequests:      ()       => api.get('/admin/referrals/requests'),
+  approveRequest:   (id)     => api.put(`/admin/referrals/requests/${id}/approve`),
+  rejectRequest:    (id)     => api.put(`/admin/referrals/requests/${id}/reject`),
+  getSettings:      ()       => api.get('/admin/referrals/settings'),
+  updateSettings:   (data)   => api.put('/admin/referrals/settings', data),
+};
+
 export default api;

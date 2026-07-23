@@ -4,14 +4,14 @@ import Link from 'next/link';
 import {
   Search, X, Leaf, Star, ChefHat, Clock,
   Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee,
-  LayoutGrid,
+  LayoutGrid, Heart, Loader2, CheckCircle2, Phone,
 } from 'lucide-react';
-import { bowls, categories, healthySubscription } from '@/lib/api';
+import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
 
-// ── Promo banners ────────────────────────────────────────────────────────────
+/* ── Promo banners (commented out — replaced by Helping Hands banner) ─────────
 const BANNERS = [
   {
     id: 'beverages',
@@ -58,6 +58,7 @@ const BANNERS = [
     shape: 'wave',
   },
 ];
+─────────────────────────────────────────────────────────────────────────────── */
 
 const FILTERS = [
   { id: 'all',        label: 'All Items' },
@@ -66,70 +67,176 @@ const FILTERS = [
   { id: 'chef',       label: "Chef's Special", icon: ChefHat },
 ];
 
-// ── Banner carousel ──────────────────────────────────────────────────────────
-function BannerCarousel() {
-  const [active, setActive] = useState(0);
-  const intervalRef = useRef(null);
+/* ── BannerCarousel (commented out — replaced by HelpingHandsBanner) ──────────
+function BannerCarousel() { ... }
+─────────────────────────────────────────────────────────────────────────────── */
 
-  const start = () => {
-    intervalRef.current = setInterval(() => setActive(a => (a + 1) % BANNERS.length), 4000);
+// ── Get-Link Modal ────────────────────────────────────────────────────────────
+function GetLinkModal({ onClose }) {
+  const [name, setName]       = useState('');
+  const [phone, setPhone]     = useState('');
+  const [gender, setGender]   = useState('male');
+  const [phase, setPhase]     = useState('form'); // form | submitting | pending
+  const [error, setError]     = useState('');
+
+  const handleSubmit = async () => {
+    if (!name.trim() || phone.length !== 10) {
+      setError('Please enter your name and a valid 10-digit phone number.');
+      return;
+    }
+    setError('');
+    setPhase('submitting');
+    try {
+      await friendReferral.request({ name: name.trim(), phone, gender });
+      setPhase('pending');
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Something went wrong. Try again.');
+      setPhase('form');
+    }
   };
-  const stop = () => clearInterval(intervalRef.current);
-
-  useEffect(() => { start(); return stop; }, []);
-
-  const prev = () => { stop(); setActive(a => (a - 1 + BANNERS.length) % BANNERS.length); start(); };
-  const next = () => { stop(); setActive(a => (a + 1) % BANNERS.length); start(); };
-
-  const b = BANNERS[active];
-  const Icon = b.Icon;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl select-none"
-      style={{ background: `linear-gradient(135deg, ${b.from}, ${b.to})` }}>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full opacity-10" style={{ background: b.accent }} />
-        <div className="absolute right-12 bottom-0 w-32 h-32 rounded-full opacity-[0.07]" style={{ background: b.accent }} />
-        <div className="absolute -left-4 top-1/2 w-24 h-24 rounded-full opacity-[0.06]" style={{ background: b.accent }} />
-      </div>
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.08]">
-        <Icon size={120} color={b.accent} />
-      </div>
-      <div className="relative px-5 py-5 flex items-center justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Icon size={12} color={b.accent} />
-            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: b.accent }}>{b.tag}</span>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-sm bg-white rounded-3xl overflow-hidden shadow-2xl">
+
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 bg-gray-200 rounded-full" />
+        </div>
+
+        {phase === 'pending' ? (
+          /* Success state */
+          <div className="px-6 py-8 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 size={32} className="text-emerald-500" />
+            </div>
+            <h2 className="text-xl font-extrabold text-gray-900 mb-2">Request received!</h2>
+            <p className="text-sm text-gray-500 leading-relaxed max-w-xs mx-auto mb-6">
+              We&apos;ll generate your personal friendship link and share it with you. It usually takes a few minutes.
+            </p>
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-6 text-left">
+              <Clock size={16} className="text-amber-500 flex-shrink-0" />
+              <p className="text-xs text-amber-700 font-medium">Approval pending — our team will activate your link shortly.</p>
+            </div>
+            <button onClick={onClose} className="w-full py-3.5 rounded-2xl bg-gray-900 text-white font-bold text-sm hover:bg-gray-800 transition-colors">
+              Got it
+            </button>
           </div>
-          <h3 className="text-white font-extrabold text-xl leading-tight mb-1.5 whitespace-pre-line">{b.headline}</h3>
-          <p className="text-white/70 text-xs leading-relaxed mb-3 max-w-[200px]">{b.sub}</p>
-          <Link href={b.href}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl transition-all"
-            style={{ background: b.accent, color: b.from }}>
-            {b.cta} <ArrowRight size={12} />
-          </Link>
-        </div>
-        <div className="flex-shrink-0 w-20 h-20 rounded-2xl flex items-center justify-center"
-          style={{ background: 'rgba(255,255,255,0.1)' }}>
-          <Icon size={40} color={b.accent} />
+        ) : (
+          /* Form state */
+          <div className="px-6 pb-8">
+            <div className="py-5 border-b border-gray-100 mb-5">
+              <h2 className="text-xl font-extrabold text-gray-900 mb-1">Get your friendship link</h2>
+              <p className="text-sm text-gray-400">We&apos;ll set up a personal link to share with friends who love healthy eating.</p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 block">Your Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => { setName(e.target.value); setError(''); }}
+                  placeholder="Full name"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3.5 text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:border-emerald-400 focus:bg-white transition-all"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 block">Phone Number</label>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+                    <span className="text-gray-400 text-sm font-medium">+91</span>
+                    <div className="w-px h-4 bg-gray-200" />
+                  </div>
+                  <input
+                    type="tel" inputMode="numeric" maxLength={10}
+                    value={phone}
+                    onChange={e => { setPhone(e.target.value.replace(/\D/g, '')); setError(''); }}
+                    placeholder="Mobile number"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-16 pr-4 py-3.5 text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:border-emerald-400 focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 block">Gender</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[['male','Male'],['female','Female'],['other','Other']].map(([v, l]) => (
+                    <button key={v} onClick={() => setGender(v)}
+                      className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${gender === v ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {error && <p className="text-red-500 text-xs font-medium px-1">{error}</p>}
+              <button
+                onClick={handleSubmit}
+                disabled={phase === 'submitting'}
+                className="w-full mt-2 flex items-center justify-center gap-2 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold text-sm transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
+              >
+                {phase === 'submitting' ? <><Loader2 size={16} className="animate-spin" /> Submitting…</> : <><Heart size={15} className="fill-white" /> Request my link</>}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Helping Hands Banner (single, replaces carousel) ─────────────────────────
+function HelpingHandsBanner({ onGetLink }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl select-none"
+      style={{ background: 'linear-gradient(135deg, #0f2d1a 0%, #14532d 50%, #166534 100%)' }}>
+
+      {/* Ambient circles */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -right-10 -top-10 w-52 h-52 rounded-full opacity-[0.07]" style={{ background: '#86efac' }} />
+        <div className="absolute -left-6 -bottom-6 w-40 h-40 rounded-full opacity-[0.05]" style={{ background: '#6ee7b7' }} />
+        <div className="absolute right-20 bottom-4 w-20 h-20 rounded-full opacity-[0.04]" style={{ background: '#d1fae5' }} />
+      </div>
+
+      {/* Wrap image on the right */}
+      <div className="absolute right-0 top-0 bottom-0 w-32 sm:w-36 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-l from-transparent to-[#14532d]/60 z-10" />
+        {/* Placeholder wrap visual — a styled box until real image is added */}
+        <div className="absolute right-0 top-0 bottom-0 w-full flex items-center justify-center">
+          <div className="relative">
+            {/* Wrap illustration placeholder */}
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400/20 to-teal-300/20 border border-emerald-400/20 flex items-center justify-center">
+              <span className="text-4xl">🌯</span>
+            </div>
+            <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-amber-400/90 flex items-center justify-center shadow-lg">
+              <span className="text-xs font-extrabold text-amber-900">★</span>
+            </div>
+          </div>
         </div>
       </div>
-      <div className="flex items-center justify-between px-5 pb-3 pt-0 relative z-10">
-        <div className="flex gap-1.5">
-          {BANNERS.map((_, i) => (
-            <button key={i} onClick={() => { stop(); setActive(i); start(); }}
-              className="transition-all duration-200 rounded-full"
-              style={{ width: i === active ? 20 : 6, height: 6, background: i === active ? b.accent : 'rgba(255,255,255,0.3)' }} />
-          ))}
+
+      <div className="relative px-5 py-5 pr-32 sm:pr-36">
+        {/* Tag */}
+        <div className="flex items-center gap-1.5 mb-2.5">
+          <Heart size={10} className="text-emerald-300 fill-emerald-300" />
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-emerald-300/80">Helping Hands</span>
         </div>
-        <div className="flex gap-1">
-          <button onClick={prev} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
-            <ChevronLeft size={14} color="white" />
-          </button>
-          <button onClick={next} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
-            <ChevronRight size={14} color="white" />
-          </button>
-        </div>
+
+        {/* Headline */}
+        <h3 className="text-white font-extrabold text-[19px] leading-snug mb-1.5">
+          Know someone who&apos;s<br />into healthy eating?
+        </h3>
+        <p className="text-white/50 text-[11px] leading-relaxed mb-4 max-w-[190px]">
+          Share your personal link. When they order, you get a reward.
+        </p>
+
+        {/* CTA */}
+        <button
+          onClick={onGetLink}
+          className="inline-flex items-center gap-2 bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-emerald-950 font-extrabold text-xs px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-900/30"
+        >
+          <Heart size={11} className="fill-emerald-950" />
+          Get Link
+        </button>
       </div>
     </div>
   );
@@ -225,6 +332,7 @@ export default function MenuPage() {
   const [catsLoading, setCatsLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [subModalOpen, setSubModalOpen] = useState(false);
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
@@ -452,9 +560,9 @@ export default function MenuPage() {
       {/* ── Content area ─────────────────────────────────────────── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 pb-28">
 
-        {/* Promo banner carousel */}
+        {/* Helping Hands banner */}
         <div className="mb-7">
-          <BannerCarousel />
+          <HelpingHandsBanner onGetLink={() => setLinkModalOpen(true)} />
         </div>
 
         {/* ── Category sections ─────────────────────────────────── */}
@@ -581,6 +689,9 @@ export default function MenuPage() {
           setSubModalOpen(false);
         }}
       />
+
+      {/* Get referral link modal */}
+      {linkModalOpen && <GetLinkModal onClose={() => setLinkModalOpen(false)} />}
     </div>
   );
 }

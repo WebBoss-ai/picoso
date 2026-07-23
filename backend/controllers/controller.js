@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout, OutOfRadiusAttempt, Campaign, CampaignScan, CampaignLead, CampaignRedemption } from '../models/Model.js';
+import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout, OutOfRadiusAttempt, Campaign, CampaignScan, CampaignLead, CampaignRedemption, FriendReferral, FriendReferralRequest, ReferralSettings } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 import { processAgentCommission } from './agentController.js';
 
@@ -245,6 +245,10 @@ export const createOrder = async (req, res) => {
         maxCoffees: updatedLead.maxCoffees,
       };
     }
+
+    // Process referral reward (fire-and-forget — awards free item to referrer on friend's first order)
+    const firstItemName = items?.[0]?.name || (items?.[0]?.bowlId ? 'a bowl' : 'an item');
+    processReferralReward(req.user._id, order._id, firstItemName).catch(() => {});
 
     res.json({ success: true, order, campaign: campaignResult });
   } catch (error) {
@@ -1511,4 +1515,284 @@ export const adminCreateCampaign = async (req, res) => {
     if (e.code === 11000) return res.status(400).json({ error: 'Campaign code already exists' });
     res.status(500).json({ error: e.message });
   }
+};
+
+// ── Friend Referral System ────────────────────────────────────────────────────
+
+function generateReferralCode(name) {
+  // 3 initials from name words + 3 random digits
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  let initials = '';
+  for (const w of words) {
+    if (initials.length < 3) initials += w[0].toUpperCase();
+  }
+  while (initials.length < 3) initials += 'X';
+  const digits = String(Math.floor(100 + Math.random() * 900));
+  return initials + digits;
+}
+
+// Public: get referral info by code (for landing page)
+export const getReferralInfo = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const ref = await FriendReferral.findOne({ code: code.toUpperCase(), status: 'active' });
+    if (!ref) return res.status(404).json({ error: 'Referral link not found or expired' });
+    res.json({
+      referrerName:   ref.referrerName,
+      referrerGender: ref.referrerGender,
+      code:           ref.code,
+      valid:          true,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Authenticated: join via referral link (called after OTP login on /friendship/[code] page)
+export const joinViaReferral = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const userId = req.user._id;
+    const user   = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const ref = await FriendReferral.findOne({ code: code.toUpperCase(), status: 'active' });
+    if (!ref) return res.status(404).json({ error: 'Referral link not found or expired' });
+
+    // Don't let the referrer join their own link
+    if (ref.referrerPhone === user.phone) {
+      return res.status(400).json({ error: 'You cannot use your own referral link' });
+    }
+
+    // Check if already joined
+    const alreadyJoined = ref.referredFriends.some(f => f.userId?.toString() === userId.toString());
+    if (alreadyJoined) return res.json({ message: 'Already joined', alreadyJoined: true });
+
+    ref.referredFriends.push({
+      userId,
+      name:    user.name || '',
+      phone:   user.phone,
+      joinedAt: new Date(),
+    });
+    ref.totalJoined += 1;
+
+    // Link referrer's userId if not set
+    if (!ref.referrerId) {
+      const referrer = await User.findOne({ phone: ref.referrerPhone });
+      if (referrer) ref.referrerId = referrer._id;
+    }
+
+    await ref.save();
+    res.json({ message: 'Joined successfully', referrerName: ref.referrerName });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Authenticated: get my own referral links + friend activity feed
+export const getMyReferrals = async (req, res) => {
+  try {
+    const user = req.user;
+    // Find by userId or phone
+    const refs = await FriendReferral.find({
+      $or: [{ referrerId: user._id }, { referrerPhone: user.phone }],
+    }).populate('referredFriends.userId', 'name phone').populate('rewardBowlId', 'name image');
+
+    // Build notification feed: each friend's first order
+    const feed = [];
+    for (const ref of refs) {
+      for (const f of ref.referredFriends) {
+        if (f.firstOrderAt && f.firstOrderItem) {
+          feed.push({
+            friendName:    f.name || f.phone,
+            itemName:      f.firstOrderItem,
+            orderedAt:     f.firstOrderAt,
+            rewardEarned:  f.rewardEarned,
+          });
+        }
+      }
+    }
+    feed.sort((a, b) => new Date(b.orderedAt) - new Date(a.orderedAt));
+
+    res.json({ referrals: refs, feed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Public: user requests a referral link from menu page
+export const requestReferralLink = async (req, res) => {
+  try {
+    const { phone, name, gender } = req.body;
+    if (!phone || phone.length !== 10) return res.status(400).json({ error: 'Valid 10-digit phone required' });
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+
+    // Check if already requested and pending
+    const existing = await FriendReferralRequest.findOne({ phone, status: 'pending' });
+    if (existing) return res.json({ message: 'Request already pending', pending: true });
+
+    await FriendReferralRequest.create({ phone, name: name.trim(), gender: gender || 'other', status: 'pending' });
+    res.json({ message: 'Request submitted. Admin will generate your link soon.', pending: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: get all pending referral link requests
+export const adminGetReferralRequests = async (req, res) => {
+  try {
+    const requests = await FriendReferralRequest.find().sort({ createdAt: -1 });
+    res.json({ requests });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: approve a request (auto-generates the link)
+export const adminApproveReferralRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const request = await FriendReferralRequest.findById(id);
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+
+    // Generate unique code
+    let code, attempts = 0;
+    do {
+      code = generateReferralCode(request.name);
+      attempts++;
+    } while (await FriendReferral.findOne({ code }) && attempts < 20);
+
+    const ref = await FriendReferral.create({
+      code,
+      referrerName:   request.name,
+      referrerPhone:  request.phone,
+      referrerGender: request.gender,
+    });
+
+    request.status      = 'approved';
+    request.referralId  = ref._id;
+    request.referralCode = code;
+    await request.save();
+
+    res.json({ referral: ref, request });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: reject a request
+export const adminRejectReferralRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await FriendReferralRequest.findByIdAndUpdate(id, { status: 'rejected' });
+    res.json({ message: 'Rejected' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: manually create a referral link
+export const adminCreateReferral = async (req, res) => {
+  try {
+    const { name, phone, gender, rewardBowlId, rewardLabel } = req.body;
+    if (!name || !phone) return res.status(400).json({ error: 'Name and phone required' });
+
+    let code, attempts = 0;
+    do {
+      code = generateReferralCode(name);
+      attempts++;
+    } while (await FriendReferral.findOne({ code }) && attempts < 20);
+
+    const ref = await FriendReferral.create({
+      code,
+      referrerName:   name.trim(),
+      referrerPhone:  phone,
+      referrerGender: gender || 'other',
+      rewardBowlId:   rewardBowlId || null,
+      rewardLabel:    rewardLabel  || '',
+    });
+    res.json({ referral: ref });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: get all referrals with stats
+export const adminGetReferrals = async (req, res) => {
+  try {
+    const refs = await FriendReferral.find()
+      .populate('rewardBowlId', 'name image price')
+      .sort({ createdAt: -1 });
+
+    const totalReferrals    = refs.length;
+    const totalJoined       = refs.reduce((s, r) => s + r.totalJoined, 0);
+    const totalOrdered      = refs.reduce((s, r) => s + r.totalOrdered, 0);
+    const totalRewards      = refs.reduce((s, r) => s + r.totalRewardsEarned, 0);
+    const conversionRate    = totalJoined > 0 ? ((totalOrdered / totalJoined) * 100).toFixed(1) : '0';
+
+    // Last 30 days activity
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const recentJoins = refs.reduce((s, r) =>
+      s + r.referredFriends.filter(f => new Date(f.joinedAt) >= since).length, 0);
+    const recentOrders = refs.reduce((s, r) =>
+      s + r.referredFriends.filter(f => f.firstOrderAt && new Date(f.firstOrderAt) >= since).length, 0);
+
+    res.json({
+      referrals: refs,
+      stats: {
+        totalReferrals, totalJoined, totalOrdered, totalRewards,
+        conversionRate, recentJoins, recentOrders,
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: update referral (status, reward)
+export const adminUpdateReferral = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, rewardBowlId, rewardLabel } = req.body;
+    const update = {};
+    if (status)       update.status      = status;
+    if (rewardBowlId !== undefined) update.rewardBowlId = rewardBowlId || null;
+    if (rewardLabel  !== undefined) update.rewardLabel  = rewardLabel;
+    const ref = await FriendReferral.findByIdAndUpdate(id, update, { new: true }).populate('rewardBowlId', 'name image price');
+    res.json({ referral: ref });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Admin: get/update referral settings
+export const adminGetReferralSettings = async (req, res) => {
+  try {
+    let settings = await ReferralSettings.findOne().populate('rewardBowlId', 'name image price');
+    if (!settings) settings = await ReferralSettings.create({});
+    res.json({ settings });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+export const adminUpdateReferralSettings = async (req, res) => {
+  try {
+    const { rewardBowlId, rewardLabel, rewardNote } = req.body;
+    let settings = await ReferralSettings.findOne();
+    if (!settings) settings = new ReferralSettings();
+    if (rewardBowlId !== undefined) settings.rewardBowlId = rewardBowlId || null;
+    if (rewardLabel  !== undefined) settings.rewardLabel  = rewardLabel;
+    if (rewardNote   !== undefined) settings.rewardNote   = rewardNote;
+    settings.updatedAt = new Date();
+    await settings.save();
+    res.json({ settings });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Called from createOrder — awards referral reward when a referred friend places their FIRST order
+export const processReferralReward = async (userId, orderId, itemName) => {
+  try {
+    // Find a referral where this user is a referred friend who hasn't ordered yet
+    const ref = await FriendReferral.findOne({
+      'referredFriends.userId': userId,
+      'referredFriends.firstOrderId': null,
+      status: 'active',
+    });
+    if (!ref) return;
+
+    const friend = ref.referredFriends.find(
+      f => f.userId?.toString() === userId.toString() && !f.firstOrderId
+    );
+    if (!friend) return;
+
+    friend.firstOrderId   = orderId;
+    friend.firstOrderAt   = new Date();
+    friend.firstOrderItem = itemName;
+    friend.rewardEarned   = true;
+    friend.rewardEarnedAt = new Date();
+
+    ref.totalOrdered       += 1;
+    ref.totalRewardsEarned += 1;
+
+    await ref.save();
+  } catch (_) { /* non-critical */ }
 };

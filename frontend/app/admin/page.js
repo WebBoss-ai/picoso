@@ -14,8 +14,9 @@ import {
   UserCheck, BadgeDollarSign, ChevronRight, Globe, Target, Radar,
   Copy, ExternalLink, Truck, Phone,
   Coffee, Gift, Megaphone, MousePointerClick,
+  Heart, Link2, ChevronLeft,
 } from 'lucide-react';
-import { admin, adminAgents, adminCampaigns, agentAuth as agentAuthApi } from '@/lib/api';
+import { admin, adminAgents, adminCampaigns, adminReferrals, agentAuth as agentAuthApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const SIDEBAR_ITEMS = [
@@ -32,6 +33,7 @@ const SIDEBAR_ITEMS = [
   { id: 'users',          label: 'Users',            icon: Users },
   { id: 'agents',         label: 'Ad Agents',        icon: QrCode },
   { id: 'marketing',     label: 'Marketing',        icon: Megaphone },
+  { id: 'referrals',    label: 'Referrals',        icon: Heart },
 ];
 
 // ─── Store location & distance utilities ─────────────────────────────────────
@@ -4502,6 +4504,369 @@ function CreateCampaignModal({ form, setForm, creating, createErr, onCreate, onC
   );
 }
 
+// ─── Referrals Section ────────────────────────────────────────────────────────
+function ReferralsSection() {
+  const [tab, setTab]                   = useState('requests'); // requests|all|create|settings
+  const [requests, setRequests]         = useState([]);
+  const [referrals, setReferrals]       = useState([]);
+  const [stats, setStats]               = useState(null);
+  const [settings, setSettings]         = useState(null);
+  const [bowls, setBowls]               = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [actioning, setActioning]       = useState(null);
+  // Create form
+  const [form, setForm]                 = useState({ name: '', phone: '', gender: 'other' });
+  const [creating, setCreating]         = useState(false);
+  const [createMsg, setCreateMsg]       = useState('');
+  // Settings form
+  const [sForm, setSForm]               = useState({ rewardBowlId: '', rewardLabel: 'Free Wrap', rewardNote: '' });
+  const [savingSettings, setSaving]     = useState(false);
+  const [settingsMsg, setSettingsMsg]   = useState('');
+  // Copy link feedback
+  const [copiedId, setCopiedId]         = useState(null);
+
+  const BASE_URL = 'https://picoso.in';
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [reqRes, refRes, settRes, bowlRes] = await Promise.all([
+        adminReferrals.getRequests(),
+        adminReferrals.getAll(),
+        adminReferrals.getSettings(),
+        admin.getBowls(),
+      ]);
+      setRequests(reqRes.data.requests || []);
+      setReferrals(refRes.data.referrals || []);
+      setStats(refRes.data.stats || {});
+      const s = settRes.data.settings || {};
+      setSettings(s);
+      setSForm({ rewardBowlId: s.rewardBowlId?._id || '', rewardLabel: s.rewardLabel || 'Free Wrap', rewardNote: s.rewardNote || '' });
+      setBowls(bowlRes.data.bowls || []);
+    } catch {}
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const copyLink = (code) => {
+    navigator.clipboard.writeText(`${BASE_URL}/friendship/${code}`);
+    setCopiedId(code);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const approveRequest = async (id) => {
+    setActioning(id);
+    try {
+      await adminReferrals.approveRequest(id);
+      await loadAll();
+    } catch { alert('Failed to approve'); }
+    finally { setActioning(null); }
+  };
+
+  const rejectRequest = async (id) => {
+    if (!confirm('Reject this request?')) return;
+    setActioning(id);
+    try {
+      await adminReferrals.rejectRequest(id);
+      setRequests(prev => prev.filter(r => r._id !== id));
+    } catch { alert('Failed'); }
+    finally { setActioning(null); }
+  };
+
+  const toggleStatus = async (ref) => {
+    const next = ref.status === 'active' ? 'paused' : 'active';
+    try {
+      await adminReferrals.update(ref._id, { status: next });
+      setReferrals(prev => prev.map(r => r._id === ref._id ? { ...r, status: next } : r));
+    } catch {}
+  };
+
+  const handleCreate = async () => {
+    if (!form.name.trim() || !form.phone.trim()) { setCreateMsg('Name and phone are required'); return; }
+    setCreating(true); setCreateMsg('');
+    try {
+      const res = await adminReferrals.create(form);
+      setCreateMsg(`Created! Link: ${BASE_URL}/friendship/${res.data.referral.code}`);
+      setForm({ name: '', phone: '', gender: 'other' });
+      await loadAll();
+    } catch (e) { setCreateMsg(e?.response?.data?.error || 'Failed to create'); }
+    finally { setCreating(false); }
+  };
+
+  const saveSettings = async () => {
+    setSaving(true); setSettingsMsg('');
+    try {
+      await adminReferrals.updateSettings(sForm);
+      setSettingsMsg('Saved!');
+      setTimeout(() => setSettingsMsg(''), 2000);
+    } catch { setSettingsMsg('Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  const pendingRequests = requests.filter(r => r.status === 'pending');
+
+  if (loading) return <div className="text-center py-16"><div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" /></div>;
+
+  return (
+    <div className="space-y-5">
+
+      {/* Analytics row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Links',      val: stats?.totalReferrals ?? 0,   icon: <Link2 size={14} />,    color: 'text-emerald-600 bg-emerald-50' },
+          { label: 'Friends Joined',   val: stats?.totalJoined    ?? 0,   icon: <Users size={14} />,    color: 'text-blue-600 bg-blue-50' },
+          { label: 'Orders Placed',    val: stats?.totalOrdered   ?? 0,   icon: <ShoppingBag size={14} />, color: 'text-purple-600 bg-purple-50' },
+          { label: 'Rewards Earned',   val: stats?.totalRewards   ?? 0,   icon: <Gift size={14} />,     color: 'text-amber-600 bg-amber-50' },
+        ].map((s, i) => (
+          <div key={i} className="card p-4">
+            <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}>{s.icon}</div>
+            <p className="text-2xl font-extrabold text-gray-900">{s.val}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="card p-1 flex gap-1">
+        {[
+          { id: 'requests', label: 'Requests', badge: pendingRequests.length },
+          { id: 'all',      label: 'All Links' },
+          { id: 'create',   label: 'Create Link' },
+          { id: 'settings', label: 'Reward Settings' },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${tab === t.id ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+            {t.label}
+            {t.badge > 0 && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tab === t.id ? 'bg-white text-emerald-700' : 'bg-red-500 text-white'}`}>{t.badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Requests tab ── */}
+      {tab === 'requests' && (
+        <div className="space-y-3">
+          {pendingRequests.length === 0 && (
+            <div className="card p-10 text-center">
+              <Heart size={28} className="text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-400 text-sm">No pending requests</p>
+            </div>
+          )}
+          {pendingRequests.map(req => (
+            <div key={req._id} className="card p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex items-center gap-3 flex-1">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                  <span className="text-emerald-700 font-extrabold text-sm">{(req.name || '?')[0].toUpperCase()}</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">{req.name || '—'}</p>
+                  <p className="text-xs text-gray-500">+91 {req.phone} · {req.gender}</p>
+                  <p className="text-xs text-gray-300 mt-0.5">{new Date(req.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => approveRequest(req._id)} disabled={actioning === req._id}
+                  className="flex-1 sm:flex-none px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5">
+                  {actioning === req._id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                  Approve &amp; Generate
+                </button>
+                <button onClick={() => rejectRequest(req._id)} disabled={actioning === req._id}
+                  className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition-colors disabled:opacity-50">
+                  <XCircle size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {/* Show approved/rejected history */}
+          {requests.filter(r => r.status !== 'pending').length > 0 && (
+            <details className="card p-4">
+              <summary className="text-xs font-bold text-gray-400 cursor-pointer">Processed requests ({requests.filter(r => r.status !== 'pending').length})</summary>
+              <div className="mt-3 space-y-2">
+                {requests.filter(r => r.status !== 'pending').map(req => (
+                  <div key={req._id} className="flex items-center justify-between py-2 border-t border-gray-50">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{req.name} · {req.phone}</p>
+                      {req.referralCode && (
+                        <p className="text-xs text-emerald-600 font-mono mt-0.5">
+                          picoso.in/friendship/{req.referralCode}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${req.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                      {req.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* ── All links tab ── */}
+      {tab === 'all' && (
+        <div className="space-y-3">
+          {referrals.length === 0 && (
+            <div className="card p-10 text-center">
+              <Link2 size={28} className="text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-400 text-sm">No referral links yet</p>
+            </div>
+          )}
+          {referrals.map(ref => (
+            <div key={ref._id} className="card p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center flex-shrink-0">
+                  <span className="text-white font-extrabold text-sm">{(ref.referrerName || '?')[0].toUpperCase()}</span>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-gray-900 text-sm">{ref.referrerName}</p>
+                    <span className="text-[10px] text-gray-400">{ref.referrerPhone}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ref.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {ref.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <p className="text-xs font-mono text-emerald-600">picoso.in/friendship/{ref.code}</p>
+                    <button onClick={() => copyLink(ref.code)}
+                      className="text-gray-400 hover:text-emerald-600 transition-colors">
+                      {copiedId === ref.code ? <CheckCheck size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                    </button>
+                  </div>
+                </div>
+                <button onClick={() => toggleStatus(ref)}
+                  className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 ${ref.status === 'active' ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
+                  {ref.status === 'active' ? 'Pause' : 'Activate'}
+                </button>
+              </div>
+
+              {/* Stats row */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[
+                  { label: 'Joined',  val: ref.totalJoined || 0 },
+                  { label: 'Ordered', val: ref.totalOrdered || 0 },
+                  { label: 'Rewards', val: ref.totalRewardsEarned || 0 },
+                ].map((s, i) => (
+                  <div key={i} className="bg-surface-50 rounded-xl p-2.5 text-center">
+                    <p className="text-lg font-extrabold text-gray-900 leading-none">{s.val}</p>
+                    <p className="text-[9px] text-gray-400 mt-0.5 uppercase tracking-wider">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Friends list */}
+              {ref.referredFriends?.length > 0 && (
+                <details>
+                  <summary className="text-xs font-semibold text-gray-500 cursor-pointer">
+                    {ref.referredFriends.length} friend{ref.referredFriends.length !== 1 ? 's' : ''} joined
+                  </summary>
+                  <div className="mt-2 space-y-1.5">
+                    {ref.referredFriends.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-800">{f.name || f.phone}</p>
+                          {f.firstOrderItem && (
+                            <p className="text-[10px] text-gray-400">Ordered: {f.firstOrderItem}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          {f.rewardEarned
+                            ? <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Reward ✓</span>
+                            : <span className="text-[10px] text-gray-300">No order yet</span>
+                          }
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Create link tab ── */}
+      {tab === 'create' && (
+        <div className="card p-5 max-w-md">
+          <h3 className="font-bold text-gray-900 mb-4">Generate a Referral Link</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Full Name</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Kislay Sharma"
+                className="w-full input-field text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Phone Number</label>
+              <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g,'') }))}
+                placeholder="10-digit mobile"
+                maxLength={10} type="tel"
+                className="w-full input-field text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Gender</label>
+              <select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+                className="w-full input-field text-sm">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other / Prefer not to say</option>
+              </select>
+            </div>
+            {createMsg && (
+              <div className={`text-xs px-3 py-2.5 rounded-xl font-medium ${createMsg.startsWith('Created') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+                {createMsg}
+              </div>
+            )}
+            <button onClick={handleCreate} disabled={creating}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {creating ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Plus size={14} /> Generate Link</>}
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-3">Code format: 3 name initials + 3 random digits (e.g. KIS492)</p>
+        </div>
+      )}
+
+      {/* ── Settings tab ── */}
+      {tab === 'settings' && (
+        <div className="card p-5 max-w-md">
+          <h3 className="font-bold text-gray-900 mb-1">Global Referral Reward</h3>
+          <p className="text-xs text-gray-400 mb-4">This is what referrers earn when a friend places their first order. You can override per-link in the All Links tab.</p>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Reward Item (from menu)</label>
+              <select value={sForm.rewardBowlId} onChange={e => setSForm(f => ({ ...f, rewardBowlId: e.target.value }))}
+                className="w-full input-field text-sm">
+                <option value="">— No specific item (use label only) —</option>
+                {bowls.map(b => <option key={b._id} value={b._id}>{b.name} · ₹{b.price}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Reward Label</label>
+              <input value={sForm.rewardLabel} onChange={e => setSForm(f => ({ ...f, rewardLabel: e.target.value }))}
+                placeholder="e.g. Free Wrap"
+                className="w-full input-field text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Reward Note (shown to referrer)</label>
+              <input value={sForm.rewardNote} onChange={e => setSForm(f => ({ ...f, rewardNote: e.target.value }))}
+                placeholder="e.g. Your friend earned you a free wrap!"
+                className="w-full input-field text-sm" />
+            </div>
+            {settingsMsg && (
+              <p className={`text-xs font-medium ${settingsMsg === 'Saved!' ? 'text-emerald-600' : 'text-red-500'}`}>{settingsMsg}</p>
+            )}
+            <button onClick={saveSettings} disabled={savingSettings}
+              className="w-full py-3 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {savingSettings ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save Settings</>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { isLoggedIn, isAdmin, logout } = useAuth();
@@ -4593,6 +4958,7 @@ export default function AdminPage() {
       case 'users':         return <UsersSection />;
       case 'agents':        return <AgentsSection />;
       case 'marketing':     return <MarketingSection />;
+      case 'referrals':     return <ReferralsSection />;
       default: return null;
     }
   };

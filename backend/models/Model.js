@@ -347,4 +347,58 @@ const campaignRedemptionSchema = new mongoose.Schema({
 export const Campaign            = mongoose.model('Campaign',            campaignSchema);
 export const CampaignScan        = mongoose.model('CampaignScan',        campaignScanSchema);
 export const CampaignLead        = mongoose.model('CampaignLead',        campaignLeadSchema);
+
+// ── Friend Referral System ────────────────────────────────────────────────────
+const friendReferralSchema = new mongoose.Schema({
+  code:             { type: String, required: true, unique: true },   // 6 chars e.g. KIS492
+  referrerName:     { type: String, required: true },
+  referrerPhone:    { type: String, required: true },
+  referrerGender:   { type: String, enum: ['male', 'female', 'other'], default: 'other' },
+  referrerId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  status:           { type: String, enum: ['active', 'paused', 'expired'], default: 'active' },
+  // Per-referral reward override (null = use global settings)
+  rewardBowlId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Bowl', default: null },
+  rewardLabel:      { type: String, default: '' },
+  // Each friend who joined via this link
+  referredFriends:  [{
+    userId:         { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    name:           { type: String, default: '' },
+    phone:          { type: String, default: '' },
+    joinedAt:       { type: Date, default: Date.now },
+    firstOrderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+    firstOrderAt:   { type: Date, default: null },
+    firstOrderItem: { type: String, default: '' },   // exact item name
+    rewardEarned:   { type: Boolean, default: false },
+    rewardEarnedAt: { type: Date, default: null },
+    rewardGivenToReferrer: { type: Boolean, default: false },
+  }],
+  totalJoined:      { type: Number, default: 0 },
+  totalOrdered:     { type: Number, default: 0 },
+  totalRewardsEarned: { type: Number, default: 0 },
+  createdAt:        { type: Date, default: Date.now },
+});
+friendReferralSchema.index({ code: 1 });
+friendReferralSchema.index({ referrerPhone: 1 });
+friendReferralSchema.index({ referrerId: 1 });
+
+const friendReferralRequestSchema = new mongoose.Schema({
+  phone:       { type: String, required: true },
+  name:        { type: String, default: '' },
+  gender:      { type: String, enum: ['male', 'female', 'other'], default: 'other' },
+  status:      { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  referralId:  { type: mongoose.Schema.Types.ObjectId, ref: 'FriendReferral', default: null },
+  referralCode:{ type: String, default: '' },
+  createdAt:   { type: Date, default: Date.now },
+});
+
+const referralSettingsSchema = new mongoose.Schema({
+  rewardBowlId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Bowl', default: null },
+  rewardLabel:    { type: String, default: 'Free Wrap' },
+  rewardNote:     { type: String, default: 'Your friend earned you a free item!' },
+  updatedAt:      { type: Date, default: Date.now },
+});
+
+export const FriendReferral        = mongoose.model('FriendReferral',        friendReferralSchema);
+export const FriendReferralRequest = mongoose.model('FriendReferralRequest', friendReferralRequestSchema);
+export const ReferralSettings      = mongoose.model('ReferralSettings',      referralSettingsSchema);
 export const CampaignRedemption  = mongoose.model('CampaignRedemption',  campaignRedemptionSchema);
