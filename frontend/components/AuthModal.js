@@ -212,7 +212,7 @@ export default function AuthModal({ onClose, onSuccess }) {
                 <input
                   key={i}
                   ref={el => otpRefs.current[i] = el}
-                  type="text"
+                  type="password"
                   inputMode="numeric"
                   maxLength={1}
                   className="otp-input"

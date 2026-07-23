@@ -19,7 +19,7 @@ function FloatingLeaf({ style }) {
 export default function FriendshipLandingPage() {
   const { code }    = useParams();
   const router      = useRouter();
-  const { setUser } = useAuth ? useAuth() : {};   // to hydrate auth state after login
+  const { login }   = useAuth();   // hydrates auth state (token + user) after login
 
   const [phase, setPhase]           = useState('loading');
   const [referrerName, setReferrer] = useState('');
@@ -99,11 +99,12 @@ export default function FriendshipLandingPage() {
     setVerifying(true);
     try {
       const res = await auth.verifyOTP(phone, finalOtp);
-      const token = res.data?.token;
+      const { token, user } = res.data || {};
       if (!token) throw new Error('Login failed');
-      localStorage.setItem('picoso_token', token);
-      // Small delay so axios interceptor picks up new token
-      await new Promise(r => setTimeout(r, 100));
+      // Hydrate the whole app's auth state (context + localStorage token & user)
+      login(token, user);
+      // Small delay so axios interceptor picks up the new token
+      await new Promise(r => setTimeout(r, 120));
       await friendReferral.join(code);
       setPhase('joined');
     } catch (e) {
@@ -114,7 +115,7 @@ export default function FriendshipLandingPage() {
         setError(msg || 'Invalid OTP. Try again.');
       }
     } finally { setVerifying(false); }
-  }, [otp, phone, code, verifying]);
+  }, [otp, phone, code, verifying, login]);
 
   // ── Invalid ──────────────────────────────────────────────────────────────────
   if (phase === 'invalid') {
@@ -292,7 +293,8 @@ export default function FriendshipLandingPage() {
               <div className="relative">
                 <input
                   ref={otpRef}
-                  type="tel" inputMode="numeric" maxLength={6}
+                  type="password" inputMode="numeric" maxLength={6}
+                  autoComplete="one-time-code"
                   value={otp}
                   onChange={e => {
                     if (!autoFilling) {

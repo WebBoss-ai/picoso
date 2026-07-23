@@ -62,8 +62,9 @@ function OTPBoxes({ otp, otpRefs, onChange, onKeyDown }) {
         <input
           key={i}
           ref={otpRefs[i]}
-          type="tel"
+          type="password"
           inputMode="numeric"
+          autoComplete="one-time-code"
           maxLength={1}
           value={d}
           onChange={e => onChange(i, e.target.value)}
