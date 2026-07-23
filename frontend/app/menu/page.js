@@ -417,169 +417,171 @@ export default function MenuPage() {
   const totalFiltered = filtered.length;
 
   return (
-    <div className="min-h-screen bg-[#f7f8f9]">
+    <div className="min-h-screen" style={{ background: '#f8f9fa' }}>
 
       {/* ── Sticky top bar ───────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 bg-white" style={{ boxShadow: '0 1px 0 0 #e2e8f0, 0 4px 16px rgba(0,0,0,0.05)' }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="sticky top-0 z-30 bg-white" style={{ boxShadow: '0 1px 0 0 #eef0f3, 0 2px 12px rgba(0,0,0,0.04)' }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
 
-          {/* Title + search */}
-          {!searchOpen && (
-            <div className="flex items-center gap-3 pt-3 pb-1">
+          {/* ── Row 1: Title + Search ── */}
+          {!searchOpen ? (
+            <div className="flex items-center gap-3 pt-3.5 pb-2.5">
               <div className="flex-1">
-                <h1 className="text-[15px] font-bold text-gray-900 leading-none">Our Menu</h1>
-                <p className="text-[11px] text-gray-400 mt-0.5">
-                  {loading ? 'Loading…' : `${totalFiltered} items across ${cats.length} categories`}
+                <h1 className="text-[17px] font-extrabold text-gray-900 leading-none tracking-tight">Menu</h1>
+                <p className="text-[11px] text-gray-400 mt-0.5 font-medium">
+                  {loading ? 'Loading…' : `${totalFiltered} items · ${cats.length} categories`}
                 </p>
               </div>
+
+              {/* Mobile search toggle */}
               <button onClick={() => setSearchOpen(true)}
-                className="sm:hidden w-9 h-9 bg-surface-50 border border-surface-200 rounded-xl flex items-center justify-center text-gray-500 hover:text-brand-600 transition-colors">
-                <Search size={16} />
+                className="sm:hidden w-9 h-9 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center text-gray-500 hover:text-emerald-600 transition-colors">
+                <Search size={15} />
               </button>
-              <div className="hidden sm:flex relative w-56">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+
+              {/* Desktop search */}
+              <div className="hidden sm:flex relative">
+                <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input type="text"
-                  className="w-full pl-9 pr-8 py-2 text-[13px] border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
-                  placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} />
-                {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><X size={12} /></button>}
+                  className="w-52 pl-9 pr-8 py-2 text-[13px] border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:bg-white transition-all placeholder-gray-400"
+                  placeholder="Search anything…"
+                  value={search} onChange={e => setSearch(e.target.value)} />
+                {search && (
+                  <button onClick={() => setSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <X size={12} />
+                  </button>
+                )}
               </div>
             </div>
-          )}
-
-          {searchOpen && (
-            <div className="flex items-center gap-2 py-2.5 sm:hidden">
+          ) : (
+            /* Mobile search open */
+            <div className="flex items-center gap-2 py-3 sm:hidden">
               <div className="relative flex-1">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input ref={searchRef} type="text"
-                  className="w-full pl-9 pr-4 py-2 text-sm border border-surface-200 rounded-xl bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-300"
-                  placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+                  className="w-full pl-9 pr-4 py-2.5 text-[14px] border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:bg-white transition-all"
+                  placeholder="Search items…"
+                  value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <button onClick={() => { setSearchOpen(false); setSearch(''); }} className="text-sm font-semibold text-brand-600">Cancel</button>
+              <button onClick={() => { setSearchOpen(false); setSearch(''); }}
+                className="text-[13px] font-bold text-emerald-600 px-1">
+                Cancel
+              </button>
             </div>
           )}
 
-          {/* ── All | Categories | — | Filters  (one unified scrollable row, same square) ── */}
-          {/* px-1 adds breathing room so ring outlines aren't clipped on the scroll edge */}
-          <div ref={tabsRef} className="flex items-start gap-3 overflow-x-auto scrollbar-hide py-3 px-1 -mx-1">
+          {/* ── Row 2: Category tabs ── */}
+          <div ref={tabsRef}
+            className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-2.5"
+            style={{ WebkitOverflowScrolling: 'touch' }}>
 
-            {/* "All" square — violet so it never clashes with any category color */}
+            {/* All tab */}
             <button
+              data-tab="all"
               onClick={() => { setFilter('all'); setAllSelected(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              className="flex flex-col items-center gap-1 flex-shrink-0 group"
-            >
-              <div className={[
-                'w-[54px] h-[54px] rounded-2xl flex items-center justify-center transition-all duration-200',
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 ${
                 allSelected
-                  ? 'bg-violet-500 shadow-md scale-105 ring-2 ring-offset-1 ring-violet-300'
-                  : 'bg-violet-50 group-hover:scale-105',
-              ].join(' ')}>
-                <LayoutGrid size={22} className={allSelected ? 'text-white' : 'text-violet-500'} />
-              </div>
-              <span className={`text-[10px] font-semibold ${allSelected ? 'text-violet-600' : 'text-gray-400'}`}>All</span>
-              <div className={`h-[2px] rounded-full transition-all ${allSelected ? 'w-4 bg-violet-500' : 'w-0'}`} />
+                  ? 'bg-gray-900 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              <LayoutGrid size={11} />
+              All
             </button>
 
-            {/* Category squares */}
+            {/* Category tabs */}
             {catsLoading
-              ? Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex flex-col items-center gap-1 flex-shrink-0">
-                    <div className="w-[54px] h-[54px] shimmer rounded-2xl" />
-                    <div className="h-2.5 w-10 shimmer rounded mt-0.5" />
-                  </div>
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-8 w-20 shimmer rounded-full flex-shrink-0" />
                 ))
               : cats.map(cat => {
-                  const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
                   const t = CATEGORY_THEMES[cat.id] || CATEGORY_THEMES['pf-meals'];
                   const isActive = !allSelected && activeCategory === cat.id;
                   const isBev = cat.id === 'pf-beverages';
+                  const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
                   return (
                     <button
                       key={cat.id}
                       data-tab={cat.id}
                       onClick={() => scrollToSection(cat.id)}
-                      className="flex flex-col items-center gap-1 flex-shrink-0 group relative"
+                      className={`flex-shrink-0 relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 ${
+                        isActive
+                          ? `${t.bg} text-white shadow-sm`
+                          : `${t.light} ${t.text} hover:opacity-80`
+                      }`}
                     >
+                      {Illustration && (
+                        <span className="flex-shrink-0">
+                          <Illustration className="w-3 h-3" color={isActive ? 'white' : t.color} />
+                        </span>
+                      )}
+                      {cat.label}
                       {isBev && (
-                        <span className="absolute -top-1 -right-0.5 z-10 bg-amber-400 text-amber-900 text-[7px] font-extrabold px-1 py-0.5 rounded-full leading-none">
+                        <span className="flex-shrink-0 bg-amber-400 text-amber-900 text-[7px] font-extrabold px-1 py-0.5 rounded-full leading-none">
                           NEW
                         </span>
                       )}
-                      <div className={[
-                        'w-[54px] h-[54px] rounded-2xl flex items-center justify-center transition-all duration-200',
-                        isActive
-                          ? `${t.bg} shadow-md shadow-brand-200/40 scale-105 ring-2 ring-offset-1 ${t.ring}`
-                          : `${t.light} group-hover:scale-105`,
-                      ].join(' ')}>
-                        {Illustration && <Illustration className="w-7 h-7" color={isActive ? 'white' : t.color} />}
-                      </div>
-                      <span className={`text-[10px] font-semibold text-center leading-tight max-w-[58px] ${isActive ? t.text : 'text-gray-400'}`}>
-                        {cat.label}
-                      </span>
-                      <div className={`h-[2px] rounded-full transition-all ${isActive ? `w-4 ${t.bg}` : 'w-0'}`} />
                     </button>
                   );
                 })
             }
+          </div>
 
-            {/* Visual divider between categories and filters */}
-            {!catsLoading && (
-              <div className="flex-shrink-0 self-stretch flex items-center px-1">
-                <div className="w-px h-10 bg-surface-200 rounded-full" />
-              </div>
-            )}
-
-            {/* Filter squares */}
+          {/* ── Row 3: Filter pills ── */}
+          <div className="flex items-center gap-1.5 pb-3 overflow-x-auto scrollbar-hide"
+            style={{ WebkitOverflowScrolling: 'touch' }}>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex-shrink-0 pr-0.5">Filter</span>
             {[
-              { id: 'bestseller', label: 'Bestseller', Icon: Star,    bg: 'bg-amber-400',   light: 'bg-amber-50',    ring: 'ring-amber-200',   text: 'text-amber-600', ic: '#b45309' },
-              { id: 'chef',       label: "Chef's",     Icon: ChefHat, bg: 'bg-rose-500',    light: 'bg-rose-50',     ring: 'ring-rose-200',    text: 'text-rose-600',  ic: '#e11d48' },
-              { id: 'veg',        label: 'Pure Veg',   Icon: Leaf,    bg: 'bg-emerald-500', light: 'bg-emerald-50',  ring: 'ring-emerald-200', text: 'text-emerald-600',ic: '#059669' },
+              { id: 'bestseller', label: '⭐ Bestseller' },
+              { id: 'chef',       label: '👨‍🍳 Chef\'s Pick' },
+              { id: 'veg',        label: '🌿 Pure Veg' },
             ].map(f => {
               const on = activeFilter === f.id;
-              const FIcon = f.Icon;
               return (
                 <button key={f.id} onClick={() => setFilter(on ? 'all' : f.id)}
-                  className="flex flex-col items-center gap-1 flex-shrink-0 group">
-                  <div className={[
-                    'w-[54px] h-[54px] rounded-2xl flex items-center justify-center transition-all duration-200',
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-150 border ${
                     on
-                      ? `${f.bg} shadow-md scale-105 ring-2 ring-offset-1 ${f.ring}`
-                      : `${f.light} group-hover:scale-105`,
-                  ].join(' ')}>
-                    <FIcon size={20} color={on ? 'white' : f.ic}
-                      fill={on && f.id === 'bestseller' ? 'white' : 'none'} />
-                  </div>
-                  <span className={`text-[10px] font-semibold ${on ? f.text : 'text-gray-400'}`}>{f.label}</span>
-                  <div className={`h-[2px] rounded-full transition-all ${on ? `w-4 ${f.bg}` : 'w-0'}`} />
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400 hover:text-emerald-600'
+                  }`}>
+                  {f.label}
                 </button>
               );
             })}
+            {(activeFilter !== 'all' || search) && (
+              <button onClick={() => { setSearch(''); setFilter('all'); }}
+                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 transition-colors">
+                <X size={10} /> Clear
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Content area ─────────────────────────────────────────── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 pb-28">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 pb-28">
 
         {/* Helping Hands banner */}
-        <div className="mb-7">
+        <div className="mb-6">
           <HelpingHandsBanner onGetLink={() => setLinkModalOpen(true)} />
         </div>
 
         {/* ── Category sections ─────────────────────────────────── */}
         {loading ? (
-          // Skeleton for multiple sections
           <div className="space-y-8">
             {Array.from({ length: 2 }).map((_, si) => (
-              <div key={si}>
-                <div className="h-6 shimmer rounded w-32 mb-4" />
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="bg-white rounded-2xl overflow-hidden border border-surface-100">
-                      <div className="aspect-square shimmer" />
-                      <div className="p-3 space-y-2">
-                        <div className="h-3.5 shimmer rounded w-3/4" />
+              <div key={si} className="space-y-3">
+                <div className="h-5 shimmer rounded-lg w-28" />
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="bg-white rounded-2xl overflow-hidden flex" style={{ height: 130, border: '1px solid #f1f5f9' }}>
+                      <div className="w-[130px] shimmer flex-shrink-0 m-3 rounded-xl" />
+                      <div className="flex-1 p-4 space-y-2.5">
+                        <div className="h-4 shimmer rounded w-3/4" />
                         <div className="h-3 shimmer rounded w-full" />
-                        <div className="h-5 shimmer rounded w-1/2 mt-1" />
+                        <div className="h-3 shimmer rounded w-1/2" />
+                        <div className="h-8 shimmer rounded w-1/3 mt-2" />
                       </div>
                     </div>
                   ))}
@@ -589,87 +591,83 @@ export default function MenuPage() {
           </div>
         ) : (
           <div className="space-y-10">
-            {categorizedItems.map((cat, idx) => {
+            {categorizedItems.map((cat) => {
               const isBev = cat.id === 'pf-beverages';
               const theme = CATEGORY_THEMES[cat.id] || CATEGORY_THEMES['pf-meals'];
               const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
 
               return (
                 <div key={`wrap-${cat.id}`}>
-                <div
-                  ref={el => { sectionRefs.current[cat.id] = el; }}
-                >
-                  {/* ── Section header ───────────────────────────── */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${theme.light}`}>
-                      {Illustration && <Illustration className="w-5 h-5" color={theme.color} />}
+                  <div ref={el => { sectionRefs.current[cat.id] = el; }}>
+
+                    {/* ── Section header ── */}
+                    <div className="flex items-center gap-2.5 mb-4">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${theme.light}`}>
+                        {Illustration && <Illustration className="w-4.5 h-4.5" color={theme.color} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">{cat.label}</h2>
+                        {cat.description && (
+                          <p className="text-[11px] text-gray-400 mt-0 truncate">{cat.description}</p>
+                        )}
+                      </div>
+                      {cat.items.length > 0 && (
+                        <span className="text-[11px] font-semibold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-lg flex-shrink-0">
+                          {cat.items.length}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h2 className="text-sm font-bold text-gray-900">{cat.label}</h2>
-                      {cat.description && <p className="text-xs text-gray-400 truncate">{cat.description}</p>}
-                    </div>
-                    {cat.items.length > 0 && (
-                      <span className="text-xs font-medium text-gray-400 bg-surface-100 px-2.5 py-1 rounded-lg flex-shrink-0">
-                        {cat.items.length} items
-                      </span>
+
+                    {/* ── Products or empty state ── */}
+                    {cat.items.length === 0 ? (
+                      <div className={`rounded-2xl border border-dashed py-10 flex flex-col items-center gap-3 ${isBev ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
+                        {Illustration && (
+                          <Illustration className="w-12 h-12 opacity-20" color={isBev ? '#b45309' : '#9ca3af'} />
+                        )}
+                        <p className={`font-bold text-sm ${isBev ? 'text-amber-700' : 'text-gray-400'}`}>
+                          {isBev ? 'Drinks launching soon!' : `No ${cat.label.toLowerCase()} match your filters`}
+                        </p>
+                        {!isBev && (activeFilter !== 'all' || search) && (
+                          <button onClick={() => { setSearch(''); setFilter('all'); }}
+                            className="text-xs font-semibold text-emerald-600 hover:underline">
+                            Clear filters
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      /* Mobile: 1-column list. Desktop: 2-3 col grid */
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {cat.items.map(product => (
+                          <ProductCard key={product._id} product={product} />
+                        ))}
+                      </div>
                     )}
                   </div>
 
-                  {/* ── Products or empty state ───────────────────── */}
-                  {cat.items.length === 0 ? (
-                    <div className={`rounded-2xl border border-dashed py-10 flex flex-col items-center gap-3 ${isBev ? 'border-amber-200 bg-amber-50/50' : 'border-surface-200 bg-white'}`}>
-                      {Illustration && (
-                        <Illustration className="w-14 h-14 opacity-20" color={isBev ? '#b45309' : '#9ca3af'} />
-                      )}
-                      <p className={`font-bold text-sm ${isBev ? 'text-amber-700' : 'text-gray-400'}`}>
-                        {isBev ? 'Drinks launching soon!' : `No ${cat.label.toLowerCase()} match your filters`}
-                      </p>
-                      <p className="text-xs text-gray-400 text-center max-w-xs px-4">
-                        {isBev
-                          ? 'Our cold coffees are being crafted. Check back soon for a refreshing surprise!'
-                          : 'Try clearing your filters to see all items.'}
-                      </p>
-                      {!isBev && (activeFilter !== 'all' || search) && (
-                        <button
-                          onClick={() => { setSearch(''); setFilter('all'); }}
-                          className="mt-1 text-xs font-semibold text-brand-600 hover:underline"
-                        >
-                          Clear filters
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {cat.items.map(product => (
-                        <ProductCard key={product._id} product={product} />
-                      ))}
+                  {/* Healthy Subscription card — only after Cold Drinks */}
+                  {isBev && (
+                    <div className="mt-8 mb-2">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Also for you</span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                      </div>
+                      <SubscriptionCard onActivate={() => setSubModalOpen(true)} />
                     </div>
                   )}
-                </div>
-
-                {/* ── Healthy Subscription card — only after Cold Drinks ── */}
-                {isBev && (
-                  <div className="mt-8 mb-2">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="h-px flex-1 bg-gradient-to-r from-transparent via-surface-200 to-transparent" />
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Also for you</span>
-                      <div className="h-px flex-1 bg-gradient-to-r from-transparent via-surface-200 to-transparent" />
-                    </div>
-                    <SubscriptionCard onActivate={() => setSubModalOpen(true)} />
-                  </div>
-                )}
                 </div>
               );
             })}
 
-            {/* No results at all */}
+            {/* No results */}
             {!loading && categorizedItems.every(c => c.items.length === 0) && (activeFilter !== 'all' || search) && (
               <div className="flex flex-col items-center py-16 gap-3">
                 <Search size={28} className="text-gray-300" />
-                <p className="font-semibold text-gray-600">No items found</p>
+                <p className="font-bold text-gray-600">No items found</p>
                 <p className="text-sm text-gray-400">Try adjusting your search or filters</p>
-                <button onClick={() => { setSearch(''); setFilter('all'); }} className="btn-secondary text-sm px-6 mt-1">
-                  Clear all filters
+                <button onClick={() => { setSearch(''); setFilter('all'); }}
+                  className="mt-1 text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-5 py-2.5 rounded-xl hover:bg-emerald-100 transition-colors">
+                  Clear all
                 </button>
               </div>
             )}

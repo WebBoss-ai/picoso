@@ -36,78 +36,61 @@ function ProductModal({ product, onClose }) {
   const handleDecrease = () => updateQty(product._id, qty - 1);
 
   const macros = showMacros ? [
-    { label: 'Calories', value: product.calories, unit: 'kcal', icon: Flame,   color: 'text-orange-500', bg: 'bg-orange-50',  border: 'border-orange-100' },
-    { label: 'Protein',  value: product.protein,  unit: 'g',    icon: Zap,     color: 'text-brand-600',  bg: 'bg-brand-50',   border: 'border-brand-100' },
-    { label: 'Carbs',    value: product.carbs,    unit: 'g',    icon: Wheat,   color: 'text-amber-600',  bg: 'bg-amber-50',   border: 'border-amber-100' },
-    { label: 'Fats',     value: product.fats,     unit: 'g',    icon: Droplets,color: 'text-blue-500',   bg: 'bg-blue-50',    border: 'border-blue-100' },
+    { label: 'Cal',     value: product.calories, unit: 'kcal', icon: Flame,    color: 'text-orange-500', bg: 'bg-orange-50',  border: 'border-orange-100' },
+    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      color: 'text-emerald-600',bg: 'bg-emerald-50', border: 'border-emerald-100' },
+    { label: 'Carbs',   value: product.carbs,    unit: 'g',    icon: Wheat,    color: 'text-amber-600',  bg: 'bg-amber-50',   border: 'border-amber-100' },
+    { label: 'Fats',    value: product.fats,     unit: 'g',    icon: Droplets, color: 'text-blue-500',   bg: 'bg-blue-50',    border: 'border-blue-100' },
   ].filter(m => m.value > 0) : [];
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ backdropFilter: 'blur(8px)', backgroundColor: 'rgba(0,0,0,0.45)' }}
+      style={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(0,0,0,0.5)' }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl max-h-[92vh] flex flex-col"
-        style={{ animation: 'slideUp 0.28s cubic-bezier(0.32,0.72,0,1)' }}
+        className="w-full sm:max-w-md bg-white rounded-t-[2rem] sm:rounded-[2rem] overflow-hidden shadow-2xl max-h-[94vh] flex flex-col"
+        style={{ animation: 'slideUp 0.3s cubic-bezier(0.32,0.72,0,1)' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* ── Image ──────────────────────────────────────── */}
+        {/* Image */}
         <div className="relative w-full flex-shrink-0" style={{ aspectRatio: '4/3' }}>
           {!imageError && product.image ? (
-            <Image
-              src={product.image}
-              alt={product.name}
-              fill
-              className="object-cover"
-              onError={() => setImageError(true)}
-              sizes="(max-width: 640px) 100vw, 448px"
-            />
+            <Image src={product.image} alt={product.name} fill
+              className="object-cover" onError={() => setImageError(true)}
+              sizes="(max-width: 640px) 100vw, 448px" />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
-              <ChefHat size={48} className="text-brand-300" />
+            <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+              <ChefHat size={56} className="text-emerald-200" />
             </div>
           )}
-
-          {/* Gradient overlay at bottom */}
-          <div className="absolute bottom-0 inset-x-0 h-20 bg-gradient-to-t from-black/40 to-transparent" />
-
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-colors"
-            style={{ background: 'rgba(255,255,255,0.92)' }}
-          >
+          <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/50 to-transparent" />
+          <button onClick={onClose}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center shadow-lg backdrop-blur-sm"
+            style={{ background: 'rgba(255,255,255,0.9)' }}>
             <X size={17} className="text-gray-700" />
           </button>
-
-          {/* Badges top-left */}
-          <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+          <div className="absolute top-4 left-4 flex flex-col gap-1.5">
             {product.isBestseller && !isUnavailable && (
               <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                 <Star size={9} fill="currentColor" /> Bestseller
               </span>
             )}
             {product.isChefSpecial && !isUnavailable && (
-              <span className="flex items-center gap-1 bg-brand-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+              <span className="flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                 <ChefHat size={9} /> Chef&apos;s Pick
               </span>
             )}
           </div>
-
-          {/* Veg/non-veg bottom-left */}
-          <div className="absolute bottom-3 left-4 flex items-center gap-2">
+          <div className="absolute bottom-4 left-5 flex items-center gap-2">
             <div className={`w-5 h-5 rounded-sm flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
               <div className={`w-2.5 h-2.5 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
             </div>
-            <span className="text-white text-xs font-semibold drop-shadow">{product.isVeg ? 'Veg' : 'Non-Veg'}</span>
+            <span className="text-white text-xs font-semibold drop-shadow">{product.isVeg ? 'Pure Veg' : 'Non-Veg'}</span>
           </div>
-
-          {/* Unavailable badge */}
           {isUnavailable && (
-            <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
-              <div className="flex items-center gap-2 bg-white/95 px-4 py-2 rounded-2xl shadow border border-surface-200">
+            <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+              <div className="flex items-center gap-2 bg-white/95 px-4 py-2.5 rounded-2xl shadow border border-gray-200">
                 <Clock size={14} className="text-gray-500" />
                 <span className="text-sm font-semibold text-gray-600">Available from {product.availableFrom}</span>
               </div>
@@ -115,29 +98,26 @@ function ProductModal({ product, onClose }) {
           )}
         </div>
 
-        {/* ── Content ────────────────────────────────────── */}
+        {/* Content */}
         <div className="overflow-y-auto flex-1">
-          <div className="px-5 pt-4 pb-2">
-
-            {/* Name + Price */}
+          <div className="px-5 pt-5 pb-2">
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="flex-1">
-                <h2 className="text-xl font-extrabold text-gray-900 leading-tight">{product.name}</h2>
+                <h2 className="text-[22px] font-extrabold text-gray-900 leading-tight tracking-tight">{product.name}</h2>
                 {isCoffee && (
-                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full leading-none">
+                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
                     <Coffee size={9} strokeWidth={2} /> 450–500 ml
                   </span>
                 )}
               </div>
-              <div className="text-right flex-shrink-0">
-                <div className="text-xl font-extrabold text-gray-900">₹{displayPrice}</div>
+              <div className="text-right flex-shrink-0 mt-0.5">
+                <div className="text-[22px] font-extrabold text-gray-900">₹{displayPrice}</div>
                 {isPlatinum && originalPrice !== displayPrice && (
                   <div className="text-xs text-gray-400 line-through">₹{originalPrice}</div>
                 )}
               </div>
             </div>
 
-            {/* Platinum saving */}
             {!isPlatinum && (
               <div className="flex items-center gap-1.5 mb-3">
                 <Crown size={11} className="text-orange-400" />
@@ -145,96 +125,78 @@ function ProductModal({ product, onClose }) {
               </div>
             )}
 
-            {/* Description */}
             {product.description && (
-              <p className="text-sm text-gray-500 leading-relaxed mb-4">{product.description}</p>
+              <p className="text-[14px] text-gray-500 leading-relaxed mb-4">{product.description}</p>
             )}
 
-            {/* Macros (hidden for beverages) */}
             {showMacros && macros.length > 0 && (
               <div className="mb-4">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Nutrition per serving</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Nutrition per serving</p>
                 <div className="grid grid-cols-4 gap-2">
                   {macros.map(m => (
                     <div key={m.label} className={`${m.bg} ${m.border} border rounded-2xl p-2.5 text-center`}>
                       <m.icon size={14} className={`${m.color} mx-auto mb-1`} />
                       <p className={`text-sm font-extrabold ${m.color}`}>{m.value}</p>
-                      <p className="text-[9px] text-gray-400 font-semibold leading-tight">{m.unit}</p>
+                      <p className="text-[9px] text-gray-400 font-medium leading-tight">{m.unit}</p>
                       <p className="text-[9px] text-gray-400 leading-tight">{m.label}</p>
                     </div>
                   ))}
                 </div>
                 {product.fiber > 0 && (
-                  <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                  <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
                     <Leaf size={11} className="text-green-500" /> {product.fiber}g fiber
                   </p>
                 )}
               </div>
             )}
 
-            {/* How it's made */}
             {product.howItsMade && (
-              <div className="mb-4 p-3.5 bg-surface-50 rounded-2xl border border-surface-100">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                  <ChefHat size={12} className="text-brand-500" /> How it&apos;s Made
+              <div className="mb-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                  <ChefHat size={12} className="text-emerald-500" /> How it&apos;s Made
                 </p>
-                <p className="text-xs text-gray-600 leading-relaxed">{product.howItsMade}</p>
+                <p className="text-[13px] text-gray-600 leading-relaxed">{product.howItsMade}</p>
               </div>
             )}
 
-            {/* Ingredients */}
             {product.ingredients?.length > 0 && (
               <div className="mb-4">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                   <Info size={11} /> Ingredients
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {product.ingredients.map((ing, i) => (
-                    <span key={i} className="text-xs text-gray-600 bg-surface-100 px-2.5 py-1 rounded-full border border-surface-200 font-medium">
+                    <span key={i} className="text-xs text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full font-medium">
                       {ing}
                     </span>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Tags */}
-            {product.tags?.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {product.tags.map((tag, i) => (
-                  <span key={i} className="text-[10px] text-gray-400 bg-surface-50 border border-surface-100 px-2 py-0.5 rounded-full">
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* ── Add to cart footer ──────────────────────────── */}
-        <div className="px-5 py-4 border-t border-surface-100 bg-white flex-shrink-0">
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-gray-100 bg-white flex-shrink-0">
           {isUnavailable ? (
             <div className="flex items-center justify-center gap-2 py-3 text-gray-400 text-sm font-semibold">
               <Clock size={15} /> Available from {product.availableFrom}
             </div>
           ) : isCappItem && !hasNonCapp ? (
             <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-2 w-full py-3.5 rounded-2xl bg-surface-100 border border-surface-200 justify-center cursor-not-allowed">
+              <div className="flex items-center gap-2 w-full py-3.5 rounded-2xl bg-gray-100 border border-gray-200 justify-center cursor-not-allowed">
                 <ShoppingBag size={16} className="text-gray-400" />
-                <span className="text-sm font-semibold text-gray-400">Add a bowl first to order Cappuccino</span>
+                <span className="text-sm font-semibold text-gray-400">Add a bowl first to order this</span>
               </div>
-              <p className="text-xs text-gray-400 text-center">Cappuccino can&apos;t be ordered alone — add any meal or bowl first.</p>
             </div>
           ) : qty === 0 ? (
-            <button
-              onClick={handleAdd}
-              className="btn-primary w-full py-3.5 text-base"
-            >
+            <button onClick={handleAdd}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-extrabold text-[15px] transition-all shadow-lg shadow-emerald-500/20">
               <Plus size={17} strokeWidth={2.5} /> Add to Cart — ₹{displayPrice}
             </button>
           ) : (
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 bg-brand-500 rounded-2xl px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-3 bg-emerald-600 rounded-2xl px-5 py-3 shadow-sm">
                 <button onClick={handleDecrease} className="text-white active:scale-90 transition-transform">
                   <Minus size={16} strokeWidth={3} />
                 </button>
@@ -244,8 +206,8 @@ function ProductModal({ product, onClose }) {
                 </button>
               </div>
               <div className="flex-1 text-right">
-                <p className="text-xs text-gray-400 font-medium">Subtotal</p>
-                <p className="text-lg font-extrabold text-gray-900">₹{displayPrice * qty}</p>
+                <p className="text-[11px] text-gray-400 font-medium">Subtotal</p>
+                <p className="text-xl font-extrabold text-gray-900">₹{displayPrice * qty}</p>
               </div>
             </div>
           )}
@@ -254,12 +216,12 @@ function ProductModal({ product, onClose }) {
 
       <style>{`
         @keyframes slideUp {
-          from { opacity: 0; transform: translateY(40px); }
+          from { opacity: 0; transform: translateY(50px); }
           to   { opacity: 1; transform: translateY(0); }
         }
         @media (min-width: 640px) {
           @keyframes slideUp {
-            from { opacity: 0; transform: scale(0.96) translateY(8px); }
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
             to   { opacity: 1; transform: scale(1) translateY(0); }
           }
         }
@@ -268,117 +230,243 @@ function ProductModal({ product, onClose }) {
   );
 }
 
-// ─── Product Card ────────────────────────────────────────────────────────────
+// ─── Product Card — luxury horizontal on mobile, vertical on desktop ──────────
 export default function ProductCard({ product }) {
   const { items, addItem, updateQty, registerCapp } = useCart();
   const { isPlatinum } = useAuth();
   const [imageError, setImageError] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal]   = useState(false);
 
   const isCappItem = IS_CAPPUCCINO(product);
   const hasNonCapp = items.some(i => !IS_CAPPUCCINO(i));
-  const canAdd = !isCappItem || hasNonCapp;
-  const isCoffee = isCoffeeDrink(product);
+  const canAdd     = !isCappItem || hasNonCapp;
+  const isCoffee   = isCoffeeDrink(product);
 
-  // Register Cappuccino data so CartContext can auto-add it
   useEffect(() => {
     if (isCappItem) registerCapp(product);
   }, [isCappItem, product, registerCapp]);
 
-  const cartItem = items.find(i => i._id === product._id);
-  const qty = cartItem?.quantity || 0;
+  const cartItem    = items.find(i => i._id === product._id);
+  const qty         = cartItem?.quantity || 0;
   const isUnavailable = product.isAvailableNow === false;
   const originalPrice = product.price;
   const platinumPrice = Math.round(originalPrice * (1 - PLATINUM_DISCOUNT));
-  const displayPrice = isPlatinum ? platinumPrice : originalPrice;
-  const showMacros = !isBeverage(product);
+  const displayPrice  = isPlatinum ? platinumPrice : originalPrice;
+  const showMacros    = !isBeverage(product);
 
-  const handleAdd = (e) => { e.stopPropagation(); if (!isUnavailable && canAdd) addItem(product); };
+  const handleAdd      = (e) => { e.stopPropagation(); if (!isUnavailable && canAdd) addItem(product); };
   const handleIncrease = (e) => { e.stopPropagation(); updateQty(product._id, qty + 1); };
   const handleDecrease = (e) => { e.stopPropagation(); updateQty(product._id, qty - 1); };
 
   return (
     <>
+      {/* ── Mobile: horizontal luxury card ── */}
       <div
         onClick={() => setShowModal(true)}
-        className={`bg-white rounded-2xl overflow-hidden border border-surface-100 shadow-card transition-all duration-200 cursor-pointer ${!isUnavailable ? 'hover:shadow-card-hover hover:-translate-y-0.5' : 'opacity-70'}`}
+        className={`sm:hidden relative bg-white rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 active:scale-[0.99]
+          ${isUnavailable ? 'opacity-75' : ''}
+        `}
+        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9' }}
+      >
+        <div className="flex items-stretch">
+          {/* Left: square image */}
+          <div className="relative flex-shrink-0 w-[130px] h-[130px] overflow-hidden rounded-2xl m-3">
+            {!imageError && product.image ? (
+              <Image src={product.image} alt={product.name} fill
+                className={`object-cover ${isUnavailable ? 'grayscale' : ''}`}
+                onError={() => setImageError(true)}
+                sizes="130px" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+                <ChefHat size={32} className="text-emerald-200" />
+              </div>
+            )}
+
+            {/* Unavailable overlay */}
+            {isUnavailable && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                <Clock size={16} className="text-gray-400" />
+              </div>
+            )}
+
+            {/* Veg/non-veg dot */}
+            <div className="absolute top-1.5 left-1.5">
+              <div className={`w-[15px] h-[15px] rounded-sm flex items-center justify-center border-[1.5px] bg-white ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+                <div className={`w-[7px] h-[7px] rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Right: content */}
+          <div className="flex-1 min-w-0 py-3.5 pr-3.5 flex flex-col justify-between">
+            <div>
+              {/* Badges */}
+              <div className="flex flex-wrap gap-1 mb-1.5">
+                {product.isBestseller && !isUnavailable && (
+                  <span className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                    <Star size={7} fill="currentColor" /> Best
+                  </span>
+                )}
+                {product.isChefSpecial && !isUnavailable && (
+                  <span className="inline-flex items-center gap-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                    <ChefHat size={7} /> Chef
+                  </span>
+                )}
+              </div>
+
+              {/* Name */}
+              <h3 className="font-bold text-gray-900 text-[15px] leading-snug line-clamp-1 mb-1">
+                {product.name}
+              </h3>
+
+              {/* Description */}
+              {product.description && (
+                <p className="text-[12px] text-gray-400 line-clamp-2 leading-snug mb-2">
+                  {product.description}
+                </p>
+              )}
+
+              {/* Macros */}
+              {showMacros && (product.calories > 0 || product.protein > 0) && (
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                  {product.calories > 0 && (
+                    <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-md font-semibold border border-orange-100">
+                      {product.calories} kcal
+                    </span>
+                  )}
+                  {product.protein > 0 && (
+                    <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md font-semibold border border-emerald-100">
+                      {product.protein}g protein
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Price + Add button */}
+            <div className="flex items-center justify-between gap-2 mt-1">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-gray-900 text-[16px]">₹{displayPrice}</span>
+                  {isPlatinum && originalPrice !== displayPrice && (
+                    <span className="text-xs text-gray-400 line-through">₹{originalPrice}</span>
+                  )}
+                </div>
+                {!isPlatinum && (
+                  <div className="flex items-center gap-0.5">
+                    <Crown size={8} className="text-orange-400" />
+                    <span className="text-[10px] text-orange-500 font-medium">₹{platinumPrice} Platinum</span>
+                  </div>
+                )}
+              </div>
+
+              {!isUnavailable && (
+                qty === 0 ? (
+                  canAdd ? (
+                    <button onClick={handleAdd}
+                      className="flex items-center gap-1 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[12px] rounded-xl shadow-sm active:scale-95 transition-all flex-shrink-0">
+                      <Plus size={13} strokeWidth={3} /> Add
+                    </button>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setShowModal(true); }}
+                      className="flex items-center gap-1 px-2.5 py-2 bg-gray-100 border border-gray-200 text-gray-400 font-bold text-[10px] rounded-xl flex-shrink-0 cursor-not-allowed">
+                      <ShoppingBag size={11} /> Bowl first
+                    </button>
+                  )
+                ) : (
+                  <div className="flex items-center gap-2 bg-emerald-600 rounded-xl px-2.5 py-1.5 shadow-sm flex-shrink-0">
+                    <button onClick={handleDecrease} className="text-white active:scale-90 transition-transform">
+                      <Minus size={13} strokeWidth={3} />
+                    </button>
+                    <span className="text-white font-bold text-sm min-w-[14px] text-center">{qty}</span>
+                    <button onClick={handleIncrease} className="text-white active:scale-90 transition-transform">
+                      <Plus size={13} strokeWidth={3} />
+                    </button>
+                  </div>
+                )
+              )}
+
+              {isUnavailable && (
+                <span className="text-[10px] text-gray-400 font-medium bg-gray-50 border border-gray-200 px-2.5 py-1.5 rounded-xl flex-shrink-0">
+                  From {product.availableFrom}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Desktop: vertical luxury card (sm+) ── */}
+      <div
+        onClick={() => setShowModal(true)}
+        className={`hidden sm:flex flex-col bg-white rounded-2xl overflow-hidden cursor-pointer transition-all duration-200
+          ${!isUnavailable ? 'hover:-translate-y-1' : 'opacity-75'}
+        `}
+        style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 20px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9' }}
       >
         {/* Image */}
-        <div className="relative w-full aspect-square overflow-hidden bg-surface-100">
+        <div className="relative w-full aspect-[4/3] overflow-hidden bg-gray-50">
           {!imageError && product.image ? (
-            <Image
-              src={product.image}
-              alt={product.name}
-              fill
-              className={`object-cover transition-transform duration-300 ${isUnavailable ? 'grayscale' : 'group-hover:scale-105'}`}
+            <Image src={product.image} alt={product.name} fill
+              className={`object-cover transition-transform duration-500 ${!isUnavailable ? 'group-hover:scale-105' : 'grayscale'}`}
               onError={() => setImageError(true)}
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            />
+              sizes="(max-width: 1024px) 33vw, 25vw" />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-brand-50 to-brand-100 flex items-center justify-center">
-              <ChefHat size={36} className="text-brand-300" />
+            <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+              <ChefHat size={40} className="text-emerald-200" />
             </div>
           )}
 
-          {/* Unavailable overlay */}
           {isUnavailable && (
             <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
-              <div className="flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-surface-200">
+              <div className="flex items-center gap-1.5 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow border border-gray-200">
                 <Clock size={12} className="text-gray-500" />
                 <span className="text-xs font-semibold text-gray-600">Available {product.availableFrom}</span>
               </div>
             </div>
           )}
 
-          {/* Badges */}
-          <div className="absolute top-2 left-2 flex flex-col gap-1">
+          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
             {product.isBestseller && !isUnavailable && (
-              <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full leading-none">
-                <Star size={9} fill="currentColor" /> Bestseller
+              <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-[9px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                <Star size={8} fill="currentColor" /> Bestseller
               </span>
             )}
             {product.isChefSpecial && !isUnavailable && (
-              <span className="flex items-center gap-1 bg-brand-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full leading-none">
-                <ChefHat size={9} /> Chef&apos;s Pick
+              <span className="flex items-center gap-1 bg-emerald-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                <ChefHat size={8} /> Chef&apos;s Pick
               </span>
             )}
           </div>
 
-          {/* Veg dot */}
-          <div className="absolute top-2 right-2">
-            <div className={`w-[18px] h-[18px] rounded-sm flex items-center justify-center border-2 bg-white ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
-              <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+          <div className="absolute top-2.5 right-2.5">
+            <div className={`w-[17px] h-[17px] rounded-sm flex items-center justify-center border-[1.5px] bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+              <div className={`w-[8px] h-[8px] rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
             </div>
           </div>
 
-          {/* Add button */}
           {!isUnavailable && (
-            <div className="absolute bottom-2 right-2">
+            <div className="absolute bottom-2.5 right-2.5">
               {qty === 0 ? (
                 canAdd ? (
-                  <button
-                    onClick={handleAdd}
-                    className="flex items-center gap-0.5 px-3 py-1.5 bg-white border-2 border-brand-500 text-brand-600 font-bold text-xs rounded-xl shadow-md hover:bg-brand-50 active:scale-95 transition-all"
-                  >
-                    <Plus size={13} strokeWidth={3} /> ADD
+                  <button onClick={handleAdd}
+                    className="flex items-center gap-0.5 px-3 py-1.5 bg-white border-2 border-emerald-500 text-emerald-700 font-bold text-[11px] rounded-xl shadow-md hover:bg-emerald-50 active:scale-95 transition-all">
+                    <Plus size={12} strokeWidth={3} /> ADD
                   </button>
                 ) : (
-                  <button
-                    onClick={e => { e.stopPropagation(); setShowModal(true); }}
-                    className="flex items-center gap-0.5 px-2.5 py-1.5 bg-white/90 border-2 border-gray-300 text-gray-400 font-bold text-[10px] rounded-xl shadow-sm cursor-not-allowed"
-                    title="Add a bowl first to order Cappuccino"
-                  >
-                    <ShoppingBag size={11} /> Bowl first
+                  <button onClick={e => { e.stopPropagation(); setShowModal(true); }}
+                    className="flex items-center gap-0.5 px-2.5 py-1.5 bg-white/90 border-2 border-gray-200 text-gray-400 font-bold text-[10px] rounded-xl shadow-sm cursor-not-allowed">
+                    <ShoppingBag size={10} /> Bowl first
                   </button>
                 )
               ) : (
-                <div className="flex items-center gap-1.5 bg-brand-500 rounded-xl px-2 py-1 shadow-md">
+                <div className="flex items-center gap-1.5 bg-emerald-600 rounded-xl px-2 py-1 shadow-md">
                   <button onClick={handleDecrease} className="text-white active:scale-90 transition-transform">
-                    <Minus size={13} strokeWidth={3} />
+                    <Minus size={12} strokeWidth={3} />
                   </button>
                   <span className="text-white font-bold text-xs min-w-[14px] text-center">{qty}</span>
                   <button onClick={handleIncrease} className="text-white active:scale-90 transition-transform">
-                    <Plus size={13} strokeWidth={3} />
+                    <Plus size={12} strokeWidth={3} />
                   </button>
                 </div>
               )}
@@ -387,40 +475,39 @@ export default function ProductCard({ product }) {
         </div>
 
         {/* Info */}
-        <div className="px-3 pt-2.5 pb-3">
-          <h3 className="font-semibold text-gray-900 text-sm leading-snug line-clamp-1 mb-0.5">{product.name}</h3>
+        <div className="px-3.5 pt-3 pb-3.5 flex flex-col gap-1.5 flex-1">
+          <h3 className="font-bold text-gray-900 text-[14px] leading-snug line-clamp-1">{product.name}</h3>
+
           {product.description && (
-            <p className="text-xs text-gray-400 line-clamp-1 leading-snug mb-2">{product.description}</p>
+            <p className="text-[12px] text-gray-400 line-clamp-2 leading-snug">{product.description}</p>
           )}
 
-          {/* Macros — hidden for beverages */}
           {showMacros && (product.calories > 0 || product.protein > 0) && (
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {product.calories > 0 && (
-                <span className="text-[11px] bg-surface-100 text-gray-500 px-1.5 py-0.5 rounded-md font-medium">{product.calories} kcal</span>
+                <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-md font-semibold border border-orange-100">{product.calories} kcal</span>
               )}
               {product.protein > 0 && (
-                <span className="text-[11px] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-md font-medium">{product.protein}g protein</span>
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md font-semibold border border-emerald-100">{product.protein}g protein</span>
               )}
             </div>
           )}
 
-          {/* Price row — price first, then 450-500ml badge inline for coffee */}
-          <div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-bold text-gray-900 text-sm">₹{displayPrice}</span>
-              {isPlatinum && (
+          <div className="mt-auto pt-1">
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-gray-900 text-[15px]">₹{displayPrice}</span>
+              {isPlatinum && originalPrice !== displayPrice && (
                 <span className="text-xs text-gray-400 line-through">₹{originalPrice}</span>
               )}
               {isCoffee && (
                 <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none">
-                  <Coffee size={8} strokeWidth={2.5} /> 450–500 ml
+                  <Coffee size={7} strokeWidth={2.5} /> 450–500ml
                 </span>
               )}
             </div>
             {!isPlatinum && (
               <div className="flex items-center gap-0.5 mt-0.5">
-                <Crown size={9} className="text-orange-400" />
+                <Crown size={8} className="text-orange-400" />
                 <span className="text-[10px] text-orange-500 font-medium">₹{platinumPrice} with Platinum</span>
               </div>
             )}
@@ -428,9 +515,7 @@ export default function ProductCard({ product }) {
         </div>
       </div>
 
-      {showModal && (
-        <ProductModal product={product} onClose={() => setShowModal(false)} />
-      )}
+      {showModal && <ProductModal product={product} onClose={() => setShowModal(false)} />}
     </>
   );
 }
