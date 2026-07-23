@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { ShoppingCart, User, LogOut, ChevronDown, Menu, X, MapPin, Settings, Package, Crown } from 'lucide-react';
+import { ShoppingCart, User, LogOut, ChevronDown, Menu, X, MapPin, Settings, Package, Crown, Heart } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 
@@ -114,6 +114,14 @@ export default function Header({ onAuthClick }) {
           <nav className="hidden md:flex items-center gap-6">
             <Link href="/"     className={`nav-link ${isActive('/')     ? 'text-brand-600 font-semibold' : ''}`}>Home</Link>
             <Link href="/menu" className={`nav-link ${isActive('/menu') ? 'text-brand-600 font-semibold' : ''}`}>Menu</Link>
+            {isLoggedIn && (
+              <Link href="/my-circle"
+                className={`relative flex items-center gap-1.5 nav-link transition-colors ${isActive('/my-circle') ? 'text-emerald-600 font-semibold' : 'text-gray-600 hover:text-emerald-600'}`}>
+                <Heart size={13} className={isActive('/my-circle') ? 'text-emerald-600 fill-emerald-600' : 'text-emerald-500'} />
+                <span>Friends</span>
+                <span className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              </Link>
+            )}
             {isAdmin && (
               <Link href="/admin" className={`nav-link ${isActive('/admin') ? 'text-brand-600 font-semibold' : ''}`}>Admin</Link>
             )}
@@ -164,6 +172,12 @@ export default function Header({ onAuthClick }) {
                     <Link href="/profile?tab=orders" onClick={() => setUserMenuOpen(false)}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 text-sm text-gray-700 transition-colors">
                       <Package size={15} className="text-gray-400" /><span>My Orders</span>
+                    </Link>
+                    <Link href="/my-circle" onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-emerald-50 text-sm text-emerald-700 transition-colors">
+                      <Heart size={15} className="text-emerald-500 fill-emerald-500" />
+                      <span className="font-semibold">My Circle</span>
+                      <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500" />
                     </Link>
                     <Link href="/profile?tab=platinum" onClick={() => setUserMenuOpen(false)}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 text-sm text-gray-700 transition-colors">
@@ -222,10 +236,11 @@ export default function Header({ onAuthClick }) {
               </div>
             )}
             {[
-              { href: '/',        label: 'Home',    show: true },
-              { href: '/menu',    label: 'Menu',    show: true },
-              { href: '/profile', label: 'Profile', show: isLoggedIn },
-              { href: '/admin',   label: 'Admin',   show: isLoggedIn && isAdmin },
+              { href: '/',          label: 'Home',    show: true },
+              { href: '/menu',      label: 'Menu',    show: true },
+              { href: '/my-circle', label: '♥ Friends', show: isLoggedIn },
+              { href: '/profile',   label: 'Profile', show: isLoggedIn },
+              { href: '/admin',     label: 'Admin',   show: isLoggedIn && isAdmin },
             ].filter(i => i.show).map(item => (
               <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}
                 className={`flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-colors

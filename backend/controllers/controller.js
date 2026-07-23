@@ -247,8 +247,7 @@ export const createOrder = async (req, res) => {
     }
 
     // Process referral reward (fire-and-forget — awards free item to referrer on friend's first order)
-    const firstItemName = items?.[0]?.name || (items?.[0]?.bowlId ? 'a bowl' : 'an item');
-    processReferralReward(req.user._id, order._id, firstItemName).catch(() => {});
+    processReferralReward(req.user._id, order._id).catch(() => {});
 
     res.json({ success: true, order, campaign: campaignResult });
   } catch (error) {
@@ -1585,32 +1584,68 @@ export const joinViaReferral = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
-// Authenticated: get my own referral links + friend activity feed
+// Authenticated: get my own referral links + friend activity feed + "who referred me"
 export const getMyReferrals = async (req, res) => {
   try {
     const user = req.user;
-    // Find by userId or phone
+
+    // 1. Referrals where this user IS the referrer
     const refs = await FriendReferral.find({
       $or: [{ referrerId: user._id }, { referrerPhone: user.phone }],
-    }).populate('referredFriends.userId', 'name phone').populate('rewardBowlId', 'name image');
+    }).populate('rewardBowlId', 'name image price');
 
-    // Build notification feed: each friend's first order
+    // 2. Check if this user was referred BY someone else
+    const referredByLink = await FriendReferral.findOne({
+      referredFriends: { $elemMatch: { userId: user._id } },
+    });
+
+    // 3. Build notification feed from ALL friend records with first orders
     const feed = [];
     for (const ref of refs) {
       for (const f of ref.referredFriends) {
         if (f.firstOrderAt && f.firstOrderItem) {
           feed.push({
-            friendName:    f.name || f.phone,
-            itemName:      f.firstOrderItem,
-            orderedAt:     f.firstOrderAt,
-            rewardEarned:  f.rewardEarned,
+            friendName:   f.name && f.name.trim() ? f.name : `+91 ${f.phone}`,
+            itemName:     f.firstOrderItem,
+            orderedAt:    f.firstOrderAt,
+            rewardEarned: f.rewardEarned,
+            phone:        f.phone,
           });
         }
       }
     }
     feed.sort((a, b) => new Date(b.orderedAt) - new Date(a.orderedAt));
 
-    res.json({ referrals: refs, feed });
+    // 4. Summarise friend list for each referral (for the "who joined" tab)
+    const enrichedRefs = refs.map(r => ({
+      _id:               r._id,
+      code:              r.code,
+      status:            r.status,
+      referrerName:      r.referrerName,
+      referrerGender:    r.referrerGender,
+      rewardBowlId:      r.rewardBowlId,
+      rewardLabel:       r.rewardLabel,
+      totalJoined:       r.totalJoined,
+      totalOrdered:      r.totalOrdered,
+      totalRewardsEarned: r.totalRewardsEarned,
+      friends: r.referredFriends.map(f => ({
+        name:          f.name && f.name.trim() ? f.name : `+91 ${f.phone}`,
+        phone:         f.phone,
+        joinedAt:      f.joinedAt,
+        hasOrdered:    !!f.firstOrderId,
+        itemOrdered:   f.firstOrderItem,
+        orderedAt:     f.firstOrderAt,
+        rewardEarned:  f.rewardEarned,
+      })),
+    }));
+
+    res.json({
+      referrals: enrichedRefs,
+      feed,
+      referredBy: referredByLink
+        ? { name: referredByLink.referrerName, gender: referredByLink.referrerGender, code: referredByLink.code }
+        : null,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -1759,9 +1794,10 @@ export const adminUpdateReferralSettings = async (req, res) => {
     const { rewardBowlId, rewardLabel, rewardNote } = req.body;
     let settings = await ReferralSettings.findOne();
     if (!settings) settings = new ReferralSettings();
-    if (rewardBowlId !== undefined) settings.rewardBowlId = rewardBowlId || null;
-    if (rewardLabel  !== undefined) settings.rewardLabel  = rewardLabel;
-    if (rewardNote   !== undefined) settings.rewardNote   = rewardNote;
+    // Treat empty string as null (select box sends "" for "no selection")
+    if (rewardBowlId !== undefined) settings.rewardBowlId = rewardBowlId && rewardBowlId !== '' ? rewardBowlId : null;
+    if (rewardLabel  !== undefined) settings.rewardLabel  = rewardLabel  || 'Free Wrap';
+    if (rewardNote   !== undefined) settings.rewardNote   = rewardNote   || '';
     settings.updatedAt = new Date();
     await settings.save();
     res.json({ settings });
@@ -1769,13 +1805,17 @@ export const adminUpdateReferralSettings = async (req, res) => {
 };
 
 // Called from createOrder — awards referral reward when a referred friend places their FIRST order
-export const processReferralReward = async (userId, orderId, itemName) => {
+export const processReferralReward = async (userId, orderId) => {
   try {
-    // Find a referral where this user is a referred friend who hasn't ordered yet
+    // Use $elemMatch so we match the SAME subdocument (not independent field queries)
     const ref = await FriendReferral.findOne({
-      'referredFriends.userId': userId,
-      'referredFriends.firstOrderId': null,
       status: 'active',
+      referredFriends: {
+        $elemMatch: {
+          userId:       userId,
+          firstOrderId: null,
+        },
+      },
     });
     if (!ref) return;
 
@@ -1783,6 +1823,16 @@ export const processReferralReward = async (userId, orderId, itemName) => {
       f => f.userId?.toString() === userId.toString() && !f.firstOrderId
     );
     if (!friend) return;
+
+    // Resolve the actual item name from the order (populate bowl name from DB)
+    let itemName = 'a healthy bowl';
+    try {
+      const order = await Order.findById(orderId).populate('items.bowlId', 'name');
+      if (order?.items?.length) {
+        const first = order.items[0];
+        itemName = first.name || first.bowlId?.name || itemName;
+      }
+    } catch (_) {}
 
     friend.firstOrderId   = orderId;
     friend.firstOrderAt   = new Date();
@@ -1794,5 +1844,5 @@ export const processReferralReward = async (userId, orderId, itemName) => {
     ref.totalRewardsEarned += 1;
 
     await ref.save();
-  } catch (_) { /* non-critical */ }
+  } catch (_) { /* non-critical — never block the order */ }
 };

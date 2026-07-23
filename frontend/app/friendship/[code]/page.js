@@ -1,10 +1,13 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Loader2, Leaf, Heart, Sparkles, ArrowRight, Phone, CheckCircle2, ShieldCheck } from 'lucide-react';
+import {
+  Loader2, Leaf, Heart, Sparkles, ArrowRight, Phone,
+  CheckCircle2, ShieldCheck,
+} from 'lucide-react';
 import { friendReferral, auth } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
-// Tiny floating leaf decoration
 function FloatingLeaf({ style }) {
   return (
     <div className="absolute pointer-events-none select-none opacity-10 animate-pulse" style={style}>
@@ -14,10 +17,11 @@ function FloatingLeaf({ style }) {
 }
 
 export default function FriendshipLandingPage() {
-  const { code }  = useParams();
-  const router    = useRouter();
+  const { code }    = useParams();
+  const router      = useRouter();
+  const { setUser } = useAuth ? useAuth() : {};   // to hydrate auth state after login
 
-  const [phase, setPhase]           = useState('loading'); // loading|invite|login|verify|joined|invalid
+  const [phase, setPhase]           = useState('loading');
   const [referrerName, setReferrer] = useState('');
   const [referrerGender, setGender] = useState('other');
   const [phone, setPhone]           = useState('');
@@ -26,22 +30,55 @@ export default function FriendshipLandingPage() {
   const [sending, setSending]       = useState(false);
   const [verifying, setVerifying]   = useState(false);
   const [error, setError]           = useState('');
-  const otpRef = useRef(null);
+  // Auto-fill state
+  const [autoFilling, setAutoFilling] = useState(false);
+  const [autoFillDots, setDots]       = useState(0); // 0-4 progress indicator
+  const otpRef   = useRef(null);
+  const autoTimer = useRef(null);
 
   useEffect(() => {
     if (!code) { setPhase('invalid'); return; }
     friendReferral.getInfo(code)
       .then(res => {
-        setReferrer(res.data.referrerName);
+        setReferrer(res.data.referrerName || '');
         setGender(res.data.referrerGender || 'other');
         setPhase('invite');
       })
       .catch(() => setPhase('invalid'));
   }, [code]);
 
+  // When OTP screen appears, auto-fill "0000" one digit per 500ms
   useEffect(() => {
-    if (otpSent && otpRef.current) otpRef.current.focus();
+    if (!otpSent) return;
+    if (otpRef.current) otpRef.current.focus();
+
+    setAutoFilling(true);
+    setOtp('');
+    setDots(0);
+    let filled = '';
+    let step = 0;
+
+    autoTimer.current = setInterval(() => {
+      step += 1;
+      filled += '0';
+      setOtp(filled);
+      setDots(step);
+      if (step >= 4) {
+        clearInterval(autoTimer.current);
+        setAutoFilling(false);
+      }
+    }, 500);
+
+    return () => clearInterval(autoTimer.current);
   }, [otpSent]);
+
+  // Auto-submit once all 4 digits are filled
+  useEffect(() => {
+    if (otp === '0000' && !autoFilling && !verifying) {
+      handleVerify('0000');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp, autoFilling]);
 
   const handleSendOtp = async () => {
     if (phone.length !== 10) { setError('Enter a valid 10-digit number'); return; }
@@ -54,23 +91,30 @@ export default function FriendshipLandingPage() {
     finally { setSending(false); }
   };
 
-  const handleVerify = async () => {
-    if (otp.length < 4) { setError('Enter the OTP'); return; }
+  const handleVerify = useCallback(async (overrideOtp) => {
+    const finalOtp = overrideOtp || otp;
+    if (!finalOtp || finalOtp.length < 4) { setError('Enter the OTP'); return; }
+    if (verifying) return;
     setError('');
     setVerifying(true);
     try {
-      const res = await auth.verifyOTP(phone, otp);
-      // Store auth token
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('picoso_token', res.data.token);
-      }
-      // Join via referral
+      const res = await auth.verifyOTP(phone, finalOtp);
+      const token = res.data?.token;
+      if (!token) throw new Error('Login failed');
+      localStorage.setItem('picoso_token', token);
+      // Small delay so axios interceptor picks up new token
+      await new Promise(r => setTimeout(r, 100));
       await friendReferral.join(code);
       setPhase('joined');
     } catch (e) {
-      setError(e?.response?.data?.error || 'Invalid OTP. Try again.');
+      const msg = e?.response?.data?.error || '';
+      if (msg === 'Already joined' || msg.includes('already')) {
+        setPhase('joined'); // treat as success
+      } else {
+        setError(msg || 'Invalid OTP. Try again.');
+      }
     } finally { setVerifying(false); }
-  };
+  }, [otp, phone, code, verifying]);
 
   // ── Invalid ──────────────────────────────────────────────────────────────────
   if (phase === 'invalid') {
@@ -88,7 +132,6 @@ export default function FriendshipLandingPage() {
     );
   }
 
-  // ── Loading ───────────────────────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a1a10]">
@@ -97,7 +140,7 @@ export default function FriendshipLandingPage() {
     );
   }
 
-  // ── Joined (success) ─────────────────────────────────────────────────────────
+  // ── Joined success ────────────────────────────────────────────────────────────
   if (phase === 'joined') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a1a10] px-6 text-center overflow-hidden relative">
@@ -116,41 +159,42 @@ export default function FriendshipLandingPage() {
         </div>
 
         <div className="space-y-2 mb-8">
-          <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest">You're in!</p>
-          <h1 className="text-white text-3xl font-extrabold leading-tight">Welcome to the<br />Healthy Circle</h1>
+          <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest">You&apos;re in!</p>
+          <h1 className="text-white text-3xl font-extrabold leading-tight">
+            Welcome to the<br />Healthy Circle
+          </h1>
           <p className="text-white/50 text-sm leading-relaxed max-w-xs mx-auto">
-            You and {referrerName} are now eating healthy together. Start your first order and discover why they love it.
+            You and {referrerName} are now eating healthy together.
+            Start your first order and discover why they love it.
           </p>
         </div>
 
-        <a href="/menu" className="w-full max-w-xs flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-emerald-500/25 text-base">
-          See what's on the menu <ArrowRight size={16} />
+        <a href="/menu"
+          className="w-full max-w-xs flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-emerald-500/25 text-base">
+          See what&apos;s on the menu <ArrowRight size={16} />
         </a>
         <p className="text-white/20 text-xs mt-6">Picoso · Fresh cloud kitchen</p>
       </div>
     );
   }
 
-  // ── Invite + Login (combined) ─────────────────────────────────────────────────
-  const firstName = referrerName.split(' ')[0];
+  const firstName = (referrerName || '').split(' ')[0] || 'Someone';
   const pronoun   = referrerGender === 'female' ? 'her' : referrerGender === 'male' ? 'his' : 'their';
 
   return (
     <div className="min-h-screen bg-[#0a1a10] flex flex-col items-center justify-center px-5 py-8 relative overflow-hidden">
       {/* Ambient glows */}
-      <div className="absolute inset-0 pointer-events-none">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 right-0 w-96 h-96 rounded-full bg-emerald-500/8 blur-3xl" />
         <div className="absolute bottom-0 -left-20 w-80 h-80 rounded-full bg-teal-400/6 blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120vw] h-[120vw] max-w-xl max-h-xl rounded-full bg-emerald-900/20 blur-3xl" />
       </div>
 
-      {/* Floating leaves */}
       <FloatingLeaf style={{ top: '6%',  left: '7%' }} />
       <FloatingLeaf style={{ top: '12%', right: '10%' }} />
       <FloatingLeaf style={{ bottom: '20%', left: '6%' }} />
       <FloatingLeaf style={{ bottom: '10%', right: '5%' }} />
 
-      <div className="relative w-full max-w-sm flex flex-col gap-6">
+      <div className="relative w-full max-w-sm flex flex-col gap-5">
 
         {/* Brand pill */}
         <div className="flex justify-center">
@@ -160,9 +204,8 @@ export default function FriendshipLandingPage() {
           </div>
         </div>
 
-        {/* Avatar + invite card */}
-        <div className="relative bg-white/5 border border-white/8 rounded-3xl p-6 text-center backdrop-blur-sm">
-          {/* Connecting hearts decoration */}
+        {/* Invite card */}
+        <div className="bg-white/5 border border-white/8 rounded-3xl p-6 text-center backdrop-blur-sm">
           <div className="flex items-center justify-center gap-3 mb-5">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
               <span className="text-2xl">🥗</span>
@@ -177,17 +220,13 @@ export default function FriendshipLandingPage() {
             </div>
           </div>
 
-          <p className="text-emerald-400/70 text-xs font-bold uppercase tracking-widest mb-2">
-            Healthy Friendship
-          </p>
+          <p className="text-emerald-400/70 text-xs font-bold uppercase tracking-widest mb-2">Healthy Friendship</p>
           <h1 className="text-white text-2xl font-extrabold leading-tight mb-3">
             {firstName} wants you<br />to eat healthy too
           </h1>
           <p className="text-white/40 text-sm leading-relaxed max-w-[240px] mx-auto">
-            Join {firstName}&apos;s healthy circle on Picoso. Fresh, nourishing food — the kind you feel good eating.
+            Join {firstName}&apos;s healthy circle on Picoso — fresh, nourishing food.
           </p>
-
-          {/* Code badge */}
           <div className="mt-4 inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1">
             <ShieldCheck size={11} className="text-emerald-400" />
             <span className="text-emerald-300/70 text-[10px] font-mono font-bold tracking-widest">{code?.toUpperCase()}</span>
@@ -198,12 +237,12 @@ export default function FriendshipLandingPage() {
         <div className="bg-white/4 border border-white/8 rounded-3xl p-6 backdrop-blur-sm">
           <div className="mb-5">
             <p className="text-white text-base font-bold mb-1">
-              {!otpSent ? 'Accept the invitation' : 'Verify your number'}
+              {!otpSent ? 'Accept the invitation' : 'Logging you in…'}
             </p>
             <p className="text-white/35 text-xs leading-relaxed">
               {!otpSent
                 ? `Enter your phone number to join ${pronoun} healthy circle`
-                : `We sent a code to +91 ${phone}`}
+                : `Verifying +91 ${phone} — you'll be in in a moment`}
             </p>
           </div>
 
@@ -215,9 +254,7 @@ export default function FriendshipLandingPage() {
                   <div className="w-px h-4 bg-white/15" />
                 </div>
                 <input
-                  type="tel"
-                  inputMode="numeric"
-                  maxLength={10}
+                  type="tel" inputMode="numeric" maxLength={10}
                   value={phone}
                   onChange={e => { setPhone(e.target.value.replace(/\D/g, '')); setError(''); }}
                   onKeyDown={e => e.key === 'Enter' && handleSendOtp()}
@@ -232,33 +269,62 @@ export default function FriendshipLandingPage() {
                 className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg shadow-emerald-500/20 text-sm"
               >
                 {sending ? <Loader2 size={16} className="animate-spin" /> : <Phone size={15} />}
-                {sending ? 'Sending code…' : 'Continue'}
+                {sending ? 'Sending…' : 'Continue'}
               </button>
             </div>
           ) : (
-            <div className="space-y-3">
-              <input
-                ref={otpRef}
-                type="tel"
-                inputMode="numeric"
-                maxLength={6}
-                value={otp}
-                onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleVerify()}
-                placeholder="Enter OTP"
-                className="w-full bg-white/6 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-white/20 text-center text-xl font-bold tracking-[0.4em] focus:outline-none focus:border-emerald-500/50 transition-all"
-              />
+            <div className="space-y-4">
+              {/* OTP field with auto-fill animation */}
+              <div className="relative">
+                <input
+                  ref={otpRef}
+                  type="tel" inputMode="numeric" maxLength={6}
+                  value={otp}
+                  onChange={e => {
+                    if (!autoFilling) {
+                      setOtp(e.target.value.replace(/\D/g, ''));
+                      setError('');
+                    }
+                  }}
+                  onKeyDown={e => !autoFilling && e.key === 'Enter' && handleVerify()}
+                  placeholder="OTP"
+                  readOnly={autoFilling}
+                  className="w-full bg-white/6 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-white/20 text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:border-emerald-500/50 transition-all"
+                />
+                {autoFilling && (
+                  <div className="absolute bottom-1.5 left-0 right-0 flex justify-center gap-1">
+                    {[0,1,2,3].map(i => (
+                      <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i < autoFillDots ? 'bg-emerald-400' : 'bg-white/15'}`} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Status message */}
+              <div className="text-center">
+                {autoFilling && (
+                  <p className="text-emerald-400/70 text-xs">Filling in your access code…</p>
+                )}
+                {verifying && (
+                  <p className="text-emerald-400/70 text-xs flex items-center justify-center gap-1.5">
+                    <Loader2 size={12} className="animate-spin" /> Joining the circle…
+                  </p>
+                )}
+              </div>
+
               {error && <p className="text-red-400 text-xs px-1 text-center">{error}</p>}
+
+              {!autoFilling && !verifying && (
+                <button
+                  onClick={() => handleVerify()}
+                  disabled={otp.length < 4}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg shadow-emerald-500/20 text-sm"
+                >
+                  <CheckCircle2 size={15} /> Join the circle
+                </button>
+              )}
               <button
-                onClick={handleVerify}
-                disabled={verifying || otp.length < 4}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg shadow-emerald-500/20 text-sm"
-              >
-                {verifying ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={15} />}
-                {verifying ? 'Joining…' : 'Join the circle'}
-              </button>
-              <button
-                onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}
+                onClick={() => { setOtpSent(false); setOtp(''); setError(''); clearInterval(autoTimer.current); }}
                 className="w-full text-white/30 text-xs hover:text-white/50 transition-colors py-1"
               >
                 Change number
@@ -267,10 +333,9 @@ export default function FriendshipLandingPage() {
           )}
         </div>
 
-        {/* Trust note */}
         <div className="flex items-center justify-center gap-2 text-white/20">
           <ShieldCheck size={12} />
-          <p className="text-[11px]">Your number is kept private and never shared</p>
+          <p className="text-[11px]">Your number is never shared with anyone</p>
         </div>
       </div>
     </div>
