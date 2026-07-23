@@ -18,7 +18,7 @@ const IS_FOOD_BOWL     = (item) => !IS_ADDON(item) && !IS_BEVERAGE(item);
 const CAMPAIGN_COFFEE_ID = 'campaign-free-coffee';
 const makeCampaignCoffee = (label = 'Free Coffee') => ({
   _id:              CAMPAIGN_COFFEE_ID,
-  name:             `☕ ${label} (Campaign Gift)`,
+  name:             `${label} (Campaign Gift)`,
   price:            0,
   quantity:         1,
   pfCategory:       'pf-beverages',

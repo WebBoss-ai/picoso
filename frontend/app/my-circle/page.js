@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import {
   Leaf, Heart, Users, Copy, CheckCheck, Gift, Sparkles,
   ArrowLeft, Clock, ChevronRight, Link2, ArrowRight,
-  UserCheck, ShoppingBag,
+  UserCheck, ShoppingBag, Salad,
 } from 'lucide-react';
 import { friendReferral } from '@/lib/api';
 
@@ -35,10 +35,10 @@ function fmtDate(date) {
 function funLine(friendName, itemName, gender) {
   const pronoun = gender === 'female' ? 'girl' : 'man';
   const lines = [
-    `You should try it too, ${pronoun} 🙌`,
-    `Looks like someone&apos;s eating smart, ${pronoun}! 🥗`,
+    `You should try it too, ${pronoun}!`,
+    `Looks like someone&apos;s eating smart, ${pronoun}!`,
     `Great pick, ${pronoun}! That one&apos;s a favourite here.`,
-    `Your healthy influence is working, ${pronoun}! 💪`,
+    `Your healthy influence is working, ${pronoun}!`,
     `${pronoun.charAt(0).toUpperCase() + pronoun.slice(1)}, that&apos;s a solid choice!`,
   ];
   const idx = Math.abs((friendName?.charCodeAt(0) || 0) + (itemName?.charCodeAt(0) || 0)) % lines.length;
@@ -116,7 +116,9 @@ function NotificationCard({ item, referrerGender }) {
         {/* Item ordered */}
         <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl px-4 py-3 mb-3 border border-emerald-100/60">
           <p className="text-[10px] font-semibold text-emerald-600/70 uppercase tracking-widest mb-0.5">Ordered</p>
-          <p className="font-bold text-gray-900 text-sm">🥗 {item.itemName}</p>
+          <p className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+            <Salad size={14} className="text-emerald-500 flex-shrink-0" /> {item.itemName}
+          </p>
         </div>
 
         {/* Fun line */}
@@ -130,7 +132,7 @@ function NotificationCard({ item, referrerGender }) {
           <div className="flex items-center gap-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/60 rounded-xl px-4 py-3">
             <Gift size={16} className="text-amber-500 flex-shrink-0" />
             <div>
-              <p className="text-xs font-bold text-amber-800">Your free wrap is waiting too! 🎁</p>
+              <p className="text-xs font-bold text-amber-800">Your free wrap is waiting too!</p>
               <p className="text-[10px] text-amber-600/70 mt-0.5">Redeem it on your next order at checkout</p>
             </div>
           </div>
@@ -257,7 +259,7 @@ export default function MyCirclePage() {
             </div>
             <div className="flex-1">
               <p className="text-xs font-bold text-emerald-800">{referredBy.name} invited you</p>
-              <p className="text-[11px] text-emerald-600/70 mt-0.5">You&apos;re part of {referredBy.name.split(' ')[0]}&apos;s healthy circle 🌱</p>
+              <p className="text-[11px] text-emerald-600/70 mt-0.5">You&apos;re part of {referredBy.name.split(' ')[0]}&apos;s healthy circle</p>
             </div>
             <Heart size={16} className="text-emerald-400 fill-emerald-400 flex-shrink-0" />
           </div>
@@ -375,8 +377,8 @@ export default function MyCirclePage() {
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           {f.rewardEarned && (
-                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                              Reward ✓
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                              <CheckCheck size={10} /> Reward
                             </span>
                           )}
                           <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   X, Plus, Minus, ShoppingBag, ArrowRight,
   Trash2, Crown, Coffee, Zap, CheckCircle2,
-  AlertTriangle, BellRing, PhoneCall, ChevronLeft, Package,
+  AlertTriangle, BellRing, PhoneCall, ChevronLeft, Package, GlassWater,
 } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -416,7 +416,7 @@ export default function CartDrawer({ onAuthRequired }) {
                             style={{ paddingTop: '72%', background: 'linear-gradient(135deg,#fee2e2,#fca5a5)' }}>
                             {cokeProduct.image
                               ? <Image src={cokeProduct.image} alt="Coke" fill className="object-cover" />
-                              : <div className="absolute inset-0 flex items-center justify-center text-3xl select-none">🥤</div>
+                              : <div className="absolute inset-0 flex items-center justify-center select-none"><GlassWater size={30} className="text-red-500" /></div>
                             }
                             {alreadyIn
                               ? <div className="absolute inset-0 bg-red-400/20 flex items-center justify-center">

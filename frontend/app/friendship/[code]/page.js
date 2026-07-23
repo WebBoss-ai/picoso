@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Loader2, Leaf, Heart, Sparkles, ArrowRight, Phone,
-  CheckCircle2, ShieldCheck,
+  CheckCircle2, ShieldCheck, Salad, Sprout,
 } from 'lucide-react';
 import { friendReferral, auth } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -208,7 +208,7 @@ export default function FriendshipLandingPage() {
         <div className="bg-white/5 border border-white/8 rounded-3xl p-6 text-center backdrop-blur-sm">
           <div className="flex items-center justify-center gap-3 mb-5">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-              <span className="text-2xl">🥗</span>
+              <Salad size={22} className="text-emerald-300" />
             </div>
             <div className="flex flex-col items-center gap-0.5">
               <div className="w-8 h-px bg-emerald-500/40" />
@@ -216,7 +216,7 @@ export default function FriendshipLandingPage() {
               <div className="w-8 h-px bg-emerald-500/40" />
             </div>
             <div className="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center">
-              <span className="text-2xl">🌱</span>
+              <Sprout size={22} className="text-teal-300" />
             </div>
           </div>
 

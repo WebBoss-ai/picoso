@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { bowls } from '@/lib/api';
-import { Flame, Zap, Drumstick, Wheat, Droplets } from 'lucide-react';
+import { Flame, Zap, Drumstick, Wheat, Droplets, Salad } from 'lucide-react';
 
 export default function BowlDetailPage() {
   const params = useParams();
@@ -53,8 +53,8 @@ export default function BowlDetailPage() {
               className="w-full h-80 object-cover"
             />
           ) : (
-            <div className="w-full h-80 flex items-center justify-center text-6xl">
-              🥗
+            <div className="w-full h-80 flex items-center justify-center">
+              <Salad size={64} className="text-emerald-300" />
             </div>
           )}
         </div>

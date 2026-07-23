@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { Loader2, Leaf } from 'lucide-react';
+import { Loader2, Leaf, Link2Off } from 'lucide-react';
 import { agentRef } from '@/lib/api';
 
 const WA_NUMBER = '918167080111';
@@ -31,7 +31,7 @@ export default function LeadCapturePage() {
   if (phase === 'invalid') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 flex flex-col items-center justify-center px-6 text-center">
-        <div className="text-5xl mb-4">🔗</div>
+        <Link2Off size={44} className="text-emerald-300 mb-4" />
         <h1 className="text-white text-xl font-bold mb-2">Invalid Link</h1>
         <p className="text-emerald-200/60 text-sm mb-6">This referral link is no longer active.</p>
         <a href="/" className="bg-emerald-500 text-white px-6 py-3 rounded-2xl font-medium text-sm hover:bg-emerald-400 transition-all">

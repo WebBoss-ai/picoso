@@ -1,21 +1,18 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
-import { ShoppingCart, User, LogOut, ChevronDown, Menu, X, MapPin, Settings, Package, Crown, Heart } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { ShoppingCart, User, Menu, X, MapPin, Activity, Home as HomeIcon, UtensilsCrossed } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 
 export default function Header({ onAuthClick }) {
   const { cartCount, setIsOpen: openCart } = useCart();
-  const { user, isLoggedIn, isAdmin, logout } = useAuth();
+  const { user, isLoggedIn, isAdmin } = useAuth();
   const [menuOpen,     setMenuOpen]     = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [scrolled,     setScrolled]     = useState(false);
   const [location,     setLocation]     = useState(null);
   const [locLoading,   setLocLoading]   = useState(false);
-  const userMenuRef = useRef(null);
-  const router   = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
@@ -58,15 +55,6 @@ export default function Header({ onAuthClick }) {
     );
   }, []);
 
-  useEffect(() => {
-    const handleClick = (e) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setUserMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  const handleLogout = () => { logout(); setUserMenuOpen(false); router.push('/'); };
   const isActive = (p) => pathname === p;
 
   /* ── Green-mode: mobile homepage before scroll ─────────────────────── */
@@ -110,24 +98,13 @@ export default function Header({ onAuthClick }) {
             )}
           </div>
 
-          {/* ── Desktop Nav ───────────────────────────────────────── */}
+          {/* ── Desktop Nav — Menu (core browse) ──────────────────── */}
           <nav className="hidden md:flex items-center gap-6">
             <Link href="/"     className={`nav-link ${isActive('/')     ? 'text-brand-600 font-semibold' : ''}`}>Home</Link>
             <Link href="/menu" className={`nav-link ${isActive('/menu') ? 'text-brand-600 font-semibold' : ''}`}>Menu</Link>
-            {isLoggedIn && (
-              <Link href="/my-circle"
-                className={`relative flex items-center gap-1.5 nav-link transition-colors ${isActive('/my-circle') ? 'text-emerald-600 font-semibold' : 'text-gray-600 hover:text-emerald-600'}`}>
-                <Heart size={13} className={isActive('/my-circle') ? 'text-emerald-600 fill-emerald-600' : 'text-emerald-500'} />
-                <span>Friends</span>
-                <span className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              </Link>
-            )}
-            {isAdmin && (
-              <Link href="/admin" className={`nav-link ${isActive('/admin') ? 'text-brand-600 font-semibold' : ''}`}>Admin</Link>
-            )}
           </nav>
 
-          {/* ── Right Actions ─────────────────────────────────────── */}
+          {/* ── Right Actions — exactly two options: Fitness Circle + Profile ── */}
           <div className="flex items-center gap-1.5">
 
             {/* Cart */}
@@ -144,62 +121,32 @@ export default function Header({ onAuthClick }) {
               )}
             </button>
 
-            {/* User */}
             {isLoggedIn ? (
-              <div className="relative" ref={userMenuRef}>
-                <button onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className={`flex items-center gap-2 px-2.5 py-2 rounded-xl transition-colors
-                    ${greenNav ? 'hover:bg-white/15 md:hover:bg-surface-50' : 'hover:bg-surface-50'}`}>
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors
-                    ${greenNav ? 'bg-white/25 md:bg-brand-100' : 'bg-brand-100'}`}>
-                    <span className={`text-xs font-bold ${greenNav ? 'text-white md:text-brand-700' : 'text-brand-700'}`}>
+              <>
+                {/* Option 1 — Fitness Circle (desktop) */}
+                <Link href="/my-circle"
+                  className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all border
+                    ${isActive('/my-circle')
+                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/30'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'}`}>
+                  <Activity size={15} className={isActive('/my-circle') ? 'text-white' : 'text-emerald-500'} />
+                  <span>Fitness Circle</span>
+                </Link>
+
+                {/* Option 2 — Profile (desktop) */}
+                <Link href="/profile"
+                  className={`hidden md:flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-xl transition-colors
+                    ${isActive('/profile') ? 'bg-brand-50' : 'hover:bg-surface-50'}`}>
+                  <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center">
+                    <span className="text-xs font-bold text-brand-700">
                       {user?.name ? user.name[0].toUpperCase() : user?.phone?.slice(-2)}
                     </span>
                   </div>
-                  <span className={`hidden sm:block text-sm font-medium max-w-[80px] truncate transition-colors
-                    ${greenNav ? 'text-white md:text-gray-700' : 'text-gray-700'}`}>
-                    {user?.name || 'Account'}
+                  <span className={`text-sm font-semibold max-w-[90px] truncate ${isActive('/profile') ? 'text-brand-700' : 'text-gray-700'}`}>
+                    {user?.name?.split(' ')[0] || 'Profile'}
                   </span>
-                  <ChevronDown size={14} className={greenNav ? 'text-white/70 md:text-gray-400' : 'text-gray-400'} />
-                </button>
-
-                {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-52 card shadow-modal py-1.5 animate-fade-in z-50">
-                    <Link href="/profile" onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 text-sm text-gray-700 transition-colors">
-                      <User size={15} className="text-gray-400" /><span>My Profile</span>
-                    </Link>
-                    <Link href="/profile?tab=orders" onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 text-sm text-gray-700 transition-colors">
-                      <Package size={15} className="text-gray-400" /><span>My Orders</span>
-                    </Link>
-                    <Link href="/my-circle" onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-emerald-50 text-sm text-emerald-700 transition-colors">
-                      <Heart size={15} className="text-emerald-500 fill-emerald-500" />
-                      <span className="font-semibold">My Circle</span>
-                      <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500" />
-                    </Link>
-                    <Link href="/profile?tab=platinum" onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 text-sm text-gray-700 transition-colors">
-                      <Crown size={15} className="text-amber-500" /><span>Platinum Card</span>
-                    </Link>
-                    {isAdmin && (
-                      <>
-                        <div className="h-px bg-surface-100 my-1.5 mx-4" />
-                        <Link href="/admin" onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 text-sm text-gray-700 transition-colors">
-                          <Settings size={15} className="text-gray-400" /><span>Admin Dashboard</span>
-                        </Link>
-                      </>
-                    )}
-                    <div className="h-px bg-surface-100 my-1.5 mx-4" />
-                    <button onClick={handleLogout}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-50 text-sm text-red-600 transition-colors">
-                      <LogOut size={15} /><span>Sign Out</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+                </Link>
+              </>
             ) : (
               <button onClick={onAuthClick}
                 className={`text-sm px-4 py-2 rounded-xl font-semibold transition-colors
@@ -225,7 +172,7 @@ export default function Header({ onAuthClick }) {
 
         {/* ── Mobile slide-down nav ──────────────────────────────── */}
         {menuOpen && (
-          <div className={`md:hidden border-t py-3 space-y-1 animate-fade-in
+          <div className={`md:hidden border-t py-3 space-y-1.5 animate-fade-in
             ${greenNav ? 'border-white/20 bg-[#0f3d1a]' : 'border-surface-100 bg-white'}`}>
             {location && (
               <div className="flex items-center gap-2 px-3 py-2 text-xs">
@@ -235,23 +182,47 @@ export default function Header({ onAuthClick }) {
                 </span>
               </div>
             )}
+
+            {/* Core browse */}
             {[
-              { href: '/',          label: 'Home',    show: true },
-              { href: '/menu',      label: 'Menu',    show: true },
-              { href: '/my-circle', label: '♥ Friends', show: isLoggedIn },
-              { href: '/profile',   label: 'Profile', show: isLoggedIn },
-              { href: '/admin',     label: 'Admin',   show: isLoggedIn && isAdmin },
-            ].filter(i => i.show).map(item => (
-              <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}
-                className={`flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
-                  ${greenNav
-                    ? 'text-white/90 hover:bg-white/10 hover:text-white'
-                    : 'text-gray-700 hover:bg-surface-50'
-                  }
-                  ${isActive(item.href) ? (greenNav ? '!text-white !bg-white/15' : 'text-brand-600') : ''}`}>
-                {item.label}
+              { href: '/',     label: 'Home', Icon: HomeIcon },
+              { href: '/menu', label: 'Menu', Icon: UtensilsCrossed },
+            ].map(({ href, label, Icon }) => (
+              <Link key={href} href={href} onClick={() => setMenuOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
+                  ${greenNav ? 'text-white/90 hover:bg-white/10' : 'text-gray-700 hover:bg-surface-50'}
+                  ${isActive(href) ? (greenNav ? '!text-white !bg-white/15' : 'text-brand-600 bg-brand-50') : ''}`}>
+                <Icon size={16} className={greenNav ? '' : 'text-gray-400'} />
+                {label}
               </Link>
             ))}
+
+            {isLoggedIn && (
+              <>
+                <div className={`h-px mx-3 my-1 ${greenNav ? 'bg-white/15' : 'bg-surface-100'}`} />
+
+                {/* Option 1 — Fitness Circle */}
+                <Link href="/my-circle" onClick={() => setMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-colors
+                    ${isActive('/my-circle')
+                      ? 'bg-emerald-500 text-white'
+                      : greenNav ? 'text-emerald-200 bg-white/5 hover:bg-white/10' : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'}`}>
+                  <Activity size={17} className={isActive('/my-circle') ? 'text-white' : 'text-emerald-500'} />
+                  Fitness Circle
+                  <span className="ml-auto w-2 h-2 rounded-full bg-emerald-400" />
+                </Link>
+
+                {/* Option 2 — Profile */}
+                <Link href="/profile" onClick={() => setMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-colors
+                    ${isActive('/profile')
+                      ? 'bg-brand-500 text-white'
+                      : greenNav ? 'text-white bg-white/5 hover:bg-white/10' : 'text-gray-800 bg-surface-50 hover:bg-surface-100'}`}>
+                  <User size={17} className={isActive('/profile') ? 'text-white' : 'text-gray-400'} />
+                  Profile
+                </Link>
+              </>
+            )}
           </div>
         )}
       </div>

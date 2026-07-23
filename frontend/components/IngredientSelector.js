@@ -1,3 +1,5 @@
+import { Salad } from 'lucide-react';
+
 export default function IngredientSelector({
   ingredients,
   selected,
@@ -25,7 +27,7 @@ export default function IngredientSelector({
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span className="text-2xl">🥗</span>
+                  <Salad size={22} className="text-emerald-300" />
                 )}
               </div>
               <div>

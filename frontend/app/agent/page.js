@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Phone, User, ArrowRight, Loader2, Sparkles, MapPin, ChevronRight } from 'lucide-react';
+import { Phone, User, ArrowRight, ArrowLeft, Loader2, Sparkles, MapPin, ChevronRight, QrCode, Wallet } from 'lucide-react';
 import { agentAuth } from '@/lib/api';
 
 export default function AgentLoginPage() {
@@ -126,7 +126,7 @@ export default function AgentLoginPage() {
                   onClick={() => { setStep('phone'); setError(''); }}
                   className="text-emerald-400 text-sm mb-4 flex items-center gap-1 hover:text-emerald-300 transition-colors"
                 >
-                  ← {phone}
+                  <ArrowLeft className="w-3.5 h-3.5" /> {phone}
                 </button>
                 <label className="block text-emerald-200 text-sm font-medium mb-2">
                   Your Full Name
@@ -172,12 +172,12 @@ export default function AgentLoginPage() {
         {/* Benefits */}
         <div className="mt-8 grid grid-cols-3 gap-3">
           {[
-            { icon: '🚶', title: 'Door-to-door', desc: 'Walk your area' },
-            { icon: '📱', title: 'Your QR', desc: 'Unique link' },
-            { icon: '💰', title: 'Earn Rewards', desc: 'Per delivery' },
+            { Icon: MapPin,  title: 'Door-to-door', desc: 'Walk your area' },
+            { Icon: QrCode,  title: 'Your QR', desc: 'Unique link' },
+            { Icon: Wallet,  title: 'Earn Rewards', desc: 'Per delivery' },
           ].map((b) => (
             <div key={b.title} className="bg-white/5 border border-white/10 rounded-2xl p-3 text-center">
-              <div className="text-2xl mb-1">{b.icon}</div>
+              <div className="flex justify-center mb-1.5"><b.Icon className="w-5 h-5 text-emerald-400" /></div>
               <div className="text-white text-xs font-semibold">{b.title}</div>
               <div className="text-emerald-200/50 text-xs">{b.desc}</div>
             </div>

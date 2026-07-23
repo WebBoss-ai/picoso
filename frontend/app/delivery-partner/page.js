@@ -4,7 +4,7 @@ import {
   LogOut, Package, CheckCircle2, Clock, MapPin, Phone, User,
   Banknote, Smartphone, RefreshCw, ChevronRight, X, Navigation,
   Bike, AlertCircle, TrendingUp, IndianRupee, Star, ArrowLeft,
-  Loader2, Eye, Coffee
+  Loader2, Eye, Coffee, Check
 } from 'lucide-react';
 import { delivery } from '@/lib/api';
 
@@ -213,10 +213,10 @@ function OrderModal({ order, onClose, onPickup, onDeliver, loading }) {
                     ₹{grandTotal}
                   </p>
                   {isCOD && (
-                    <p className="text-[10px] text-orange-600 font-semibold mt-0.5">⚠ Collect cash</p>
+                    <p className="text-[10px] text-orange-600 font-semibold mt-0.5 flex items-center justify-end gap-1"><AlertCircle size={11} /> Collect cash</p>
                   )}
                   {!isCOD && (
-                    <p className="text-[10px] text-green-600 font-semibold mt-0.5">✓ Already paid</p>
+                    <p className="text-[10px] text-green-600 font-semibold mt-0.5 flex items-center justify-end gap-1"><Check size={11} /> Already paid</p>
                   )}
                 </div>
               </div>
@@ -415,8 +415,8 @@ function ActiveDeliveryBanner({ order, onView, onDeliver, actionLoading }) {
           <div className="text-right">
             <p className="text-white/60 text-xs mb-0.5">{isCOD ? 'Collect' : 'Paid'}</p>
             <p className={`text-2xl font-extrabold ${isCOD ? 'text-yellow-300' : 'text-green-300'}`}>₹{grandTotal}</p>
-            <p className={`text-xs font-bold mt-0.5 ${isCOD ? 'text-yellow-400' : 'text-green-400'}`}>
-              {isCOD ? '⚠ Cash' : '✓ Online'}
+            <p className={`text-xs font-bold mt-0.5 flex items-center justify-end gap-1 ${isCOD ? 'text-yellow-400' : 'text-green-400'}`}>
+              {isCOD ? <><AlertCircle size={11} /> Cash</> : <><Check size={11} /> Online</>}
             </p>
           </div>
         </div>

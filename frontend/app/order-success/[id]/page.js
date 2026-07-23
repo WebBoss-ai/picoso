@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   CheckCircle2, Clock, Package, ChefHat, Bike, Home,
-  RotateCcw, Gamepad2, X, ArrowRight
+  RotateCcw, Gamepad2, X, ArrowRight, Apple
 } from 'lucide-react';
 import { orders } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -193,7 +193,7 @@ function SnakeGame() {
 
       <div className="flex items-center justify-between w-full mt-3">
         <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-          <span className="text-xl">🍎</span> Score: <span className="text-brand-600">{score}</span>
+          <Apple size={18} className="text-red-500" /> Score: <span className="text-brand-600">{score}</span>
         </div>
         {(!started || gameOver) && (
           <button onClick={startGame} className="btn-primary px-4 py-2 text-sm">

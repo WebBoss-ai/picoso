@@ -298,7 +298,7 @@ function CampaignBanner({ campaignData }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-bold text-amber-800">
-          🎉 Free {campaignData?.freeItemLabel || 'Coffee'} Added!
+          Free {campaignData?.freeItemLabel || 'Coffee'} Added!
         </p>
         <p className="text-[11px] text-amber-600">
           {remaining} of 5 free coffees remaining on your account

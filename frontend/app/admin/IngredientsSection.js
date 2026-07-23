@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { admin, ingredients as ingredientsApi } from '@/lib/api';
-import { Plus, Edit2, Trash2, Flame, Zap, Upload, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Flame, Zap, Upload, X, Salad } from 'lucide-react';
 
 export default function IngredientsSection() {
   const [ingredients, setIngredients] = useState([]);
@@ -164,7 +164,7 @@ export default function IngredientsSection() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-2xl">🥗</span>
+                    <Salad size={22} className="text-emerald-300" />
                   )}
                 </div>
                 <div className="flex gap-2">

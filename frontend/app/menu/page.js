@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   Search, X, Leaf, Star, ChefHat, Clock,
   Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee,
-  LayoutGrid, Heart, Loader2, CheckCircle2, Phone,
+  LayoutGrid, List, Heart, Loader2, CheckCircle2, Phone, Salad,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
@@ -197,18 +197,16 @@ function HelpingHandsBanner({ onGetLink }) {
         <div className="absolute right-20 bottom-4 w-20 h-20 rounded-full opacity-[0.04]" style={{ background: '#d1fae5' }} />
       </div>
 
-      {/* Wrap image on the right */}
+      {/* Wrap visual on the right */}
       <div className="absolute right-0 top-0 bottom-0 w-32 sm:w-36 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-l from-transparent to-[#14532d]/60 z-10" />
-        {/* Placeholder wrap visual — a styled box until real image is added */}
         <div className="absolute right-0 top-0 bottom-0 w-full flex items-center justify-center">
           <div className="relative">
-            {/* Wrap illustration placeholder */}
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400/20 to-teal-300/20 border border-emerald-400/20 flex items-center justify-center">
-              <span className="text-4xl">🌯</span>
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400/25 to-teal-300/20 border border-emerald-400/25 flex items-center justify-center">
+              <Salad size={40} className="text-emerald-200" strokeWidth={1.75} />
             </div>
-            <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-amber-400/90 flex items-center justify-center shadow-lg">
-              <span className="text-xs font-extrabold text-amber-900">★</span>
+            <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-amber-400 flex items-center justify-center shadow-lg">
+              <Star size={13} className="text-amber-900" fill="currentColor" />
             </div>
           </div>
         </div>
@@ -333,6 +331,7 @@ export default function MenuPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [subModalOpen, setSubModalOpen] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'large'
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
@@ -453,6 +452,20 @@ export default function MenuPage() {
                   </button>
                 )}
               </div>
+
+              {/* View-mode toggle (right of search) */}
+              <div className="flex items-center bg-gray-100 rounded-xl p-0.5 flex-shrink-0">
+                <button onClick={() => setViewMode('list')}
+                  aria-label="Compact view"
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'list' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                  <List size={16} />
+                </button>
+                <button onClick={() => setViewMode('large')}
+                  aria-label="Large image view"
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'large' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                  <LayoutGrid size={16} />
+                </button>
+              </div>
             </div>
           ) : (
             /* Mobile search open */
@@ -533,18 +546,20 @@ export default function MenuPage() {
             style={{ WebkitOverflowScrolling: 'touch' }}>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex-shrink-0 pr-0.5">Filter</span>
             {[
-              { id: 'bestseller', label: '⭐ Bestseller' },
-              { id: 'chef',       label: '👨‍🍳 Chef\'s Pick' },
-              { id: 'veg',        label: '🌿 Pure Veg' },
+              { id: 'bestseller', label: 'Bestseller',   Icon: Star },
+              { id: 'chef',       label: "Chef's Pick",  Icon: ChefHat },
+              { id: 'veg',        label: 'Pure Veg',     Icon: Leaf },
             ].map(f => {
               const on = activeFilter === f.id;
+              const FIcon = f.Icon;
               return (
                 <button key={f.id} onClick={() => setFilter(on ? 'all' : f.id)}
-                  className={`flex-shrink-0 px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-150 border ${
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all duration-150 border ${
                     on
                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                       : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400 hover:text-emerald-600'
                   }`}>
+                  <FIcon size={12} fill={on && f.id === 'bestseller' ? 'currentColor' : 'none'} />
                   {f.label}
                 </button>
               );
@@ -635,10 +650,13 @@ export default function MenuPage() {
                         )}
                       </div>
                     ) : (
-                      /* Mobile: 1-column list. Desktop: 2-3 col grid */
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div className={
+                        viewMode === 'large'
+                          ? 'grid grid-cols-1 sm:grid-cols-2 gap-4'
+                          : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'
+                      }>
                         {cat.items.map(product => (
-                          <ProductCard key={product._id} product={product} />
+                          <ProductCard key={product._id} product={product} variant={viewMode} />
                         ))}
                       </div>
                     )}

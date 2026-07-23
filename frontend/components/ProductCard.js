@@ -231,7 +231,7 @@ function ProductModal({ product, onClose }) {
 }
 
 // ─── Product Card — luxury horizontal on mobile, vertical on desktop ──────────
-export default function ProductCard({ product }) {
+export default function ProductCard({ product, variant = 'list' }) {
   const { items, addItem, updateQty, registerCapp } = useCart();
   const { isPlatinum } = useAuth();
   const [imageError, setImageError] = useState(false);
@@ -257,6 +257,146 @@ export default function ProductCard({ product }) {
   const handleAdd      = (e) => { e.stopPropagation(); if (!isUnavailable && canAdd) addItem(product); };
   const handleIncrease = (e) => { e.stopPropagation(); updateQty(product._id, qty + 1); };
   const handleDecrease = (e) => { e.stopPropagation(); updateQty(product._id, qty - 1); };
+
+  // ── LARGE variant — big hero-image card (premium showcase view) ──
+  if (variant === 'large') {
+    return (
+      <>
+        <div
+          onClick={() => setShowModal(true)}
+          className={`group bg-white rounded-[1.5rem] overflow-hidden cursor-pointer transition-all duration-300 ${!isUnavailable ? 'hover:-translate-y-1' : 'opacity-80'}`}
+          style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05), 0 12px 32px rgba(0,0,0,0.07)', border: '1px solid #f1f5f9' }}
+        >
+          {/* Big image */}
+          <div className="relative w-full overflow-hidden bg-gray-50" style={{ aspectRatio: '16/10' }}>
+            {!imageError && product.image ? (
+              <Image src={product.image} alt={product.name} fill
+                className={`object-cover transition-transform duration-700 ${!isUnavailable ? 'group-hover:scale-105' : 'grayscale'}`}
+                onError={() => setImageError(true)}
+                sizes="(max-width: 640px) 100vw, 50vw" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+                <ChefHat size={56} className="text-emerald-200" />
+              </div>
+            )}
+
+            {/* soft bottom gradient */}
+            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/25 to-transparent pointer-events-none" />
+
+            {/* Badges */}
+            <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+              {product.isBestseller && !isUnavailable && (
+                <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+                  <Star size={9} fill="currentColor" /> Bestseller
+                </span>
+              )}
+              {product.isChefSpecial && !isUnavailable && (
+                <span className="flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+                  <ChefHat size={9} /> Chef&apos;s Pick
+                </span>
+              )}
+            </div>
+
+            {/* Veg / non-veg */}
+            <div className="absolute top-3 right-3">
+              <div className={`w-[19px] h-[19px] rounded-[5px] flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+                <div className={`w-[9px] h-[9px] rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+              </div>
+            </div>
+
+            {isUnavailable && (
+              <div className="absolute inset-0 bg-white/55 flex items-center justify-center">
+                <div className="flex items-center gap-1.5 bg-white/95 backdrop-blur-sm px-3.5 py-2 rounded-full shadow border border-gray-200">
+                  <Clock size={13} className="text-gray-500" />
+                  <span className="text-xs font-semibold text-gray-600">Available {product.availableFrom}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="px-4 pt-3.5 pb-4">
+            <h3 className="font-extrabold text-gray-900 text-[18px] leading-tight tracking-tight line-clamp-1">{product.name}</h3>
+            {product.description && (
+              <p className="text-[13px] text-gray-400 leading-snug mt-1 line-clamp-2">{product.description}</p>
+            )}
+
+            {showMacros && (product.calories > 0 || product.protein > 0) && (
+              <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                {product.calories > 0 && (
+                  <span className="text-[11px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded-md font-semibold border border-orange-100">{product.calories} kcal</span>
+                )}
+                {product.protein > 0 && (
+                  <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-semibold border border-emerald-100">{product.protein}g protein</span>
+                )}
+                {product.carbs > 0 && (
+                  <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md font-semibold border border-amber-100">{product.carbs}g carbs</span>
+                )}
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="h-px bg-gray-100 my-3.5" />
+
+            {/* Price + Add */}
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-gray-900 text-[19px]">₹{displayPrice}</span>
+                  {isPlatinum && originalPrice !== displayPrice && (
+                    <span className="text-sm text-gray-400 line-through">₹{originalPrice}</span>
+                  )}
+                  {isCoffee && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none">
+                      <Coffee size={8} strokeWidth={2.5} /> 450–500ml
+                    </span>
+                  )}
+                </div>
+                {!isPlatinum && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <Crown size={9} className="text-orange-400" />
+                    <span className="text-[11px] text-orange-500 font-medium">₹{platinumPrice} with Platinum</span>
+                  </div>
+                )}
+              </div>
+
+              {!isUnavailable ? (
+                qty === 0 ? (
+                  canAdd ? (
+                    <button onClick={handleAdd}
+                      className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[13px] rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex-shrink-0">
+                      <Plus size={15} strokeWidth={3} /> Add
+                    </button>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setShowModal(true); }}
+                      className="flex items-center gap-1 px-3 py-2.5 bg-gray-100 border border-gray-200 text-gray-400 font-bold text-[11px] rounded-2xl flex-shrink-0 cursor-not-allowed">
+                      <ShoppingBag size={12} /> Bowl first
+                    </button>
+                  )
+                ) : (
+                  <div className="flex items-center gap-3 bg-emerald-600 rounded-2xl px-4 py-2.5 shadow-lg shadow-emerald-500/20 flex-shrink-0">
+                    <button onClick={handleDecrease} className="text-white active:scale-90 transition-transform">
+                      <Minus size={15} strokeWidth={3} />
+                    </button>
+                    <span className="text-white font-extrabold text-sm min-w-[16px] text-center">{qty}</span>
+                    <button onClick={handleIncrease} className="text-white active:scale-90 transition-transform">
+                      <Plus size={15} strokeWidth={3} />
+                    </button>
+                  </div>
+                )
+              ) : (
+                <span className="text-[11px] text-gray-400 font-medium bg-gray-50 border border-gray-200 px-3 py-2 rounded-xl flex-shrink-0">
+                  From {product.availableFrom}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {showModal && <ProductModal product={product} onClose={() => setShowModal(false)} />}
+      </>
+    );
+  }
 
   return (
     <>

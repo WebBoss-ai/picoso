@@ -239,7 +239,7 @@ export default function RedeemPage() {
             style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)', boxShadow: '0 12px 36px rgba(34,197,94,0.4)' }}>
             <CheckCircle2 size={36} className="text-white" />
           </div>
-          <h2 className="text-2xl font-black text-white mb-2">You're In! 🎉</h2>
+          <h2 className="text-2xl font-black text-white mb-2">You&apos;re In!</h2>
           <p className="text-white/60 text-sm mb-5 leading-relaxed">
             Your 5 free coffees are ready. They'll be added automatically when you order.
           </p>
@@ -290,7 +290,7 @@ export default function RedeemPage() {
         <div className="flex items-center gap-3 mb-8 flex-wrap justify-center">
           {[
             { icon: Coffee,   text: '1 free per order' },
-            { icon: Star,     text: '4.9★ rated' },
+            { icon: Star,     text: '4.9 rated' },
             { icon: Zap,      text: '30-min delivery' },
           ].map(({ icon: Icon, text }) => (
             <div key={text} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold text-white/60"
@@ -313,7 +313,7 @@ export default function RedeemPage() {
               <div className="mb-5">
                 <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl transition-all"
                   style={{ background: 'rgba(255,255,255,0.08)', border: `2px solid ${phone.length === 10 ? 'rgba(251,191,36,0.6)' : 'rgba(255,255,255,0.15)'}` }}>
-                  <span className="text-white/40 text-sm flex-shrink-0">🇮🇳 +91</span>
+                  <span className="text-white/40 text-sm flex-shrink-0">+91</span>
                   <div className="w-px h-4 bg-white/20 flex-shrink-0" />
                   <input
                     type="tel"

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Flame, Zap } from 'lucide-react';
+import { Flame, Zap, Salad, Check, X } from 'lucide-react';
 
 export default function BowlCard({ bowl }) {
   return (
@@ -14,7 +14,7 @@ export default function BowlCard({ bowl }) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <span className="text-6xl">🥗</span>
+              <Salad size={56} className="text-emerald-300" />
             </div>
           )}
         </div>
@@ -44,8 +44,10 @@ export default function BowlCard({ bowl }) {
             <span className="text-2xl font-bold text-emerald-600">
               ₹{bowl.price}
             </span>
-            <span className="text-sm text-gray-500">
-              {bowl.available ? '✓ Available' : '✗ Unavailable'}
+            <span className="text-sm text-gray-500 inline-flex items-center gap-1">
+              {bowl.available
+                ? <><Check size={14} className="text-emerald-500" /> Available</>
+                : <><X size={14} className="text-red-400" /> Unavailable</>}
             </span>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Instagram, Twitter, Facebook, Mail, Phone, Leaf, Crown, MapPin, ArrowRight } from 'lucide-react';
+import { Instagram, Twitter, Facebook, Mail, Phone, Leaf, Crown, MapPin, ArrowRight, Check } from 'lucide-react';
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -129,9 +129,9 @@ export default function Footer() {
             </Link>
 
             <ul className="space-y-2 text-xs text-gray-400">
-              <li className="flex items-center gap-1.5"><span className="text-brand-400">✓</span> 20% off every order</li>
-              <li className="flex items-center gap-1.5"><span className="text-brand-400">✓</span> Free delivery always</li>
-              <li className="flex items-center gap-1.5"><span className="text-brand-400">✓</span> Priority dispatch</li>
+              <li className="flex items-center gap-1.5"><Check size={12} className="text-brand-400" /> 20% off every order</li>
+              <li className="flex items-center gap-1.5"><Check size={12} className="text-brand-400" /> Free delivery always</li>
+              <li className="flex items-center gap-1.5"><Check size={12} className="text-brand-400" /> Priority dispatch</li>
             </ul>
           </div>
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { admin, bowls as bowlsApi } from '@/lib/api';
-import { Plus, Edit2, Trash2, Flame, Zap, Upload, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Flame, Zap, Upload, X, Salad } from 'lucide-react';
 
 export default function BowlsSection() {
   const [bowls, setBowls] = useState([]);
@@ -179,8 +179,8 @@ export default function BowlsSection() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-6xl">
-                    🥗
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Salad size={56} className="text-emerald-300" />
                   </div>
                 )}
                 <div className="absolute top-2 right-2 flex gap-2">

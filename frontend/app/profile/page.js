@@ -1,16 +1,17 @@
 'use client';
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   User, Package, MapPin, Crown, HelpCircle,
   Edit3, Save, Plus, Trash2, CheckCircle2, Home, Briefcase,
   Phone, Mail, Star, ChevronDown, ChevronUp, ArrowRight,
-  Clock, Loader2, X, Shield, Truck, Percent, Gift
+  Clock, Loader2, X, Shield, Truck, Percent, Gift,
+  LogOut, Activity, ChevronRight, Settings, Leaf,
 } from 'lucide-react';
 import { profile, orders, platinum } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import UserSubscriptionDashboard from '@/components/UserSubscriptionDashboard';
-import { Leaf } from 'lucide-react';
 
 const TABS = [
   { id: 'account',      label: 'Account',      icon: User      },
@@ -27,7 +28,7 @@ const FAQS = [
   { q: 'How do I pay via UPI?', a: 'During checkout, select "Pay via UPI", copy our UPI ID (8210823753@ybl), pay the amount from your UPI app, and place your order. Our team will verify and confirm your order.' },
   { q: 'Can I cancel my order?', a: 'Orders can be cancelled within 2 minutes of placing. Once confirmed, cancellation may not be possible. Please contact support immediately.' },
   { q: 'Are the meals really healthy?', a: 'Yes! Every PF Meal is crafted by our nutritionists with specific macro targets. High protein, balanced carbs, and healthy fats — no preservatives.' },
-  { q: 'How do I update my delivery address?', a: 'Go to Profile → Addresses to add, edit, or set a default delivery address. You can also add a new address during checkout.' },
+  { q: 'How do I update my delivery address?', a: 'Go to Profile > Addresses to add, edit, or set a default delivery address. You can also add a new address during checkout.' },
   { q: 'What if my order arrives late or incorrect?', a: 'Please contact us via the Support tab or call +91 82108 23753. We will resolve it immediately with a refund or replacement.' },
 ];
 
@@ -430,8 +431,8 @@ function PlatinumTab({ platinumData, onSubscribe }) {
                     <p className="font-bold text-gray-900 text-lg">8210823753@ybl</p>
                   </div>
                   <button onClick={copyUPI}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${copied ? 'bg-brand-100 text-brand-700' : 'bg-surface-200 text-gray-600 hover:bg-surface-300'}`}>
-                    {copied ? '✓ Copied' : 'Copy'}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${copied ? 'bg-brand-100 text-brand-700' : 'bg-surface-200 text-gray-600 hover:bg-surface-300'}`}>
+                    {copied ? <><CheckCircle2 size={12} /> Copied</> : 'Copy'}
                   </button>
                 </div>
               </div>
@@ -546,10 +547,10 @@ function SupportTab() {
   );
 }
 
-// ─── Main Profile Page ─────────────────────────────────────────────────────────
+// ─── Main Profile Page — premium dashboard hub ──────────────────────────────────
 function ProfileContent() {
   const searchParams = useSearchParams();
-  const { user: authUser, isLoggedIn, updateUser } = useAuth();
+  const { user: authUser, isLoggedIn, isAdmin, updateUser, logout } = useAuth();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'account');
@@ -585,41 +586,154 @@ function ProfileContent() {
     setPlatinumData(res.data.platinum);
   };
 
+  const handleLogout = () => { logout(); router.push('/'); };
+
   if (!isLoggedIn) return null;
 
-  return (
-    <div className="min-h-screen bg-surface-50">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h1>
+  const displayName = userData?.name || authUser?.name;
+  const phone = userData?.phone || authUser?.phone;
+  const activeTabMeta = TABS.find(t => t.id === activeTab) || TABS[0];
+  const isPlatinumActive = platinumData?.active;
 
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar */}
-          <div className="lg:w-56 flex-shrink-0">
-            <div className="card p-2">
+  return (
+    <div className="min-h-screen" style={{ background: '#f8f9fa' }}>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-28">
+
+        {/* ── Hero profile card ── */}
+        <div className="relative overflow-hidden rounded-[1.75rem] mb-5 sm:mb-6"
+          style={{ background: 'linear-gradient(135deg, #0f2d1a 0%, #14532d 55%, #166534 100%)' }}>
+          {/* ambient circles */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div className="absolute -right-8 -top-10 w-48 h-48 rounded-full opacity-[0.08]" style={{ background: '#86efac' }} />
+            <div className="absolute -left-6 -bottom-10 w-40 h-40 rounded-full opacity-[0.06]" style={{ background: '#6ee7b7' }} />
+          </div>
+
+          <div className="relative px-5 sm:px-7 py-5 sm:py-6">
+            <div className="flex items-center gap-4">
+              {/* Avatar */}
+              <div className="w-16 h-16 sm:w-[68px] sm:h-[68px] rounded-2xl bg-white/15 backdrop-blur-sm border border-white/20 flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-2xl font-extrabold">
+                  {displayName ? displayName[0].toUpperCase() : phone?.slice(-2)}
+                </span>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <h1 className="text-white text-[20px] sm:text-[22px] font-extrabold leading-tight truncate">
+                  {displayName || 'Welcome'}
+                </h1>
+                <p className="text-emerald-100/70 text-[13px] flex items-center gap-1.5 mt-0.5">
+                  <Phone size={12} /> +91 {phone}
+                </p>
+                {/* Membership pill */}
+                <div className="mt-2">
+                  {isPlatinumActive ? (
+                    <span className="inline-flex items-center gap-1 bg-amber-400 text-amber-950 text-[10px] font-extrabold px-2.5 py-1 rounded-full">
+                      <Crown size={10} fill="currentColor" /> Platinum Member
+                    </span>
+                  ) : (
+                    <button onClick={() => setActiveTab('platinum')}
+                      className="inline-flex items-center gap-1 bg-white/15 hover:bg-white/25 text-white text-[10px] font-bold px-2.5 py-1 rounded-full transition-colors border border-white/20">
+                      <Crown size={10} /> Upgrade to Platinum
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick shortcuts */}
+            <div className="grid grid-cols-2 gap-2.5 mt-5">
+              <Link href="/my-circle"
+                className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 border border-white/15 rounded-2xl px-3.5 py-3 transition-colors">
+                <div className="w-9 h-9 rounded-xl bg-emerald-400/20 flex items-center justify-center flex-shrink-0">
+                  <Activity size={17} className="text-emerald-200" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-white text-[13px] font-bold leading-none">Fitness Circle</p>
+                  <p className="text-emerald-100/60 text-[10px] mt-1">Your rewards & friends</p>
+                </div>
+              </Link>
+              <button onClick={() => setActiveTab('orders')}
+                className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 border border-white/15 rounded-2xl px-3.5 py-3 transition-colors text-left">
+                <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
+                  <Package size={17} className="text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-white text-[13px] font-bold leading-none">My Orders</p>
+                  <p className="text-emerald-100/60 text-[10px] mt-1">Track & reorder</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-5 lg:gap-6">
+          {/* ── Sidebar (desktop) / Tab strip (mobile) ── */}
+          <div className="lg:w-60 flex-shrink-0">
+            {/* Mobile: horizontal pill strip */}
+            <div className="lg:hidden flex items-center gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4 pb-1">
               {TABS.map(tab => {
                 const Icon = tab.icon;
+                const on = activeTab === tab.id;
                 return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={activeTab === tab.id ? 'sidebar-item-active w-full' : 'sidebar-item w-full'}
-                  >
-                    <Icon size={16} />
-                    <span>{tab.label}</span>
-                    {tab.id === 'platinum' && platinumData?.active && (
-                      <span className="ml-auto w-2 h-2 rounded-full bg-platinum-400" />
-                    )}
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold transition-all border ${
+                      on ? 'bg-gray-900 text-white border-gray-900 shadow-sm' : 'bg-white text-gray-500 border-gray-200'
+                    }`}>
+                    <Icon size={13} />
+                    {tab.label}
+                    {tab.id === 'platinum' && isPlatinumActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
                   </button>
                 );
               })}
             </div>
+
+            {/* Desktop: vertical nav */}
+            <div className="hidden lg:block bg-white rounded-2xl p-2" style={{ border: '1px solid #f1f5f9', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+              {TABS.map(tab => {
+                const Icon = tab.icon;
+                const on = activeTab === tab.id;
+                return (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all mb-0.5 ${
+                      on ? 'bg-emerald-50 text-emerald-700' : 'text-gray-600 hover:bg-gray-50'
+                    }`}>
+                    <Icon size={16} className={on ? 'text-emerald-600' : 'text-gray-400'} />
+                    <span>{tab.label}</span>
+                    {tab.id === 'platinum' && isPlatinumActive && <span className="ml-auto w-2 h-2 rounded-full bg-amber-400" />}
+                    {on && <ChevronRight size={14} className="ml-auto text-emerald-400" />}
+                  </button>
+                );
+              })}
+
+              <div className="h-px bg-gray-100 my-2 mx-2" />
+
+              {isAdmin && (
+                <Link href="/admin"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+                  <Settings size={16} className="text-gray-400" />
+                  <span>Admin Dashboard</span>
+                  <ChevronRight size={14} className="ml-auto text-gray-300" />
+                </Link>
+              )}
+              <button onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors">
+                <LogOut size={16} />
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
 
-          {/* Content */}
+          {/* ── Content ── */}
           <div className="flex-1 min-w-0">
+            {/* Section heading */}
+            <div className="flex items-center gap-2.5 mb-4">
+              <activeTabMeta.icon size={18} className="text-emerald-600" />
+              <h2 className="text-[17px] font-extrabold text-gray-900 tracking-tight">{activeTabMeta.label}</h2>
+            </div>
+
             {loading ? (
               <div className="flex items-center justify-center py-16">
-                <Loader2 size={24} className="animate-spin text-brand-500" />
+                <Loader2 size={24} className="animate-spin text-emerald-500" />
               </div>
             ) : (
               <>
@@ -627,15 +741,29 @@ function ProfileContent() {
                 {activeTab === 'orders' && <OrdersTab />}
                 {activeTab === 'addresses' && <AddressesTab userData={userData} onRefresh={handleRefreshAddresses} />}
                 {activeTab === 'platinum' && <PlatinumTab platinumData={platinumData} onSubscribe={handleSubscribePlatinum} />}
-                {activeTab === 'subscription' && (
-                  <div>
-                    <h2 className="text-base font-extrabold text-gray-900 mb-4">Healthy Subscription</h2>
-                    <UserSubscriptionDashboard />
-                  </div>
-                )}
+                {activeTab === 'subscription' && <UserSubscriptionDashboard />}
                 {activeTab === 'support' && <SupportTab />}
               </>
             )}
+
+            {/* Mobile: admin + sign out actions */}
+            <div className="lg:hidden mt-6 space-y-2.5">
+              {isAdmin && (
+                <Link href="/admin"
+                  className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3.5 text-sm font-semibold text-gray-700 transition-colors"
+                  style={{ border: '1px solid #f1f5f9' }}>
+                  <Settings size={17} className="text-gray-400" />
+                  <span>Admin Dashboard</span>
+                  <ChevronRight size={15} className="ml-auto text-gray-300" />
+                </Link>
+              )}
+              <button onClick={handleLogout}
+                className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3.5 text-sm font-bold text-red-600 transition-colors"
+                style={{ border: '1px solid #fee2e2' }}>
+                <LogOut size={17} />
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

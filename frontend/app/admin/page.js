@@ -495,10 +495,10 @@ function OverviewSection({ stats, onRefresh }) {
             <Users size={15} className="text-gray-300" />
           </div>
           <div className="space-y-3">
-            <StatMini label="Total Users" value={s.totalUsers ?? 0} icon="👥" />
-            <StatMini label="New This Week" value={s.newUsersWeek ?? 0} icon="🆕" />
-            <StatMini label="Platinum Members" value={s.activePlatinum ?? 0} icon="👑" sub={`${s.platinumRate ?? 0}% of users`} />
-            <StatMini label="Avg Order Value" value={s.avgOrderValue ? `₹${s.avgOrderValue}` : '₹0'} icon="💰" />
+            <StatMini label="Total Users" value={s.totalUsers ?? 0} icon={<Users size={15} className="text-gray-500" />} />
+            <StatMini label="New This Week" value={s.newUsersWeek ?? 0} icon={<TrendingUp size={15} className="text-emerald-500" />} />
+            <StatMini label="Platinum Members" value={s.activePlatinum ?? 0} icon={<Crown size={15} className="text-amber-500" />} sub={`${s.platinumRate ?? 0}% of users`} />
+            <StatMini label="Avg Order Value" value={s.avgOrderValue ? `₹${s.avgOrderValue}` : '₹0'} icon={<IndianRupee size={15} className="text-green-600" />} />
             <div className="pt-2 border-t border-surface-100 space-y-2">
               <ProgressBar label="Delivery Rate" value={s.deliveryRate ?? 0} max={100} color="#22c55e"
                 subLabel={`${s.deliveryRate ?? 0}%`} />
@@ -529,7 +529,7 @@ function StatMini({ label, value, icon, sub }) {
   return (
     <div className="flex items-center justify-between py-1">
       <div className="flex items-center gap-2">
-        <span className="text-base">{icon}</span>
+        <span className="flex items-center justify-center w-5">{icon}</span>
         <span className="text-xs text-gray-600">{label}</span>
       </div>
       <div className="text-right">
@@ -4772,7 +4772,7 @@ function ReferralsSection() {
                         </div>
                         <div className="text-right">
                           {f.rewardEarned
-                            ? <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Reward ✓</span>
+                            ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full"><CheckCircle2 size={10} /> Reward</span>
                             : <span className="text-[10px] text-gray-300">No order yet</span>
                           }
                         </div>
