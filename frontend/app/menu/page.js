@@ -5,11 +5,13 @@ import {
   Search, X, Leaf, Star, ChefHat, Clock,
   Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee,
   LayoutGrid, List, Heart, Loader2, CheckCircle2, Phone, Salad,
+  Utensils, BookOpen, ChevronUp,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
+import { useCart } from '@/context/CartContext';
 
 /* ── Promo banners (commented out — replaced by Helping Hands banner) ─────────
 const BANNERS = [
@@ -317,6 +319,113 @@ function SubscriptionCard({ onActivate }) {
   );
 }
 
+// ── "Explore menu" decorative header ─────────────────────────────────────────
+function ExploreMenuHeader({ itemCount, catCount }) {
+  return (
+    <div className="relative overflow-hidden rounded-[22px] mb-5"
+      style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 40%, #ffffff 100%)' }}>
+      <div className="absolute inset-0"
+        style={{ background: 'radial-gradient(120% 90% at 50% 0%, rgba(34,197,94,0.16) 0%, rgba(255,255,255,0) 60%)' }} />
+      {/* soft leaves */}
+      <Leaf size={70} className="absolute -left-3 -top-2 text-emerald-200/40 -rotate-12" />
+      <Leaf size={54} className="absolute right-2 bottom-1 text-emerald-200/40 rotate-12" />
+
+      <div className="relative flex flex-col items-center text-center px-5 pt-7 pb-6">
+        <div className="w-11 h-11 rounded-2xl bg-white shadow-sm border border-emerald-100 flex items-center justify-center mb-2.5">
+          <BookOpen size={20} className="text-emerald-600" />
+        </div>
+        <h2 className="text-[26px] font-black tracking-tight leading-none">
+          <span className="text-gray-400">explore </span>
+          <span className="text-emerald-600" style={{ fontStyle: 'italic' }}>menu</span>
+        </h2>
+        <p className="text-[11px] text-gray-400 font-medium mt-2">
+          {itemCount} dishes · {catCount} categories · cooked fresh
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Floating "Menu" pill button ──────────────────────────────────────────────
+function FloatingMenuButton({ onClick, cartActive }) {
+  return (
+    <button
+      onClick={onClick}
+      className="fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 pl-4 pr-5 py-3 rounded-full bg-brand-500 text-white font-extrabold text-[14px] shadow-xl shadow-emerald-600/30 active:scale-95 transition-all"
+      style={{ bottom: cartActive ? 92 : 24 }}
+      aria-label="Open menu categories"
+    >
+      <Utensils size={17} strokeWidth={2.5} />
+      Menu
+    </button>
+  );
+}
+
+// ── Back-to-top pill ─────────────────────────────────────────────────────────
+function BackToTop({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-gray-900/90 backdrop-blur-sm text-white font-bold text-[13px] shadow-xl active:scale-95 transition-all"
+    >
+      <ChevronUp size={16} strokeWidth={2.5} /> Back to top
+    </button>
+  );
+}
+
+// ── Category menu overlay (list of categories with counts) ───────────────────
+function CategoryMenuOverlay({ cats, categorizedItems, activeCategory, allSelected, onPick, onClose, onBackToTop }) {
+  const countFor = (id) => categorizedItems.find(c => c.id === id)?.items.length ?? 0;
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6"
+      style={{ background: 'rgba(17,24,39,0.35)', backdropFilter: 'blur(2px)' }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+
+      {/* Back to top */}
+      <div className="absolute top-14 left-1/2 -translate-x-1/2">
+        <BackToTop onClick={onBackToTop} />
+      </div>
+
+      {/* Category list card */}
+      <div className="w-full max-w-xs bg-white rounded-3xl shadow-2xl overflow-hidden"
+        style={{ animation: 'slideUp 0.28s cubic-bezier(0.32,0.72,0,1)' }}>
+        <div className="max-h-[58vh] overflow-y-auto py-1.5">
+          {cats.map(cat => {
+            const isActive = !allSelected && activeCategory === cat.id;
+            return (
+              <button key={cat.id} onClick={() => onPick(cat.id)}
+                className="w-full flex items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-gray-50">
+                <span className={`w-2.5 flex-shrink-0 ${isActive ? 'text-emerald-500' : 'text-transparent'}`}>
+                  <ChevronRight size={13} strokeWidth={3} />
+                </span>
+                <span className={`flex-1 text-[15px] ${isActive ? 'font-extrabold text-emerald-600' : 'font-semibold text-gray-800'}`}>
+                  {cat.label}
+                </span>
+                <span className={`text-[14px] tabular-nums ${isActive ? 'font-extrabold text-emerald-600' : 'font-semibold text-gray-400'}`}>
+                  {countFor(cat.id)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Close */}
+      <button onClick={onClose}
+        className="mt-5 w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-lg active:scale-90 transition-all">
+        <X size={22} strokeWidth={2.5} />
+      </button>
+
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function MenuPage() {
   const [cats, setCats]             = useState([]);
@@ -331,10 +440,13 @@ export default function MenuPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [subModalOpen, setSubModalOpen] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [catMenuOpen, setCatMenuOpen] = useState(false);
+  const [showBackTop, setShowBackTop] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'large'
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
+  const { cartCount } = useCart();
 
   // Load categories
   useEffect(() => {
@@ -357,7 +469,7 @@ export default function MenuPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Scroll tracker — update active tab as user scrolls
+  // Scroll tracker — update active tab as user scrolls + toggle back-to-top
   useEffect(() => {
     if (!cats.length) return;
     const handleScroll = () => {
@@ -369,6 +481,7 @@ export default function MenuPage() {
       }
       setAllSelected(false);
       setActive(prev => prev !== current ? current : prev);
+      setShowBackTop(window.scrollY > 500);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -384,9 +497,15 @@ export default function MenuPage() {
     }
     setActive(catId);
     setAllSelected(false);
-    // scroll the tab into view in the horizontal strip
+    setCatMenuOpen(false);
+    // scroll the tab into view in the horizontal strip (if present)
     const tab = tabsRef.current?.querySelector(`[data-tab="${catId}"]`);
     tab?.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' });
+  };
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setCatMenuOpen(false);
   };
 
   // Global filter + sort
@@ -416,135 +535,59 @@ export default function MenuPage() {
   const totalFiltered = filtered.length;
 
   return (
-    <div className="min-h-screen" style={{ background: '#f8f9fa' }}>
+    <div className="min-h-screen bg-white">
 
       {/* ── Sticky top bar ───────────────────────────────────────── */}
       <div className="sticky top-0 z-30 bg-white" style={{ boxShadow: '0 1px 0 0 #eef0f3, 0 2px 12px rgba(0,0,0,0.04)' }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
 
-          {/* ── Row 1: Title + Search ── */}
-          {!searchOpen ? (
-            <div className="flex items-center gap-3 pt-3.5 pb-2.5">
-              <div className="flex-1">
-                <h1 className="text-[17px] font-extrabold text-gray-900 leading-none tracking-tight">Menu</h1>
-                <p className="text-[11px] text-gray-400 mt-0.5 font-medium">
-                  {loading ? 'Loading…' : `${totalFiltered} items · ${cats.length} categories`}
-                </p>
-              </div>
-
-              {/* Mobile search toggle */}
-              <button onClick={() => setSearchOpen(true)}
-                className="sm:hidden w-9 h-9 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center text-gray-500 hover:text-emerald-600 transition-colors">
-                <Search size={15} />
-              </button>
-
-              {/* Desktop search */}
-              <div className="hidden sm:flex relative">
-                <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input type="text"
-                  className="w-52 pl-9 pr-8 py-2 text-[13px] border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:bg-white transition-all placeholder-gray-400"
-                  placeholder="Search anything…"
-                  value={search} onChange={e => setSearch(e.target.value)} />
-                {search && (
-                  <button onClick={() => setSearch('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-
-              {/* View-mode toggle (right of search) */}
-              <div className="flex items-center bg-gray-100 rounded-xl p-0.5 flex-shrink-0">
-                <button onClick={() => setViewMode('list')}
-                  aria-label="Compact view"
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'list' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
-                  <List size={16} />
+          {/* ── Row 1: Search + Veg toggle + View toggle ── */}
+          <div className="flex items-center gap-2 pt-3 pb-2.5">
+            {/* Search field */}
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input ref={searchRef} type="text"
+                className="w-full pl-10 pr-9 py-2.5 text-[14px] border border-gray-200 rounded-2xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300 focus:bg-white transition-all placeholder-gray-400"
+                placeholder="Search for dishes…"
+                value={search} onChange={e => setSearch(e.target.value)} />
+              {search && (
+                <button onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <X size={14} />
                 </button>
-                <button onClick={() => setViewMode('large')}
-                  aria-label="Large image view"
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'large' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
-                  <LayoutGrid size={16} />
-                </button>
-              </div>
+              )}
             </div>
-          ) : (
-            /* Mobile search open */
-            <div className="flex items-center gap-2 py-3 sm:hidden">
-              <div className="relative flex-1">
-                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input ref={searchRef} type="text"
-                  className="w-full pl-9 pr-4 py-2.5 text-[14px] border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:bg-white transition-all"
-                  placeholder="Search items…"
-                  value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <button onClick={() => { setSearchOpen(false); setSearch(''); }}
-                className="text-[13px] font-bold text-emerald-600 px-1">
-                Cancel
-              </button>
-            </div>
-          )}
 
-          {/* ── Row 2: Category tabs ── */}
-          <div ref={tabsRef}
-            className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-2.5"
-            style={{ WebkitOverflowScrolling: 'touch' }}>
-
-            {/* All tab */}
+            {/* VEG toggle */}
             <button
-              data-tab="all"
-              onClick={() => { setFilter('all'); setAllSelected(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 ${
-                allSelected
-                  ? 'bg-gray-900 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}
+              onClick={() => setFilter(activeFilter === 'veg' ? 'all' : 'veg')}
+              className="flex items-center gap-1.5 pl-2.5 pr-2 py-2 rounded-2xl border border-gray-200 bg-gray-50 flex-shrink-0 active:scale-95 transition-all"
+              aria-label="Toggle pure veg"
             >
-              <LayoutGrid size={11} />
-              All
+              <span className={`text-[11px] font-extrabold tracking-wide ${activeFilter === 'veg' ? 'text-emerald-600' : 'text-gray-400'}`}>VEG</span>
+              <span className={`relative w-8 h-[18px] rounded-full transition-colors ${activeFilter === 'veg' ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                <span className={`absolute top-[2px] w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-all ${activeFilter === 'veg' ? 'left-[16px]' : 'left-[2px]'}`} />
+              </span>
             </button>
 
-            {/* Category tabs */}
-            {catsLoading
-              ? Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="h-8 w-20 shimmer rounded-full flex-shrink-0" />
-                ))
-              : cats.map(cat => {
-                  const t = CATEGORY_THEMES[cat.id] || CATEGORY_THEMES['pf-meals'];
-                  const isActive = !allSelected && activeCategory === cat.id;
-                  const isBev = cat.id === 'pf-beverages';
-                  const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
-                  return (
-                    <button
-                      key={cat.id}
-                      data-tab={cat.id}
-                      onClick={() => scrollToSection(cat.id)}
-                      className={`flex-shrink-0 relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 ${
-                        isActive
-                          ? `${t.bg} text-white shadow-sm`
-                          : `${t.light} ${t.text} hover:opacity-80`
-                      }`}
-                    >
-                      {Illustration && (
-                        <span className="flex-shrink-0">
-                          <Illustration className="w-3 h-3" color={isActive ? 'white' : t.color} />
-                        </span>
-                      )}
-                      {cat.label}
-                      {isBev && (
-                        <span className="flex-shrink-0 bg-amber-400 text-amber-900 text-[7px] font-extrabold px-1 py-0.5 rounded-full leading-none">
-                          NEW
-                        </span>
-                      )}
-                    </button>
-                  );
-                })
-            }
+            {/* View-mode toggle */}
+            <div className="hidden sm:flex items-center bg-gray-100 rounded-xl p-0.5 flex-shrink-0">
+              <button onClick={() => setViewMode('list')}
+                aria-label="Compact view"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'list' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                <List size={16} />
+              </button>
+              <button onClick={() => setViewMode('large')}
+                aria-label="Large image view"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'large' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                <LayoutGrid size={16} />
+              </button>
+            </div>
           </div>
 
-          {/* ── Row 3: Filter pills ── */}
+          {/* ── Row 2: Filter pills ── */}
           <div className="flex items-center gap-1.5 pb-3 overflow-x-auto scrollbar-hide"
             style={{ WebkitOverflowScrolling: 'touch' }}>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex-shrink-0 pr-0.5">Filter</span>
             {[
               { id: 'bestseller', label: 'Bestseller',   Icon: Star },
               { id: 'chef',       label: "Chef's Pick",  Icon: ChefHat },
@@ -566,10 +609,13 @@ export default function MenuPage() {
             })}
             {(activeFilter !== 'all' || search) && (
               <button onClick={() => { setSearch(''); setFilter('all'); }}
-                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 transition-colors">
+                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 transition-colors">
                 <X size={10} /> Clear
               </button>
             )}
+            <span className="ml-auto flex-shrink-0 text-[11px] font-semibold text-gray-400 pl-2">
+              {loading ? '…' : `${totalFiltered} items`}
+            </span>
           </div>
         </div>
       </div>
@@ -577,8 +623,11 @@ export default function MenuPage() {
       {/* ── Content area ─────────────────────────────────────────── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 pb-28">
 
+        {/* Explore menu header */}
+        <ExploreMenuHeader itemCount={loading ? '—' : totalFiltered} catCount={cats.length} />
+
         {/* Helping Hands banner */}
-        <div className="mb-6">
+        <div className="mb-7">
           <HelpingHandsBanner onGetLink={() => setLinkModalOpen(true)} />
         </div>
 
@@ -587,16 +636,21 @@ export default function MenuPage() {
           <div className="space-y-8">
             {Array.from({ length: 2 }).map((_, si) => (
               <div key={si} className="space-y-3">
-                <div className="h-5 shimmer rounded-lg w-28" />
-                <div className="space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="bg-white rounded-2xl overflow-hidden flex" style={{ height: 130, border: '1px solid #f1f5f9' }}>
-                      <div className="w-[130px] shimmer flex-shrink-0 m-3 rounded-xl" />
-                      <div className="flex-1 p-4 space-y-2.5">
-                        <div className="h-4 shimmer rounded w-3/4" />
+                <div className="flex items-center gap-2.5 mb-1">
+                  <div className="w-9 h-9 shimmer rounded-full" />
+                  <div className="space-y-1.5">
+                    <div className="h-4 shimmer rounded w-28" />
+                    <div className="h-3 shimmer rounded w-16" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-3 gap-y-6">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i}>
+                      <div className="w-full shimmer rounded-[18px]" style={{ aspectRatio: '1 / 1' }} />
+                      <div className="pt-4 space-y-2">
+                        <div className="h-3.5 shimmer rounded w-3/4" />
                         <div className="h-3 shimmer rounded w-full" />
-                        <div className="h-3 shimmer rounded w-1/2" />
-                        <div className="h-8 shimmer rounded w-1/3 mt-2" />
+                        <div className="h-4 shimmer rounded w-1/3 mt-1" />
                       </div>
                     </div>
                   ))}
@@ -616,21 +670,21 @@ export default function MenuPage() {
                   <div ref={el => { sectionRefs.current[cat.id] = el; }}>
 
                     {/* ── Section header ── */}
-                    <div className="flex items-center gap-2.5 mb-4">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${theme.light}`}>
-                        {Illustration && <Illustration className="w-4.5 h-4.5" color={theme.color} />}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${theme.light}`}>
+                        {Illustration && <Illustration className="w-5 h-5" color={theme.color} />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">{cat.label}</h2>
-                        {cat.description && (
-                          <p className="text-[11px] text-gray-400 mt-0 truncate">{cat.description}</p>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-[17px] font-extrabold text-gray-900 tracking-tight">{cat.label}</h2>
+                          {isBev && (
+                            <span className="bg-amber-400 text-amber-900 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full leading-none uppercase">New</span>
+                          )}
+                        </div>
+                        <p className="text-[12px] text-gray-400 mt-0.5 font-medium">
+                          {cat.items.length} {cat.items.length === 1 ? 'item' : 'items'}
+                        </p>
                       </div>
-                      {cat.items.length > 0 && (
-                        <span className="text-[11px] font-semibold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-lg flex-shrink-0">
-                          {cat.items.length}
-                        </span>
-                      )}
                     </div>
 
                     {/* ── Products or empty state ── */}
@@ -653,7 +707,7 @@ export default function MenuPage() {
                       <div className={
                         viewMode === 'large'
                           ? 'grid grid-cols-1 sm:grid-cols-2 gap-4'
-                          : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'
+                          : 'grid grid-cols-2 lg:grid-cols-3 gap-x-3 gap-y-6'
                       }>
                         {cat.items.map(product => (
                           <ProductCard key={product._id} product={product} variant={viewMode} />
@@ -708,6 +762,31 @@ export default function MenuPage() {
 
       {/* Get referral link modal */}
       {linkModalOpen && <GetLinkModal onClose={() => setLinkModalOpen(false)} />}
+
+      {/* Standalone back-to-top (when scrolled & overlay closed) */}
+      {showBackTop && !catMenuOpen && (
+        <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ top: 130 }}>
+          <BackToTop onClick={scrollToTop} />
+        </div>
+      )}
+
+      {/* Floating Menu button */}
+      {!catMenuOpen && !loading && cats.length > 0 && (
+        <FloatingMenuButton onClick={() => setCatMenuOpen(true)} cartActive={cartCount > 0} />
+      )}
+
+      {/* Category overlay */}
+      {catMenuOpen && (
+        <CategoryMenuOverlay
+          cats={cats}
+          categorizedItems={categorizedItems}
+          activeCategory={activeCategory}
+          allSelected={allSelected}
+          onPick={scrollToSection}
+          onClose={() => setCatMenuOpen(false)}
+          onBackToTop={scrollToTop}
+        />
+      )}
     </div>
   );
 }
