@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Header from './Header';
 import Footer from './Footer';
@@ -23,6 +23,13 @@ export default function ClientShell({ children }) {
     setAuthIntent(intent);
     setShowAuth(true);
   };
+
+  // Allow any component (e.g. the menu combo billboard) to request auth globally
+  useEffect(() => {
+    const handler = (e) => handleAuthRequired(e?.detail ?? null);
+    window.addEventListener('picoso:require-auth', handler);
+    return () => window.removeEventListener('picoso:require-auth', handler);
+  }, []);
 
   const handleAuthSuccess = (user) => {
     setShowAuth(false);

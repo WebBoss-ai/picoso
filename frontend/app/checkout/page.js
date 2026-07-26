@@ -582,7 +582,7 @@ export default function CheckoutPage() {
     try {
       const orderItems = items.map(item => ({
         type: 'bowl',
-        bowlId: item.isCampaignCoffee || item.isOfferCoffee ? undefined : item._id,
+        bowlId: item.isCampaignCoffee || item.isOfferCoffee || item.isCombo ? undefined : item._id,
         name: item.name,
         image: item.image,
         quantity: item.quantity,

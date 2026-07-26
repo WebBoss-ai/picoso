@@ -124,6 +124,19 @@ export function CartProvider({ children }) {
     setIsOpen(true);
   }, [getCoffeeAddon]);
 
+  // ── addCombo ─────────────────────────────────────────────────────────────
+  // Adds a special combo meal as a single line item WITHOUT triggering the
+  // automatic coffee add-on (the combo already includes its own drink).
+  const addCombo = useCallback((combo, qty = 1) => {
+    setItems(prev => {
+      const existing = prev.find(i => i._id === combo._id);
+      if (existing) {
+        return prev.map(i => i._id === combo._id ? { ...i, quantity: i.quantity + qty } : i);
+      }
+      return [...prev, { ...combo, quantity: qty }];
+    });
+  }, []);
+
   // ── removeItem ─────────────────────────────────────────────────────────────
   const removeItem = useCallback((id) => {
     setItems(prev => {
@@ -180,7 +193,7 @@ export function CartProvider({ children }) {
 
   return (
     <CartContext.Provider value={{
-      items, addItem, removeItem, updateQty, clearCart, registerCapp, updateCampaign,
+      items, addItem, addCombo, removeItem, updateQty, clearCart, registerCapp, updateCampaign,
       cartCount, cartTotal, isOpen, setIsOpen, activeCampaign,
     }}>
       {children}

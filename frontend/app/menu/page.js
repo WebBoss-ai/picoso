@@ -1,17 +1,31 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   Search, X, Leaf, Star, ChefHat, Clock,
   Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee,
   LayoutGrid, List, Heart, Loader2, CheckCircle2, Phone, Salad,
-  Utensils, BookOpen, ChevronUp,
+  Utensils, BookOpen, ChevronUp, Sparkles, Gift, Plus, Share2, ShoppingBag,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
-import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
+import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES, WrapIllustration } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
 import { useCart } from '@/context/CartContext';
+import { useAuth } from '@/context/AuthContext';
+
+// ── Combo of the day (billboard) ─────────────────────────────────────────────
+const COMBO_MEAL = {
+  _id: 'combo-paneer-lababdar-mango-lassi',
+  name: 'Paneer Lababdar Rice Bowl + Mango Lassi',
+  price: 249,
+  image: '/combo-meal.png',
+  pfCategory: 'pf-meals',
+  isVeg: true,
+  isCombo: true,
+};
 
 /* ── Promo banners (commented out — replaced by Helping Hands banner) ─────────
 const BANNERS = [
@@ -186,58 +200,72 @@ function GetLinkModal({ onClose }) {
   );
 }
 
-// ── Helping Hands Banner (single, replaces carousel) ─────────────────────────
+// ── Helping Hands Banner — sleek, minimal "free wrap" referral card ──────────
 function HelpingHandsBanner({ onGetLink }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl select-none"
-      style={{ background: 'linear-gradient(135deg, #0f2d1a 0%, #14532d 50%, #166534 100%)' }}>
+    <div className="relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_-16px_rgba(0,0,0,0.12)] select-none">
+      <div className="flex items-center gap-4 p-4 sm:px-5 sm:py-4">
+        {/* Emblem */}
+        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
+          <Gift size={20} className="text-emerald-600" strokeWidth={2} />
+        </div>
 
-      {/* Ambient circles */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -right-10 -top-10 w-52 h-52 rounded-full opacity-[0.07]" style={{ background: '#86efac' }} />
-        <div className="absolute -left-6 -bottom-6 w-40 h-40 rounded-full opacity-[0.05]" style={{ background: '#6ee7b7' }} />
-        <div className="absolute right-20 bottom-4 w-20 h-20 rounded-full opacity-[0.04]" style={{ background: '#d1fae5' }} />
-      </div>
-
-      {/* Wrap visual on the right */}
-      <div className="absolute right-0 top-0 bottom-0 w-32 sm:w-36 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-l from-transparent to-[#14532d]/60 z-10" />
-        <div className="absolute right-0 top-0 bottom-0 w-full flex items-center justify-center">
-          <div className="relative">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400/25 to-teal-300/20 border border-emerald-400/25 flex items-center justify-center">
-              <Salad size={40} className="text-emerald-200" strokeWidth={1.75} />
-            </div>
-            <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-amber-400 flex items-center justify-center shadow-lg">
-              <Star size={13} className="text-amber-900" fill="currentColor" />
-            </div>
+        {/* Copy */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Helping Hands</span>
+            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Reward</span>
           </div>
+          <p className="text-[15px] sm:text-[16px] font-bold text-gray-900 leading-snug mt-0.5">
+            Refer a friend, get a <span className="text-emerald-600">free wrap</span>
+          </p>
+          <p className="hidden sm:block text-[12px] text-gray-400 leading-snug mt-0.5">
+            Share your link — the moment they order, your wrap is on us.
+          </p>
         </div>
-      </div>
-
-      <div className="relative px-5 py-5 pr-32 sm:pr-36">
-        {/* Tag */}
-        <div className="flex items-center gap-1.5 mb-2.5">
-          <Heart size={10} className="text-emerald-300 fill-emerald-300" />
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-emerald-300/80">Helping Hands</span>
-        </div>
-
-        {/* Headline */}
-        <h3 className="text-white font-extrabold text-[19px] leading-snug mb-1.5">
-          Know someone who&apos;s<br />into healthy eating?
-        </h3>
-        <p className="text-white/50 text-[11px] leading-relaxed mb-4 max-w-[190px]">
-          Share your personal link. When they order, you get a reward.
-        </p>
 
         {/* CTA */}
         <button
           onClick={onGetLink}
-          className="inline-flex items-center gap-2 bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-emerald-950 font-extrabold text-xs px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-900/30"
+          className="group flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-gray-900 hover:bg-gray-800 active:scale-95 text-white font-semibold text-[13px] px-4 py-2.5 transition-all"
         >
-          <Heart size={11} className="fill-emerald-950" />
-          Get Link
+          Get link
+          <ArrowRight size={14} strokeWidth={2.5} className="transition-transform group-hover:translate-x-0.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Combo Billboard — designed artwork + real clickable CTA overlay ──────────
+function ComboBillboard({ onGrab }) {
+  return (
+    <div className="relative w-full select-none">
+      <Image
+        src="/combo-billboard.png"
+        alt="Combo of the Day — Paneer Lababdar paired with Mango Lassi, all-in-one at ₹249"
+        width={1024}
+        height={528}
+        priority
+        quality={100}
+        className="w-full h-auto"
+        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 640px, 900px"
+      />
+
+      {/* Real working button — sits exactly over the artwork's reserved white pill */}
+      <button
+        onClick={onGrab}
+        aria-label="Grab this combo — Paneer Lababdar with Mango Lassi for ₹249"
+        className="absolute flex items-center justify-center gap-[0.6em] rounded-full font-extrabold tracking-tight transition-all active:scale-[0.97] hover:bg-slate-900/[0.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        style={{
+          left: '5.3%', top: '78%', width: '41.5%', height: '12.6%',
+          color: '#0b2e4f',
+          fontSize: 'clamp(11px, 2.4vw, 17px)',
+        }}
+      >
+        Grab This Combo
+        <ArrowRight strokeWidth={2.75} style={{ width: '1.1em', height: '1.1em' }} />
+      </button>
     </div>
   );
 }
@@ -446,7 +474,19 @@ export default function MenuPage() {
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
-  const { cartCount } = useCart();
+  const { cartCount, addCombo } = useCart();
+  const { isLoggedIn } = useAuth();
+  const router = useRouter();
+
+  // One-click combo → add to cart, then straight to checkout (auth-gated)
+  const handleGrabCombo = () => {
+    addCombo(COMBO_MEAL);
+    if (isLoggedIn) {
+      router.push('/checkout');
+    } else {
+      window.dispatchEvent(new CustomEvent('picoso:require-auth', { detail: 'checkout' }));
+    }
+  };
 
   // Load categories
   useEffect(() => {
@@ -626,9 +666,9 @@ export default function MenuPage() {
         {/* Explore menu header */}
         <ExploreMenuHeader itemCount={loading ? '—' : totalFiltered} catCount={cats.length} />
 
-        {/* Helping Hands banner */}
-        <div className="mb-7">
-          <HelpingHandsBanner onGetLink={() => setLinkModalOpen(true)} />
+        {/* Combo of the day billboard */}
+        <div className="mb-6">
+          <ComboBillboard onGrab={handleGrabCombo} />
         </div>
 
         {/* ── Category sections ─────────────────────────────────── */}
@@ -662,6 +702,7 @@ export default function MenuPage() {
           <div className="space-y-10">
             {categorizedItems.map((cat) => {
               const isBev = cat.id === 'pf-beverages';
+              const isMeals = cat.id === 'pf-meals';
               const theme = CATEGORY_THEMES[cat.id] || CATEGORY_THEMES['pf-meals'];
               const Illustration = CATEGORY_ILLUSTRATIONS[cat.id];
 
@@ -715,6 +756,13 @@ export default function MenuPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Helping Hands (free wrap) — right after the bowls section */}
+                  {isMeals && (
+                    <div className="mt-7">
+                      <HelpingHandsBanner onGetLink={() => setLinkModalOpen(true)} />
+                    </div>
+                  )}
 
                   {/* Healthy Subscription card — only after Cold Drinks */}
                   {isBev && (
