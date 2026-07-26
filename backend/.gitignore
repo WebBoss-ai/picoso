@@ -1,0 +1,5 @@
+node_modules/
+.env
+# whatsapp-web.js persisted session + puppeteer cache
+.wwebjs_auth/
+.wwebjs_cache/

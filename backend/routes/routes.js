@@ -3,6 +3,8 @@ import * as controller from '../controllers/controller.js';
 import * as agentController from '../controllers/agentController.js';
 import { authenticate, isAdmin, authenticateDelivery } from '../middleware/auth.js';
 import { authenticateAgent } from '../middleware/agentAuth.js';
+import { requireMarketingPin } from '../middleware/marketingAuth.js';
+import * as marketing from '../controllers/marketingController.js';
 import { uploadToS3 } from '../utils/s3.js';
 
 const router = express.Router();
@@ -163,5 +165,28 @@ router.put('/admin/referrals/requests/:id/approve', authenticate, isAdmin, contr
 router.put('/admin/referrals/requests/:id/reject',  authenticate, isAdmin, controller.adminRejectReferralRequest);
 router.get('/admin/referrals/settings', authenticate, isAdmin,        controller.adminGetReferralSettings);
 router.put('/admin/referrals/settings', authenticate, isAdmin,        controller.adminUpdateReferralSettings);
+
+// ── Marketing / WhatsApp Automation (6-digit PIN protected) ──────────────────
+router.post('/marketing/verify-pin',        requireMarketingPin, marketing.verifyPin);
+// WhatsApp Web connection
+router.get('/marketing/wa/status',          requireMarketingPin, marketing.getWaStatus);
+router.post('/marketing/wa/init',           requireMarketingPin, marketing.initWa);
+router.post('/marketing/wa/restart',        requireMarketingPin, marketing.restartWa);
+router.post('/marketing/wa/logout',         requireMarketingPin, marketing.logoutWa);
+router.post('/marketing/wa/send',           requireMarketingPin, marketing.sendSingle);
+// Welcome automation
+router.get('/marketing/welcome',            requireMarketingPin, marketing.getWelcome);
+router.put('/marketing/welcome',            requireMarketingPin, marketing.updateWelcome);
+// Bulk campaigns
+router.post('/marketing/campaigns',         requireMarketingPin, marketing.createCampaign);
+router.get('/marketing/campaigns',          requireMarketingPin, marketing.listCampaigns);
+router.get('/marketing/campaigns/:id',      requireMarketingPin, marketing.getCampaign);
+router.post('/marketing/campaigns/:id/start', requireMarketingPin, marketing.startCampaignCtrl);
+router.post('/marketing/campaigns/:id/pause', requireMarketingPin, marketing.pauseCampaignCtrl);
+router.post('/marketing/campaigns/:id/stop',  requireMarketingPin, marketing.stopCampaignCtrl);
+router.delete('/marketing/campaigns/:id',   requireMarketingPin, marketing.deleteCampaign);
+// Logs & stats
+router.get('/marketing/logs',               requireMarketingPin, marketing.getLogs);
+router.get('/marketing/stats',              requireMarketingPin, marketing.getStats);
 
 export default router;

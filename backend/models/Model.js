@@ -402,3 +402,82 @@ export const FriendReferral        = mongoose.model('FriendReferral',        fri
 export const FriendReferralRequest = mongoose.model('FriendReferralRequest', friendReferralRequestSchema);
 export const ReferralSettings      = mongoose.model('ReferralSettings',      referralSettingsSchema);
 export const CampaignRedemption  = mongoose.model('CampaignRedemption',  campaignRedemptionSchema);
+
+// ── WhatsApp Marketing ────────────────────────────────────────────────────────
+// Welcome message config — auto-sent on new user registration.
+const welcomeConfigSchema = new mongoose.Schema({
+  key:        { type: String, default: 'default', unique: true },
+  enabled:    { type: Boolean, default: true },
+  // Message supports spintax {a|b|c} and tokens {{name}} {{phone}}
+  message:    { type: String, default: 'Hey {{name}}! 🌱 Welcome to *Picoso* — your healthy food companion. Order fresh bowls, wraps & coffee, delivered fast. Reply here anytime, we\'d love to feed you well! 💚' },
+  imageBase64:{ type: String, default: '' },   // raw base64 (no data: prefix)
+  imageMime:  { type: String, default: 'image/png' },
+  imageUrl:   { type: String, default: '' },   // alternative to base64
+  delaySec:   { type: Number, default: 20 },   // small delay so it looks human
+  updatedAt:  { type: Date, default: Date.now },
+});
+
+// Bulk / mass WhatsApp campaign.
+const waRecipientSchema = new mongoose.Schema({
+  phone:   { type: String, required: true },
+  name:    { type: String, default: '' },
+  chatId:  { type: String, default: '' },
+  status:  { type: String, enum: ['queued', 'sent', 'failed', 'skipped', 'invalid'], default: 'queued' },
+  error:   { type: String, default: '' },
+  attempts:{ type: Number, default: 0 },
+  sentAt:  { type: Date, default: null },
+}, { _id: false });
+
+const waCampaignSchema = new mongoose.Schema({
+  name:        { type: String, default: 'Untitled Campaign' },
+  message:     { type: String, default: '' },      // spintax + tokens supported
+  imageBase64: { type: String, default: '' },
+  imageMime:   { type: String, default: 'image/png' },
+  imageUrl:    { type: String, default: '' },
+  recipients:  [waRecipientSchema],
+  total:       { type: Number, default: 0 },
+  sentCount:   { type: Number, default: 0 },
+  failedCount: { type: Number, default: 0 },
+  skippedCount:{ type: Number, default: 0 },
+  invalidCount:{ type: Number, default: 0 },
+  cursor:      { type: Number, default: 0 },        // index of next recipient to process
+  status:      { type: String, enum: ['draft', 'running', 'paused', 'completed', 'stopped', 'failed'], default: 'draft' },
+  // Anti-ban configuration snapshot
+  config: {
+    minDelaySec:      { type: Number, default: 18 },
+    maxDelaySec:      { type: Number, default: 55 },
+    batchSize:        { type: Number, default: 20 },   // messages before a long cooldown
+    batchCooldownMin: { type: Number, default: 12 },   // long pause between batches
+    dailyCap:         { type: Number, default: 250 },  // hard stop per 24h
+    warmup:           { type: Boolean, default: true },// ramp slowly at start
+    validateNumbers:  { type: Boolean, default: true },// skip non-WhatsApp numbers
+    typingSim:        { type: Boolean, default: true },// simulate typing
+    activeHourStart:  { type: Number, default: 8 },    // 24h; only send within window
+    activeHourEnd:    { type: Number, default: 22 },
+  },
+  sentToday:   { type: Number, default: 0 },
+  sentTodayDate:{ type: String, default: '' },        // YYYY-MM-DD marker for daily cap
+  lastError:   { type: String, default: '' },
+  startedAt:   { type: Date, default: null },
+  finishedAt:  { type: Date, default: null },
+  createdAt:   { type: Date, default: Date.now },
+});
+waCampaignSchema.index({ createdAt: -1 });
+
+// Lightweight per-message log (welcome + single sends + campaign summary rows).
+const waMessageLogSchema = new mongoose.Schema({
+  type:       { type: String, enum: ['welcome', 'single', 'campaign'], default: 'single' },
+  campaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'WaCampaign', default: null },
+  phone:      { type: String, default: '' },
+  chatId:     { type: String, default: '' },
+  status:     { type: String, enum: ['sent', 'failed', 'skipped', 'invalid'], default: 'sent' },
+  hasMedia:   { type: Boolean, default: false },
+  error:      { type: String, default: '' },
+  createdAt:  { type: Date, default: Date.now },
+});
+waMessageLogSchema.index({ createdAt: -1 });
+waMessageLogSchema.index({ type: 1, createdAt: -1 });
+
+export const WelcomeConfig = mongoose.model('WelcomeConfig', welcomeConfigSchema);
+export const WaCampaign    = mongoose.model('WaCampaign',    waCampaignSchema);
+export const WaMessageLog  = mongoose.model('WaMessageLog',  waMessageLogSchema);

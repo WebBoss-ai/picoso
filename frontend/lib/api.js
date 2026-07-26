@@ -174,6 +174,44 @@ export const friendReferral = {
   getMyCircle: ()      => api.get('/my/referrals'),
 };
 
+// ── Marketing / WhatsApp Automation ──────────────────────────────────────────
+const marketingApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+  maxContentLength: 50 * 1024 * 1024,
+  maxBodyLength: 50 * 1024 * 1024,
+});
+marketingApi.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const pin = sessionStorage.getItem('picoso_marketing_pin');
+    if (pin) config.headers['x-marketing-pin'] = pin;
+  }
+  return config;
+});
+
+export const marketing = {
+  verifyPin:      (pin)    => marketingApi.post('/marketing/verify-pin', {}, { headers: { 'x-marketing-pin': pin } }),
+  // WhatsApp connection
+  waStatus:       ()       => marketingApi.get('/marketing/wa/status'),
+  waInit:         ()       => marketingApi.post('/marketing/wa/init'),
+  waRestart:      ()       => marketingApi.post('/marketing/wa/restart'),
+  waLogout:       ()       => marketingApi.post('/marketing/wa/logout'),
+  sendSingle:     (data)   => marketingApi.post('/marketing/wa/send', data),
+  // Welcome automation
+  getWelcome:     ()       => marketingApi.get('/marketing/welcome'),
+  updateWelcome:  (data)   => marketingApi.put('/marketing/welcome', data),
+  // Bulk campaigns
+  createCampaign: (data)   => marketingApi.post('/marketing/campaigns', data),
+  listCampaigns:  ()       => marketingApi.get('/marketing/campaigns'),
+  getCampaign:    (id)     => marketingApi.get(`/marketing/campaigns/${id}`),
+  startCampaign:  (id)     => marketingApi.post(`/marketing/campaigns/${id}/start`),
+  pauseCampaign:  (id)     => marketingApi.post(`/marketing/campaigns/${id}/pause`),
+  stopCampaign:   (id)     => marketingApi.post(`/marketing/campaigns/${id}/stop`),
+  deleteCampaign: (id)     => marketingApi.delete(`/marketing/campaigns/${id}`),
+  // Logs & stats
+  getLogs:        (type)   => marketingApi.get('/marketing/logs', { params: type ? { type } : {} }),
+  getStats:       ()       => marketingApi.get('/marketing/stats'),
+};
+
 export const adminReferrals = {
   getAll:           ()       => api.get('/admin/referrals'),
   create:           (data)   => api.post('/admin/referrals', data),

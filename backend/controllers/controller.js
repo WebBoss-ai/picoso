@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { User, OTP, Bowl, Ingredient, Order, Feedback, PlatinumCard, HealthySubscription, CategoryConfig, DeliveryPartner, StoreStatus, NotifyRequest, ClosedCheckout, OutOfRadiusAttempt, Campaign, CampaignScan, CampaignLead, CampaignRedemption, FriendReferral, FriendReferralRequest, ReferralSettings } from '../models/Model.js';
 import { generateOTP, sendOTP, verifyOTP } from '../utils/otp.js';
 import { processAgentCommission } from './agentController.js';
+import { queueWelcome } from '../services/whatsapp/welcome.js';
 
 // Auth Controllers
 export const sendOTPController = async (req, res) => {
@@ -72,6 +73,9 @@ export const verifyOTPController = async (req, res) => {
         lastLoginAt: new Date(),
         lastActiveAt: new Date(),
       });
+
+      // 🎉 New registration → fire WhatsApp welcome message (non-blocking).
+      queueWelcome({ phone: user.phone, name: user.name });
 
     } else {
       console.log("👤 Existing user found:", user._id);
