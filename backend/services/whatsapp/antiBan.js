@@ -56,10 +56,19 @@ export const spin = (text = '') => {
 
 /** Fill personalization tokens after spintax resolution. */
 export const personalize = (text = '', { name = '', phone = '' } = {}) => {
-  const safeName = (name && name.trim()) ? name.trim() : 'there';
-  return String(text)
-    .replace(/\{\{\s*name\s*\}\}/gi, safeName)
+  const nm = (name && name.trim()) ? name.trim() : '';
+  let out = String(text)
+    .replace(/\{\{\s*name\s*\}\}/gi, nm)
     .replace(/\{\{\s*phone\s*\}\}/gi, phone || '');
+  // With no name, clean up artifacts an empty {{name}} leaves behind
+  // e.g. "Welcome to Picoso, ." -> "Welcome to Picoso."
+  if (!nm) {
+    out = out
+      .replace(/\s*,\s*([.!?])/g, '$1')   // ", ." -> "."
+      .replace(/[ \t]{2,}/g, ' ')          // collapse double spaces
+      .trim();
+  }
+  return out;
 };
 
 /** Build final unique message body for one recipient. */

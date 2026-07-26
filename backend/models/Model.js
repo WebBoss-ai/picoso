@@ -409,7 +409,7 @@ const welcomeConfigSchema = new mongoose.Schema({
   key:        { type: String, default: 'default', unique: true },
   enabled:    { type: Boolean, default: true },
   // Message supports spintax {a|b|c} and tokens {{name}} {{phone}}
-  message:    { type: String, default: 'Hey {{name}}! 🌱 Welcome to *Picoso* — your healthy food companion. Order fresh bowls, wraps & coffee, delivered fast. Reply here anytime, we\'d love to feed you well! 💚' },
+  message:    { type: String, default: 'Welcome to *Picoso*, {{name}}. Thoughtfully crafted bowls, wraps, and coffee, prepared fresh with care. Explore our menu anytime at *picoso.in*. We look forward to serving you.' },
   imageBase64:{ type: String, default: '' },   // raw base64 (no data: prefix)
   imageMime:  { type: String, default: 'image/png' },
   imageUrl:   { type: String, default: '' },   // alternative to base64
