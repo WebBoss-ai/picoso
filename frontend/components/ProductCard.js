@@ -254,136 +254,103 @@ export default function ProductCard({ product, variant = 'list' }) {
   const displayPrice  = isPlatinum ? platinumPrice : originalPrice;
   const showMacros    = !isBeverage(product);
 
-  const premiumMacros = showMacros ? [
-    { label: 'kcal',    value: product.calories, suffix: '',  icon: Flame,    color: 'text-orange-600',  bg: 'bg-orange-50',  border: 'border-orange-100' },
-    { label: 'protein', value: product.protein,  suffix: 'g', icon: Zap,      color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-    { label: 'carbs',   value: product.carbs,    suffix: 'g', icon: Wheat,    color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-100' },
-    { label: 'fats',    value: product.fats,     suffix: 'g', icon: Droplets, color: 'text-blue-600',    bg: 'bg-blue-50',    border: 'border-blue-100' },
-  ].filter(m => m.value > 0) : [];
-
   const handleAdd      = (e) => { e.stopPropagation(); if (!isUnavailable && canAdd) addItem(product); };
   const handleIncrease = (e) => { e.stopPropagation(); updateQty(product._id, qty + 1); };
   const handleDecrease = (e) => { e.stopPropagation(); updateQty(product._id, qty - 1); };
 
-  // ── PREMIUM variant — one-per-row cinematic showcase (bowls section) ──
+  // ── PREMIUM variant — sleek, borderless, one thin image per row (bowls) ──
   if (variant === 'premium') {
     return (
       <>
         <div
           onClick={() => setShowModal(true)}
-          className={`group relative bg-white rounded-[28px] overflow-hidden cursor-pointer transition-all duration-500 ${!isUnavailable ? 'hover:-translate-y-1.5' : 'opacity-80'}`}
-          style={{ boxShadow: '0 6px 16px rgba(0,0,0,0.05), 0 26px 60px -18px rgba(15,23,42,0.24)', border: '1px solid #eef1f4' }}
+          className={`group cursor-pointer ${isUnavailable ? 'opacity-75' : ''}`}
         >
-          {/* Cinematic hero image */}
-          <div className="relative w-full overflow-hidden bg-gray-100" style={{ aspectRatio: '16 / 10' }}>
-            {!imageError && product.image ? (
-              <Image src={product.image} alt={product.name} fill
-                className={`object-cover transition-transform ease-out ${!isUnavailable ? 'group-hover:scale-[1.06]' : 'grayscale'}`}
-                style={{ transitionDuration: '900ms' }}
-                onError={() => setImageError(true)}
-                sizes="(max-width: 768px) 100vw, 1024px" />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
-                <ChefHat size={64} className="text-emerald-200" />
-              </div>
-            )}
-
-            {/* subtle top gradient for badge legibility */}
-            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/22 to-transparent pointer-events-none" />
-
-            {/* Badges */}
-            <div className="absolute top-4 left-4 flex flex-col gap-2">
-              {product.isBestseller && !isUnavailable && (
-                <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-[11px] font-extrabold px-3 py-1 rounded-full shadow-md">
-                  <Star size={10} fill="currentColor" /> Bestseller
-                </span>
-              )}
-              {product.isChefSpecial && !isUnavailable && (
-                <span className="flex items-center gap-1 bg-emerald-600 text-white text-[11px] font-extrabold px-3 py-1 rounded-full shadow-md">
-                  <ChefHat size={10} /> Chef&apos;s Special
-                </span>
-              )}
-            </div>
-
-            {/* Veg / non-veg */}
-            <div className="absolute top-4 right-4">
-              <div className={`w-6 h-6 rounded-md flex items-center justify-center border-2 bg-white shadow-md ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
-                <div className={`w-2.5 h-2.5 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
-              </div>
-            </div>
-
-            {isUnavailable && (
-              <div className="absolute inset-0 bg-white/55 flex items-center justify-center">
-                <div className="flex items-center gap-2 bg-white/95 backdrop-blur-sm px-4 py-2 rounded-full shadow border border-gray-200">
-                  <Clock size={14} className="text-gray-500" />
-                  <span className="text-sm font-semibold text-gray-600">Available from {product.availableFrom}</span>
+          {/* Thin, wide image — borderless, sits on page background */}
+          <div className="relative">
+            <div className="relative w-full overflow-hidden rounded-[20px] bg-gray-50" style={{ aspectRatio: '2 / 1' }}>
+              {!imageError && product.image ? (
+                <Image src={product.image} alt={product.name} fill
+                  className={`object-cover transition-transform duration-700 ${!isUnavailable ? 'group-hover:scale-[1.04]' : 'grayscale'}`}
+                  onError={() => setImageError(true)}
+                  sizes="(max-width: 768px) 100vw, 640px" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+                  <ChefHat size={40} className="text-emerald-200" />
                 </div>
+              )}
+
+              {/* Badge — subtle white pill */}
+              {!isUnavailable && (product.isBestseller || product.isChefSpecial) && (
+                <div className="absolute top-3 left-3">
+                  <span className="inline-flex items-center gap-1 bg-white/95 backdrop-blur-sm text-emerald-600 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+                    {product.isBestseller
+                      ? <><Star size={9} fill="currentColor" /> Bestseller</>
+                      : <><ChefHat size={9} /> Chef&apos;s Special</>}
+                  </span>
+                </div>
+              )}
+
+              {isUnavailable && (
+                <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                  <div className="flex items-center gap-1.5 bg-white/95 px-3 py-1.5 rounded-full shadow-sm">
+                    <Clock size={12} className="text-gray-500" />
+                    <span className="text-[11px] font-semibold text-gray-600">From {product.availableFrom}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Veg / non-veg dot */}
+              <div className="absolute bottom-3 left-3">
+                <div className={`w-[18px] h-[18px] rounded-[5px] flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+                  <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+                </div>
+              </div>
+            </div>
+
+            {/* Compact Add control — straddles the image bottom-right */}
+            {!isUnavailable && (
+              <div className="absolute right-3 -bottom-3.5" onClick={e => e.stopPropagation()}>
+                {qty === 0 ? (
+                  canAdd ? (
+                    <button onClick={handleAdd}
+                      className="h-8 px-3.5 flex items-center gap-1 bg-white text-emerald-600 font-bold text-[12px] rounded-lg border border-emerald-200 shadow-sm active:scale-95 transition-transform">
+                      Add <ChevronDown size={13} strokeWidth={2.5} />
+                    </button>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setShowModal(true); }}
+                      className="h-8 px-3 flex items-center gap-1 bg-white text-gray-400 font-bold text-[10px] rounded-lg border border-gray-200 shadow-sm">
+                      <ShoppingBag size={10} /> Bowl
+                    </button>
+                  )
+                ) : (
+                  <div className="h-8 px-3 flex items-center gap-3 bg-white rounded-lg border border-emerald-200 shadow-sm">
+                    <button onClick={handleDecrease} className="text-emerald-600 active:scale-90 transition-transform"><Minus size={13} strokeWidth={3} /></button>
+                    <span className="text-emerald-700 font-bold text-[13px] min-w-[12px] text-center">{qty}</span>
+                    <button onClick={handleIncrease} className="text-emerald-600 active:scale-90 transition-transform"><Plus size={13} strokeWidth={3} /></button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Content */}
-          <div className="px-5 sm:px-6 pt-5 pb-5">
-            <h3 className="font-extrabold text-gray-900 text-[21px] sm:text-[23px] leading-tight tracking-tight">{product.name}</h3>
-
+          {/* Details — borderless, refined, small premium type */}
+          <div className="pt-5 px-0.5">
+            {showMacros && product.protein > 0 && (
+              <span className="inline-block text-[10px] text-gray-500 font-semibold tracking-wide mb-1">{product.protein}g protein</span>
+            )}
+            <h3 className="font-semibold text-gray-900 text-[16px] leading-snug tracking-tight line-clamp-1">{product.name}</h3>
             {product.description && (
-              <p className="text-[14px] text-gray-500 leading-relaxed mt-1.5 line-clamp-2">{product.description}</p>
+              <p className="text-[12.5px] text-gray-400 leading-snug mt-0.5 line-clamp-1">{product.description}</p>
             )}
-
-            {/* Macro chips */}
-            {premiumMacros.length > 0 && (
-              <div className="flex items-center gap-2 mt-3.5 flex-wrap">
-                {premiumMacros.map(m => (
-                  <span key={m.label} className={`inline-flex items-center gap-1 text-[11.5px] font-bold px-2.5 py-1 rounded-lg border ${m.bg} ${m.color} ${m.border}`}>
-                    <m.icon size={11} /> {m.value}{m.suffix} {m.label}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Divider */}
-            <div className="h-px bg-gray-100 my-4" />
-
-            {/* Price + Add */}
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-gray-900 text-[24px] leading-none">₹{displayPrice}</span>
-                  {isPlatinum && originalPrice !== displayPrice && (
-                    <span className="text-[15px] text-gray-400 line-through">₹{originalPrice}</span>
-                  )}
-                </div>
-                {!isPlatinum && (
-                  <div className="flex items-center gap-1 mt-1.5">
-                    <Crown size={11} className="text-orange-400" />
-                    <span className="text-[12px] text-orange-500 font-semibold">₹{platinumPrice} with Platinum</span>
-                  </div>
-                )}
-              </div>
-
-              {!isUnavailable ? (
-                qty === 0 ? (
-                  canAdd ? (
-                    <button onClick={handleAdd}
-                      className="flex items-center gap-2 px-7 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[15px] rounded-2xl shadow-lg shadow-emerald-500/25 active:scale-95 transition-all flex-shrink-0">
-                      <Plus size={17} strokeWidth={3} /> Add to Cart
-                    </button>
-                  ) : (
-                    <button onClick={e => { e.stopPropagation(); setShowModal(true); }}
-                      className="flex items-center gap-1.5 px-4 py-3.5 bg-gray-100 border border-gray-200 text-gray-400 font-bold text-[12px] rounded-2xl flex-shrink-0 cursor-not-allowed">
-                      <ShoppingBag size={13} /> Add a bowl first
-                    </button>
-                  )
-                ) : (
-                  <div className="flex items-center gap-4 bg-emerald-600 rounded-2xl px-5 py-3 shadow-lg shadow-emerald-500/25 flex-shrink-0">
-                    <button onClick={handleDecrease} className="text-white active:scale-90 transition-transform"><Minus size={17} strokeWidth={3} /></button>
-                    <span className="text-white font-extrabold text-base min-w-[18px] text-center">{qty}</span>
-                    <button onClick={handleIncrease} className="text-white active:scale-90 transition-transform"><Plus size={17} strokeWidth={3} /></button>
-                  </div>
-                )
-              ) : (
-                <span className="text-[12px] text-gray-400 font-medium bg-gray-50 border border-gray-200 px-4 py-3 rounded-2xl flex-shrink-0">
-                  From {product.availableFrom}
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="font-bold text-gray-900 text-[15px]">₹{displayPrice}</span>
+              {isPlatinum && originalPrice !== displayPrice && (
+                <span className="text-[11px] text-gray-400 line-through">₹{originalPrice}</span>
+              )}
+              {!isPlatinum && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-500 font-medium">
+                  <Crown size={9} className="text-orange-400" /> ₹{platinumPrice} Platinum
                 </span>
               )}
             </div>
