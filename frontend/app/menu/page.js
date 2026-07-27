@@ -744,6 +744,13 @@ export default function MenuPage() {
                           </button>
                         )}
                       </div>
+                    ) : isMeals ? (
+                      /* Bowls — one premium, cinematic card per row */
+                      <div className="flex flex-col gap-6 sm:gap-7 max-w-2xl mx-auto">
+                        {cat.items.map(product => (
+                          <ProductCard key={product._id} product={product} variant="premium" />
+                        ))}
+                      </div>
                     ) : (
                       <div className={
                         viewMode === 'large'
