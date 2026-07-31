@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, CheckCircle2, Phone, Heart, Clock, Leaf } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Phone, Heart, Clock, Leaf, MapPin, Navigation, X, Loader2 } from 'lucide-react';
 
 const C = {
   bg: '#F7F8F2',
@@ -205,6 +205,112 @@ function CappuccinoCup() {
   );
 }
 
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const data = await res.json();
+    const a = data?.address || {};
+    const road = a.road || a.pedestrian || a.residential || '';
+    const houseNo = a.house_number || '';
+    const suburb = a.suburb || a.neighbourhood || a.village || a.county || '';
+    const city = a.city || a.town || a.state_district || a.state || '';
+    const pincode = a.postcode || '';
+    const address =
+      [houseNo, road].filter(Boolean).join(', ') ||
+      (data.display_name || '').split(',').slice(0, 2).join(',').trim();
+    return { address, area: suburb, city, pincode };
+  } catch {
+    return { address: '', area: '', city: '', pincode: '' };
+  }
+}
+
+function getCurrentPositionAsync(options = {}) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation not supported'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 60000,
+      ...options,
+    });
+  });
+}
+
+function LocationNeededModal({ open, loading, error, onAllow, onClose }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+      style={{ backdropFilter: 'blur(12px)', backgroundColor: 'rgba(8, 40, 28, 0.55)' }}
+      onClick={() => { if (!loading) onClose?.(); }}
+    >
+      <div
+        className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="h-1.5 w-full" style={{ background: 'linear-gradient(90deg, #0B5C3A, #22c55e)' }} />
+
+        {!loading && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center z-10"
+          >
+            <X size={14} className="text-gray-500" />
+          </button>
+        )}
+
+        <div className="px-7 pt-8 pb-3 flex justify-center" style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #fff 100%)' }}>
+          <div className="relative w-28 h-28 rounded-full flex items-center justify-center" style={{ background: '#E8F5E9' }}>
+            <div className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: '#22c55e' }} />
+            <MapPin size={42} className="relative z-10" style={{ color: '#0B5C3A' }} strokeWidth={1.8} />
+          </div>
+        </div>
+
+        <div className="px-7 pb-7 text-center">
+          <h3 className="text-xl font-extrabold text-gray-900 tracking-tight mb-1.5">
+            We need your location to serve you!
+          </h3>
+          <p className="text-sm text-gray-500 leading-relaxed mb-5">
+            Share your pin so we can reach you with your free Tall Cappuccino when we reopen nearby.
+          </p>
+
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={onAllow}
+            disabled={loading}
+            className="w-full rounded-2xl py-3.5 font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-70 active:scale-[0.98] transition-transform shadow-lg shadow-emerald-500/25"
+            style={{ background: 'linear-gradient(135deg, #0B5C3A, #159A5A)' }}
+          >
+            {loading ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Navigation size={16} />
+            )}
+            {loading ? 'Getting your pin…' : 'Allow location access'}
+          </button>
+
+          <p className="mt-3 text-[11px] text-gray-400">
+            Used only to deliver your free coffee bounty.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StoreClosedPoster({
   onBack,
   notifyPhone,
@@ -217,6 +323,10 @@ export default function StoreClosedPoster({
   const [showForm, setShowForm] = useState(false);
   const [shake, setShake] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showLocModal, setShowLocModal] = useState(false);
+  const [locLoading, setLocLoading] = useState(false);
+  const [locError, setLocError] = useState('');
+  const [pendingPhone, setPendingPhone] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -225,7 +335,10 @@ export default function StoreClosedPoster({
   }, []);
 
   useEffect(() => {
-    if (notifyDone) setShowForm(false);
+    if (notifyDone) {
+      setShowForm(false);
+      setShowLocModal(false);
+    }
   }, [notifyDone]);
 
   useEffect(() => {
@@ -233,17 +346,68 @@ export default function StoreClosedPoster({
     if (placeholderPhone && !notifyPhone) setNotifyPhone(placeholderPhone);
   }, [showForm, placeholderPhone, notifyPhone, setNotifyPhone]);
 
+  const captureLocation = async () => {
+    setLocLoading(true);
+    setLocError('');
+    try {
+      const pos = await getCurrentPositionAsync();
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const geo = await reverseGeocode(lat, lng);
+      const location = { lat, lng, ...geo };
+      console.log('[StoreClosed] location captured', location);
+      setShowLocModal(false);
+      setLocLoading(false);
+      return location;
+    } catch (err) {
+      console.warn('[StoreClosed] location failed', err);
+      const msg =
+        err?.code === 1
+          ? 'Location access denied. Please allow location in your browser settings and try again.'
+          : 'Unable to detect your location. Please try again.';
+      setLocError(msg);
+      setLocLoading(false);
+      return null;
+    }
+  };
+
+  const finishNotify = async (phone, location) => {
+    await onNotify(phone, location || {});
+  };
+
   const submit = async (e) => {
     e?.preventDefault();
-    const phone = (notifyPhone || placeholderPhone || '').trim();
+    const phone = (notifyPhone || placeholderPhone || '').trim().replace(/\D/g, '').slice(-10);
     console.log('[StoreClosed] submit notify', phone);
-    if (!phone) {
+    if (!phone || phone.length < 10) {
       setShake(true);
       setTimeout(() => setShake(false), 450);
       return;
     }
     if (phone !== notifyPhone) setNotifyPhone(phone);
-    await onNotify(phone);
+    setPendingPhone(phone);
+
+    // Try silently first — if already granted, no modal
+    setLocLoading(true);
+    try {
+      const pos = await getCurrentPositionAsync({ timeout: 5000 });
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const geo = await reverseGeocode(lat, lng);
+      setLocLoading(false);
+      await finishNotify(phone, { lat, lng, ...geo });
+    } catch {
+      setLocLoading(false);
+      console.log('[StoreClosed] need location permission → modal');
+      setShowLocModal(true);
+    }
+  };
+
+  const handleAllowLocation = async () => {
+    const location = await captureLocation();
+    if (location) {
+      await finishNotify(pendingPhone || notifyPhone, location);
+    }
   };
 
   if (!mounted) return null;
@@ -257,6 +421,14 @@ export default function StoreClosedPoster({
       aria-label="Store is closed"
       data-testid="store-closed-coded"
     >
+      <LocationNeededModal
+        open={showLocModal}
+        loading={locLoading}
+        error={locError}
+        onAllow={handleAllowLocation}
+        onClose={() => { if (!locLoading) setShowLocModal(false); }}
+      />
+
       <button
         type="button"
         onClick={() => {
@@ -272,22 +444,18 @@ export default function StoreClosedPoster({
 
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="relative mx-auto w-full max-w-[430px] px-5 pt-10 pb-0 min-h-full flex flex-col">
-          {/* decorative clouds */}
           <Cloud className="w-24 h-10 -left-4 top-16 opacity-80" />
           <Cloud className="w-16 h-8 right-2 top-28 opacity-70" />
           <Cloud className="w-20 h-9 left-6 top-[210px] opacity-60" />
           <Cloud className="w-14 h-7 right-8 top-[250px] opacity-70" />
 
-          {/* sparkles */}
           <span className="absolute right-10 top-20 text-lg opacity-40" style={{ color: C.ink }} aria-hidden>✦</span>
           <span className="absolute left-8 top-[300px] text-sm opacity-30" style={{ color: C.ink }} aria-hidden>✦</span>
 
-          {/* 1. Logo */}
           <div className="relative z-10 flex justify-center mb-5">
             <PicosoLogo />
           </div>
 
-          {/* 2. Hero */}
           <div className="relative z-10 flex flex-col items-center mb-5">
             <ClosedSign />
             <div className="-mt-1">
@@ -295,7 +463,6 @@ export default function StoreClosedPoster({
             </div>
           </div>
 
-          {/* 3. Oops message */}
           <div className="relative z-10 text-center mb-5 px-2">
             <div className="flex items-center justify-center gap-2.5 mb-2">
               <MotionLines color={C.ink} />
@@ -309,7 +476,6 @@ export default function StoreClosedPoster({
             </p>
           </div>
 
-          {/* 4. Offer card */}
           <div
             className="relative z-10 flex items-center gap-3 rounded-2xl px-3 py-3.5 mb-5"
             style={{ border: `2px dashed ${C.ink}`, background: 'rgba(255,255,255,0.45)' }}
@@ -344,7 +510,6 @@ export default function StoreClosedPoster({
             </div>
           </div>
 
-          {/* 5. Trust row */}
           <div className="relative z-10 grid grid-cols-3 gap-1 mb-6">
             {[
               { Icon: Heart, label: 'Made with Real Ingredients' },
@@ -369,7 +534,6 @@ export default function StoreClosedPoster({
             ))}
           </div>
 
-          {/* 6. Footer */}
           <div
             className="relative z-10 -mx-5 mt-auto px-5 pt-8 pb-6"
             style={{
@@ -411,17 +575,17 @@ export default function StoreClosedPoster({
                 </div>
                 <button
                   type="submit"
-                  disabled={notifySend}
+                  disabled={notifySend || locLoading}
                   className="w-full rounded-full py-3.5 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.99] transition-transform"
                   style={{ background: C.mintBtn, color: C.ink }}
                 >
-                  {notifySend ? (
+                  {(notifySend || locLoading) ? (
                     <span
                       className="w-4 h-4 rounded-full animate-spin"
                       style={{ border: '2px solid rgba(11,92,58,0.25)', borderTopColor: C.ink }}
                     />
                   ) : null}
-                  {notifySend ? 'Saving…' : "Notify me when we're back"}
+                  {notifySend || locLoading ? 'Saving…' : "Notify me when we're back"}
                 </button>
                 <button
                   type="button"

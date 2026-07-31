@@ -246,11 +246,19 @@ const storeStatusSchema = new mongoose.Schema({
   updatedAt:     { type: Date, default: Date.now },
 });
 
-// ── Notify-me requests ───────────────────────────────────────────────────────
+// ── Notify-me requests (bounty / free coffee waitlist) ────────────────────────
 const notifyRequestSchema = new mongoose.Schema({
   phone:     { type: String, required: true },
   userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   notified:  { type: Boolean, default: false },
+  // Location pin captured at signup
+  lat:       { type: Number, default: null },
+  lng:       { type: Number, default: null },
+  address:   { type: String, default: '' },
+  area:      { type: String, default: '' },
+  city:      { type: String, default: '' },
+  pincode:   { type: String, default: '' },
+  source:    { type: String, default: 'closed_store' },
   createdAt: { type: Date, default: Date.now },
 });
 notifyRequestSchema.index({ phone: 1, notified: 1 });

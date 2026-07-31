@@ -1178,21 +1178,53 @@ export const updateStoreStatus = async (req, res) => {
 // ── Notify Requests ──────────────────────────────────────────────────────────
 export const addNotifyRequest = async (req, res) => {
   try {
-    const { phone, userId } = req.body;
+    const { phone, userId, lat, lng, address, area, city, pincode, source } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone required' });
+
+    const locationPatch = {};
+    if (lat != null && lat !== '') locationPatch.lat = Number(lat);
+    if (lng != null && lng !== '') locationPatch.lng = Number(lng);
+    if (address != null) locationPatch.address = String(address);
+    if (area != null) locationPatch.area = String(area);
+    if (city != null) locationPatch.city = String(city);
+    if (pincode != null) locationPatch.pincode = String(pincode);
+    if (source) locationPatch.source = String(source);
+    if (userId) locationPatch.userId = userId;
+
     const existing = await NotifyRequest.findOne({ phone, notified: false });
-    if (existing) return res.json({ message: 'Already registered', alreadyRegistered: true });
-    const request = await NotifyRequest.create({ phone, userId: userId || null });
+    if (existing) {
+      Object.assign(existing, locationPatch);
+      await existing.save();
+      return res.json({ message: 'Already registered', alreadyRegistered: true, request: existing });
+    }
+
+    const request = await NotifyRequest.create({
+      phone,
+      userId: userId || null,
+      notified: false,
+      lat: locationPatch.lat ?? null,
+      lng: locationPatch.lng ?? null,
+      address: locationPatch.address || '',
+      area: locationPatch.area || '',
+      city: locationPatch.city || '',
+      pincode: locationPatch.pincode || '',
+      source: locationPatch.source || 'closed_store',
+    });
     res.json({ request });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 export const getNotifyRequests = async (req, res) => {
   try {
-    const pending  = await NotifyRequest.find({ notified: false }).sort('-createdAt');
+    const wantAll = req.query.all === '1' || req.query.all === 'true';
+    const filter = wantAll ? {} : { notified: false };
+    const list = await NotifyRequest.find(filter)
+      .sort('-createdAt')
+      .populate('userId', 'name phone email isPlatinum createdAt');
     const total    = await NotifyRequest.countDocuments();
     const notified = await NotifyRequest.countDocuments({ notified: true });
-    res.json({ requests: pending, total, notified });
+    const pending  = await NotifyRequest.countDocuments({ notified: false });
+    res.json({ requests: list, total, notified, pending });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
