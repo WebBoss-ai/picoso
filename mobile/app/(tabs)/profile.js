@@ -17,14 +17,14 @@ import { useAuth } from '../../context/AuthContext';
 import Colors from '../../constants/colors';
 import { Radius, FontSizes, Spacing, Shadow } from '../../constants/theme';
 
-function ProfileMenuItem({ icon, iconColor, iconBg, label, subtitle, onPress, danger, rightElement }) {
+function ProfileMenuItem({ icon, iconColor, iconBg, label, subtitle, onPress, danger }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       style={styles.menuItem}
       activeOpacity={0.72}
     >
-      <View style={[styles.menuIconWrap, { backgroundColor: iconBg || Colors.surfaceGreen }]}>
+      <View style={[styles.menuIconWrap, { backgroundColor: iconBg || Colors.primaryBg }]}>
         <Ionicons
           name={icon}
           size={18}
@@ -35,9 +35,7 @@ function ProfileMenuItem({ icon, iconColor, iconBg, label, subtitle, onPress, da
         <Text style={[styles.menuLabel, danger && styles.dangerText]}>{label}</Text>
         {subtitle ? <Text style={styles.menuSubtitle}>{subtitle}</Text> : null}
       </View>
-      {rightElement || (
-        <Ionicons name="chevron-forward" size={15} color="#cbd5e1" />
-      )}
+      <Ionicons name="chevron-forward" size={15} color={Colors.borderMedium} />
     </TouchableOpacity>
   );
 }
@@ -128,12 +126,11 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* Profile Hero */}
         <LinearGradient colors={Colors.gradientHero} style={styles.profileHero}>
           <View style={styles.heroTopRow}>
             <Text style={styles.heroTitle}>Profile</Text>
             <TouchableOpacity
-              onPress={() => router.push('/edit-profile')}
+              onPress={() => {}}
               style={styles.editBtn}
               activeOpacity={0.8}
             >
@@ -158,7 +155,6 @@ export default function ProfileScreen() {
           )}
         </LinearGradient>
 
-        {/* Quick Stats */}
         <Animated.View entering={FadeInDown.delay(80)} style={styles.statsCard}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{user?.totalOrders || 0}</Text>
@@ -178,12 +174,11 @@ export default function ProfileScreen() {
           </View>
         </Animated.View>
 
-        {/* Account Section */}
         <Animated.View entering={FadeInDown.delay(160)}>
           <MenuSection title="Account">
             <ProfileMenuItem
               icon="location-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="Saved Addresses"
               subtitle={`${user?.savedAddresses?.length || 0} saved`}
               onPress={() => router.push('/addresses')}
@@ -191,7 +186,7 @@ export default function ProfileScreen() {
             <MenuDivider />
             <ProfileMenuItem
               icon="receipt-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="My Orders"
               subtitle="View order history"
               onPress={() => router.push('/(tabs)/orders')}
@@ -208,12 +203,11 @@ export default function ProfileScreen() {
           </MenuSection>
         </Animated.View>
 
-        {/* Preferences Section */}
         <Animated.View entering={FadeInDown.delay(220)}>
           <MenuSection title="Preferences">
             <ProfileMenuItem
               icon="notifications-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="Notifications"
               subtitle="Order updates and offers"
               onPress={() => {}}
@@ -221,40 +215,38 @@ export default function ProfileScreen() {
             <MenuDivider />
             <ProfileMenuItem
               icon="shield-checkmark-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="Privacy and Security"
               onPress={() => {}}
             />
           </MenuSection>
         </Animated.View>
 
-        {/* Support Section */}
         <Animated.View entering={FadeInDown.delay(280)}>
           <MenuSection title="Support">
             <ProfileMenuItem
               icon="help-circle-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="Help and FAQ"
               onPress={() => {}}
             />
             <MenuDivider />
             <ProfileMenuItem
               icon="chatbubble-ellipses-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="Chat with Support"
               onPress={() => {}}
             />
             <MenuDivider />
             <ProfileMenuItem
               icon="star-outline"
-              iconBg="#f0fdf4"
+              iconBg={Colors.primaryBg}
               label="Rate the App"
               onPress={() => {}}
             />
           </MenuSection>
         </Animated.View>
 
-        {/* Sign Out */}
         <Animated.View entering={FadeInDown.delay(340)}>
           <MenuSection>
             <ProfileMenuItem
@@ -275,17 +267,17 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f8fafb' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
   pageHeader: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: Colors.borderLight,
   },
   pageTitle: {
-    fontSize: FontSizes['3xl'],
+    fontSize: FontSizes['2xl'],
     fontWeight: '800',
     color: Colors.textPrimary,
     letterSpacing: -0.5,
@@ -293,7 +285,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 16 },
 
   profileHero: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.base,
     paddingBottom: Spacing.xl,
   },
@@ -380,9 +372,9 @@ const styles = StyleSheet.create({
   statsCard: {
     flexDirection: 'row',
     backgroundColor: Colors.white,
-    marginHorizontal: Spacing.lg,
+    marginHorizontal: Spacing.base,
     marginTop: -20,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.sm,
     ...Shadow.lg,
@@ -397,7 +389,7 @@ const styles = StyleSheet.create({
     width: 1,
     height: '70%',
     alignSelf: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: Colors.borderLight,
   },
   statValue: {
     fontSize: FontSizes.base,
@@ -412,13 +404,13 @@ const styles = StyleSheet.create({
   },
 
   menuSection: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     marginTop: Spacing.xl,
   },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#94a3b8',
+    color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
     marginBottom: 10,
@@ -426,11 +418,11 @@ const styles = StyleSheet.create({
   },
   menuCard: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     overflow: 'hidden',
     ...Shadow.sm,
     borderWidth: 1,
-    borderColor: '#f8fafb',
+    borderColor: Colors.borderLight,
   },
   menuItem: {
     flexDirection: 'row',
@@ -443,7 +435,7 @@ const styles = StyleSheet.create({
   menuIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: Radius.md,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -462,7 +454,7 @@ const styles = StyleSheet.create({
   },
   menuDivider: {
     height: 1,
-    backgroundColor: '#f8fafb',
+    backgroundColor: Colors.borderLight,
     marginLeft: 64,
   },
   dangerText: { color: Colors.error },
@@ -470,7 +462,7 @@ const styles = StyleSheet.create({
   versionText: {
     textAlign: 'center',
     fontSize: FontSizes.xs,
-    color: '#cbd5e1',
+    color: Colors.borderMedium,
     fontWeight: '500',
     marginTop: Spacing.xl,
     paddingBottom: 8,
@@ -486,12 +478,12 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: Radius.full,
-    backgroundColor: '#f8fafb',
+    backgroundColor: Colors.surfaceGray,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.base,
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.border,
   },
   guestTitle: {
     fontSize: FontSizes.xl,

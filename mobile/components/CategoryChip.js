@@ -1,12 +1,17 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '../constants/colors';
+import Colors, { CategoryColors } from '../constants/colors';
 import { Radius, FontSizes, Spacing } from '../constants/theme';
 
 const CATEGORY_ICONS = {
   all: 'grid-outline',
+  'pf-meals': 'restaurant-outline',
+  'pf-salads': 'leaf-outline',
+  'pf-beverages': 'cafe-outline',
+  'pf-wraps': 'layers-outline',
+  'pf-sandwiches': 'fast-food-outline',
   meals: 'restaurant-outline',
   salads: 'leaf-outline',
   beverages: 'cafe-outline',
@@ -14,19 +19,10 @@ const CATEGORY_ICONS = {
   sandwiches: 'fast-food-outline',
 };
 
-const CATEGORY_COLORS = {
-  all: { bg: '#f0fdf4', text: '#15803d', icon: '#16a34a' },
-  meals: { bg: '#f0fdf4', text: '#15803d', icon: '#16a34a' },
-  salads: { bg: '#d1fae5', text: '#065f46', icon: '#10b981' },
-  beverages: { bg: '#cffafe', text: '#164e63', icon: '#06b6d4' },
-  wraps: { bg: '#fef9c3', text: '#713f12', icon: '#ca8a04' },
-  sandwiches: { bg: '#fee2e2', text: '#7f1d1d', icon: '#dc2626' },
-};
-
-export default function CategoryChip({ category, selected, onPress, label }) {
+export default function CategoryChip({ category, selected, onPress, label, count }) {
   const key = category?.toLowerCase() || 'all';
   const iconName = CATEGORY_ICONS[key] || 'apps-outline';
-  const colors = CATEGORY_COLORS[key] || CATEGORY_COLORS.all;
+  const colors = CategoryColors[key] || CategoryColors.all;
   const displayLabel = label || category;
 
   if (selected) {
@@ -38,8 +34,11 @@ export default function CategoryChip({ category, selected, onPress, label }) {
           end={{ x: 1, y: 0 }}
           style={styles.chip}
         >
-          <Ionicons name={iconName.replace('-outline', '')} size={14} color={Colors.white} />
+          <Ionicons name={iconName.replace('-outline', '')} size={13} color={Colors.white} />
           <Text style={[styles.text, styles.textSelected]}>{displayLabel}</Text>
+          {count != null && (
+            <Text style={[styles.count, styles.countSelected]}>{count}</Text>
+          )}
         </LinearGradient>
       </TouchableOpacity>
     );
@@ -49,10 +48,13 @@ export default function CategoryChip({ category, selected, onPress, label }) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.78}
-      style={[styles.wrapper, styles.chipOutline, { backgroundColor: colors.bg }]}
+      style={[styles.wrapper, styles.chipOutline]}
     >
-      <Ionicons name={iconName} size={14} color={colors.icon} />
-      <Text style={[styles.text, { color: colors.text }]}>{displayLabel}</Text>
+      <Ionicons name={iconName} size={13} color={colors.icon} />
+      <Text style={[styles.text, { color: Colors.textSecondary }]}>{displayLabel}</Text>
+      {count != null && (
+        <Text style={styles.count}>{count}</Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -66,7 +68,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 8,
     borderRadius: Radius.full,
     gap: 5,
   },
@@ -74,8 +76,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 8,
     gap: 5,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   text: {
     fontSize: FontSizes.sm,
@@ -84,5 +89,14 @@ const styles = StyleSheet.create({
   },
   textSelected: {
     color: Colors.white,
+  },
+  count: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: Colors.textMuted,
+    marginLeft: 2,
+  },
+  countSelected: {
+    color: 'rgba(255,255,255,0.8)',
   },
 });

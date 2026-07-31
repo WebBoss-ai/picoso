@@ -13,7 +13,7 @@ const STATUS_MAP = {
   veg: { bg: '#dcfce7', text: '#15803d', dot: '#22c55e', label: 'Veg' },
   'non-veg': { bg: '#fee2e2', text: '#991b1b', dot: '#ef4444', label: 'Non-Veg' },
   new: { bg: '#dbeafe', text: '#1e40af', dot: '#3b82f6', label: 'New' },
-  bestseller: { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b', label: 'Bestseller' },
+  bestseller: { bg: '#E8F8F1', text: '#0F7A52', dot: '#1BA672', label: 'Bestseller' },
   platinum: { bg: '#fff7ed', text: '#c2410c', dot: '#f97316', label: 'Platinum' },
 };
 

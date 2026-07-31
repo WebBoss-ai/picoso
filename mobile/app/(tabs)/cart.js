@@ -16,7 +16,6 @@ import { useCart } from '../../context/CartContext';
 import Colors from '../../constants/colors';
 import { Radius, FontSizes, Spacing, Shadow } from '../../constants/theme';
 import CartItem from '../../components/CartItem';
-import Button from '../../components/ui/Button';
 
 export default function CartScreen() {
   const router = useRouter();
@@ -69,7 +68,6 @@ export default function CartScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Cart</Text>
@@ -90,14 +88,12 @@ export default function CartScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Cart Items */}
         <Animated.View layout={LinearTransition} style={styles.itemsList}>
           {items.map((item) => (
             <CartItem key={item.key} item={item} />
           ))}
         </Animated.View>
 
-        {/* Delivery Banner */}
         {deliveryFee === 0 ? (
           <Animated.View entering={FadeInDown} style={styles.freeDelivery}>
             <View style={styles.freeDeliveryIcon}>
@@ -109,14 +105,20 @@ export default function CartScreen() {
           </Animated.View>
         ) : amountForFreeDelivery > 0 ? (
           <View style={styles.deliveryNote}>
-            <Ionicons name="information-circle-outline" size={15} color={Colors.textMuted} />
+            <View style={styles.deliveryProgress}>
+              <View
+                style={[
+                  styles.deliveryProgressFill,
+                  { width: `${Math.min(100, (subtotal / 299) * 100)}%` },
+                ]}
+              />
+            </View>
             <Text style={styles.deliveryNoteText}>
               Add <Text style={styles.deliveryNoteAmount}>₹{amountForFreeDelivery}</Text> more for free delivery
             </Text>
           </View>
         ) : null}
 
-        {/* Coupon Row */}
         <TouchableOpacity style={styles.couponRow} activeOpacity={0.8}>
           <View style={styles.couponLeft}>
             <Ionicons name="pricetag-outline" size={18} color={Colors.primary} />
@@ -125,34 +127,32 @@ export default function CartScreen() {
           <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
         </TouchableOpacity>
 
-        {/* Price Summary */}
         <Animated.View entering={FadeInDown.delay(100)} style={styles.summary}>
-          <Text style={styles.summaryTitle}>Order Summary</Text>
+          <Text style={styles.summaryTitle}>Bill Details</Text>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal ({totalItems} items)</Text>
+            <Text style={styles.summaryLabel}>Item Total</Text>
             <Text style={styles.summaryValue}>₹{subtotal}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Delivery fee</Text>
+            <Text style={styles.summaryLabel}>Delivery Fee</Text>
             <Text style={[styles.summaryValue, deliveryFee === 0 && styles.freeText]}>
               {deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}
             </Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Taxes &amp; charges</Text>
-            <Text style={styles.summaryValue}>Included</Text>
+            <Text style={styles.summaryLabel}>Platform Fee</Text>
+            <Text style={styles.summaryValue}>₹0</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}>
-            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalLabel}>To Pay</Text>
             <Text style={styles.totalValue}>₹{totalAmount}</Text>
           </View>
         </Animated.View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* Checkout Bar */}
       <View style={styles.checkoutBar}>
         <View style={styles.checkoutInfo}>
           <Text style={styles.checkoutTotal}>₹{totalAmount}</Text>
@@ -181,24 +181,24 @@ export default function CartScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f8fafb' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.base,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: Colors.borderLight,
     backgroundColor: Colors.white,
   },
   title: {
-    fontSize: FontSizes['3xl'],
+    fontSize: FontSizes['2xl'],
     fontWeight: '800',
     color: Colors.textPrimary,
     letterSpacing: -0.5,
-    lineHeight: 34,
+    lineHeight: 30,
   },
   subtitle: {
     fontSize: FontSizes.sm,
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
     color: Colors.error,
   },
   scrollContent: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.base,
     paddingBottom: 24,
   },
@@ -232,36 +232,44 @@ const styles = StyleSheet.create({
   freeDelivery: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0fdf4',
+    backgroundColor: Colors.primaryBg,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: 10,
     gap: 10,
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: '#bbf7d0',
+    borderColor: Colors.borderGreen,
   },
   freeDeliveryIcon: {
     width: 30,
     height: 30,
     borderRadius: Radius.full,
-    backgroundColor: '#dcfce7',
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   freeDeliveryText: {
     fontSize: FontSizes.sm,
-    color: '#15803d',
+    color: Colors.primaryDarker,
     fontWeight: '500',
   },
   freeDeliveryBold: { fontWeight: '700' },
 
   deliveryNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     marginBottom: Spacing.md,
-    paddingHorizontal: 4,
+    gap: 6,
+  },
+  deliveryProgress: {
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  deliveryProgressFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 2,
   },
   deliveryNoteText: {
     fontSize: FontSizes.xs,
@@ -278,12 +286,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     paddingHorizontal: Spacing.base,
     paddingVertical: 14,
     marginBottom: Spacing.md,
     borderWidth: 1.5,
-    borderColor: '#e8f5ee',
+    borderColor: Colors.borderGreen,
     borderStyle: 'dashed',
   },
   couponLeft: {
@@ -299,7 +307,7 @@ const styles = StyleSheet.create({
 
   summary: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     padding: Spacing.base,
     ...Shadow.sm,
   },
@@ -329,7 +337,7 @@ const styles = StyleSheet.create({
   freeText: { color: Colors.primary, fontWeight: '700' },
   summaryDivider: {
     height: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: Colors.borderLight,
     marginVertical: 10,
   },
   totalLabel: {
@@ -354,9 +362,9 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: Radius.full,
-    backgroundColor: '#f8fafb',
+    backgroundColor: Colors.surfaceGray,
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.base,
@@ -394,14 +402,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: Colors.white,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: 14,
     paddingBottom: 24,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: Colors.borderLight,
     ...Shadow.xl,
   },
   checkoutInfo: {},

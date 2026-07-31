@@ -32,7 +32,7 @@ export default function AddressCard({ address, selected, onSelect, onDelete, onE
 
       <View style={styles.details}>
         <View style={styles.titleRow}>
-          <Text style={styles.type}>{address.type || 'Address'}</Text>
+          <Text style={styles.type}>{address.type || address.label || 'Address'}</Text>
           {selected && (
             <View style={styles.selectedBadge}>
               <Ionicons name="checkmark" size={10} color={Colors.white} />
@@ -40,7 +40,7 @@ export default function AddressCard({ address, selected, onSelect, onDelete, onE
           )}
         </View>
         <Text style={styles.addressText} numberOfLines={2}>
-          {address.line1}
+          {address.line1 || address.fullAddress}
           {address.line2 ? `, ${address.line2}` : ''}
           {address.city ? `, ${address.city}` : ''}
           {address.pincode ? ` - ${address.pincode}` : ''}
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.md,
     padding: Spacing.base,
     marginBottom: Spacing.md,
     borderWidth: 1.5,
@@ -85,20 +85,20 @@ const styles = StyleSheet.create({
   },
   selected: {
     borderColor: Colors.primary,
-    backgroundColor: Colors.surfaceGreen,
+    backgroundColor: Colors.primaryBg,
   },
   iconBox: {
     width: 44,
     height: 44,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceGreen,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderGreen,
   },
   iconBoxSelected: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: Colors.primaryLight,
     borderColor: Colors.primary,
   },
   details: { flex: 1, marginHorizontal: Spacing.md },

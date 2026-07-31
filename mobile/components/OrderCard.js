@@ -11,7 +11,7 @@ const STATUS_CONFIG = {
   confirmed: { icon: 'checkmark-circle-outline', color: '#3b82f6', bg: '#eff6ff' },
   preparing: { icon: 'restaurant-outline', color: '#8b5cf6', bg: '#f5f3ff' },
   out_for_delivery: { icon: 'bicycle-outline', color: '#f97316', bg: '#fff7ed' },
-  delivered: { icon: 'checkmark-done-circle', color: Colors.primary, bg: '#f0fdf4' },
+  delivered: { icon: 'checkmark-done-circle', color: Colors.primary, bg: Colors.primaryBg },
   cancelled: { icon: 'close-circle-outline', color: Colors.error, bg: '#fef2f2' },
 };
 
@@ -36,7 +36,6 @@ export default function OrderCard({ order }) {
       activeOpacity={0.88}
       style={styles.container}
     >
-      {/* Header row */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={[styles.statusIconWrap, { backgroundColor: config.bg }]}>
@@ -52,7 +51,6 @@ export default function OrderCard({ order }) {
 
       <View style={styles.divider} />
 
-      {/* Items info */}
       <View style={styles.body}>
         <View style={styles.bodyLeft}>
           <Text style={styles.itemName} numberOfLines={1}>
@@ -69,7 +67,6 @@ export default function OrderCard({ order }) {
         </View>
       </View>
 
-      {/* On-the-way strip */}
       {order.status === 'out_for_delivery' && (
         <View style={styles.deliveryStrip}>
           <Ionicons name="bicycle" size={14} color="#c2410c" />
@@ -77,10 +74,22 @@ export default function OrderCard({ order }) {
         </View>
       )}
 
-      {/* Footer */}
       <View style={styles.footer}>
-        <Text style={styles.viewDetails}>View Details</Text>
-        <Ionicons name="chevron-forward" size={13} color={Colors.primary} />
+        {order.status === 'delivered' && (
+          <TouchableOpacity
+            style={styles.reorderBtn}
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              router.push('/(tabs)/menu');
+            }}
+          >
+            <Text style={styles.reorderText}>Reorder</Text>
+          </TouchableOpacity>
+        )}
+        <View style={styles.viewDetails}>
+          <Text style={styles.viewDetailsText}>View Details</Text>
+          <Ionicons name="chevron-forward" size={13} color={Colors.primary} />
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -89,12 +98,12 @@ export default function OrderCard({ order }) {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     padding: Spacing.base,
     marginBottom: 10,
     ...Shadow.card,
     borderWidth: 1,
-    borderColor: '#f8fafb',
+    borderColor: Colors.borderLight,
   },
   header: {
     flexDirection: 'row',
@@ -110,7 +119,7 @@ const styles = StyleSheet.create({
   statusIconWrap: {
     width: 34,
     height: 34,
-    borderRadius: Radius.md,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -128,7 +137,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: Colors.borderLight,
     marginBottom: 10,
   },
   body: {
@@ -190,9 +199,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 3,
+    gap: 12,
+  },
+  reorderBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  reorderText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   viewDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  viewDetailsText: {
     fontSize: FontSizes.xs,
     fontWeight: '700',
     color: Colors.primary,

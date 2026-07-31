@@ -27,7 +27,6 @@ import { Radius, FontSizes, Spacing, Shadow } from '../../constants/theme';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 
-const { width, height } = Dimensions.get('window');
 const IMAGE_HEIGHT = 320;
 
 export default function BowlDetail() {
@@ -81,14 +80,19 @@ export default function BowlDetail() {
   const NUTRIENTS = [
     { label: 'Calories', value: bowl.calories, unit: 'kcal', icon: 'flash', iconColor: '#f59e0b' },
     { label: 'Protein', value: bowl.protein, unit: 'g', icon: 'barbell-outline', iconColor: '#8b5cf6' },
-    { label: 'Carbs', value: bowl.carbs, unit: 'g', icon: 'nutrition-outline', iconColor: '#22c55e' },
+    { label: 'Carbs', value: bowl.carbs, unit: 'g', icon: 'nutrition-outline', iconColor: Colors.primary },
     { label: 'Fat', value: bowl.fat, unit: 'g', icon: 'water-outline', iconColor: '#3b82f6' },
   ];
+
+  const servingLabel = bowl.pieces
+    ? `${bowl.pieces} Piece${bowl.pieces > 1 ? 's' : ''}`
+    : bowl.serves
+      ? `Serves ${bowl.serves}`
+      : null;
 
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Hero Image */}
         <View style={styles.imageWrapper}>
           <Image
             source={{ uri: bowl.image }}
@@ -101,29 +105,30 @@ export default function BowlDetail() {
             style={styles.imageGradient}
           />
 
-          {/* Back & Favorite buttons */}
           <SafeAreaView style={styles.topButtons}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={20} color={Colors.textPrimary} />
             </TouchableOpacity>
           </SafeAreaView>
 
-          {/* Badges */}
           <View style={styles.imageBadges}>
             {bowl.isBestseller && <Badge status="bestseller" size="xs" />}
             {bowl.isNew && <Badge status="new" size="xs" />}
           </View>
         </View>
 
-        {/* Content */}
         <View style={styles.content}>
-          {/* Title row */}
           <Animated.View entering={FadeInDown.delay(100)} style={styles.titleRow}>
             <View style={styles.titleLeft}>
-              <View style={[styles.vegBadge, { borderColor: bowl.isVeg ? Colors.primary : Colors.error }]}>
-                <View style={[styles.vegDot, { backgroundColor: bowl.isVeg ? Colors.primary : Colors.error }]} />
+              <View style={[styles.vegBadge, { borderColor: bowl.isVeg !== false ? Colors.primary : Colors.error }]}>
+                <View style={[styles.vegDot, { backgroundColor: bowl.isVeg !== false ? Colors.primary : Colors.error }]} />
               </View>
-              <Text style={styles.category}>{bowl.pfCategory}</Text>
+              <Text style={styles.category}>{bowl.pfCategory || bowl.category}</Text>
+              {servingLabel && (
+                <View style={styles.servingPill}>
+                  <Text style={styles.servingText}>{servingLabel}</Text>
+                </View>
+              )}
             </View>
             <Text style={styles.price}>₹{bowl.price}</Text>
           </Animated.View>
@@ -138,7 +143,6 @@ export default function BowlDetail() {
             </Animated.Text>
           )}
 
-          {/* Nutrition Card */}
           <Animated.View entering={FadeInDown.delay(250)} style={styles.nutritionCard}>
             <Text style={styles.nutritionTitle}>Nutrition Facts</Text>
             <View style={styles.nutritionGrid}>
@@ -156,7 +160,6 @@ export default function BowlDetail() {
             </View>
           </Animated.View>
 
-          {/* Availability */}
           {bowl.availableFrom && bowl.availableTill && (
             <Animated.View entering={FadeInDown.delay(300)} style={styles.availabilityRow}>
               <Ionicons name="time-outline" size={16} color={Colors.textMuted} />
@@ -166,7 +169,6 @@ export default function BowlDetail() {
             </Animated.View>
           )}
 
-          {/* Tags */}
           {bowl.tags?.length > 0 && (
             <View style={styles.tagsRow}>
               {bowl.tags.map((tag) => (
@@ -177,7 +179,6 @@ export default function BowlDetail() {
             </View>
           )}
 
-          {/* Quantity selector (before adding) */}
           {cartQuantity === 0 && (
             <Animated.View entering={FadeInDown.delay(350)} style={styles.quantitySection}>
               <Text style={styles.quantityLabel}>Quantity</Text>
@@ -201,7 +202,6 @@ export default function BowlDetail() {
         </View>
       </ScrollView>
 
-      {/* Add to Cart Bar */}
       <View style={styles.addToCartBar}>
         <View style={styles.totalInfo}>
           <Text style={styles.totalLabel}>Total</Text>
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.md,
   },
   backBtn: {
@@ -279,12 +279,12 @@ const styles = StyleSheet.create({
   imageBadges: {
     position: 'absolute',
     bottom: Spacing.base,
-    left: Spacing.xl,
+    left: Spacing.base,
     flexDirection: 'row',
     gap: 8,
   },
   content: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.base,
   },
   vegBadge: {
@@ -317,10 +317,21 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textTransform: 'capitalize',
   },
+  servingPill: {
+    backgroundColor: Colors.surfaceGray,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  servingText: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
   price: {
     fontSize: FontSizes['3xl'],
     fontWeight: '800',
-    color: Colors.primaryDark,
+    color: Colors.textPrimary,
     letterSpacing: -0.5,
   },
   name: {
@@ -338,12 +349,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   nutritionCard: {
-    backgroundColor: Colors.surfaceGreen,
-    borderRadius: Radius.xl,
+    backgroundColor: Colors.primaryBg,
+    borderRadius: Radius.lg,
     padding: Spacing.base,
     marginBottom: Spacing.base,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: Colors.borderGreen,
   },
   nutritionTitle: {
     fontSize: FontSizes.sm,
@@ -397,12 +408,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.base,
   },
   tag: {
-    backgroundColor: Colors.surfaceGreen,
+    backgroundColor: Colors.primaryBg,
     borderRadius: Radius.full,
     paddingHorizontal: Spacing.md,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderGreen,
   },
   tagText: {
     fontSize: FontSizes.xs,
@@ -423,7 +434,7 @@ const styles = StyleSheet.create({
   quantityControl: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceGreen,
+    backgroundColor: Colors.white,
     borderRadius: Radius.full,
     borderWidth: 1.5,
     borderColor: Colors.primary,
@@ -450,11 +461,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.base,
     paddingBottom: 28,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: Colors.borderLight,
     ...Shadow.xl,
   },
   totalInfo: {},

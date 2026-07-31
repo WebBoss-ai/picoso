@@ -15,7 +15,7 @@ import Colors from '../../constants/colors';
 import { Radius, FontSizes, Spacing, Shadow } from '../../constants/theme';
 import Button from '../../components/ui/Button';
 
-const CONFETTI_COLORS = ['#22c55e', '#4ade80', '#86efac', '#16a34a', '#dcfce7', '#86efac', '#22c55e'];
+const CONFETTI_COLORS = ['#1BA672', '#4ade80', '#86efac', '#158F61', '#E8F8F1', '#86efac', '#1BA672'];
 
 function ConfettiPiece({ color, delay, size }) {
   const translateY = useRef(new Animated.Value(-100)).current;
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.base,
   },
   checkCircle: {
     width: 100,
@@ -291,15 +291,15 @@ const styles = StyleSheet.create({
   etdCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(34,197,94,0.2)',
-    borderRadius: Radius.lg,
+    backgroundColor: 'rgba(27,166,114,0.2)',
+    borderRadius: Radius.md,
     paddingHorizontal: Spacing.base,
     paddingVertical: 10,
     marginBottom: Spacing.xl,
     gap: 8,
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(34,197,94,0.3)',
+    borderColor: 'rgba(27,166,114,0.3)',
   },
   etdText: {
     fontSize: FontSizes.sm,

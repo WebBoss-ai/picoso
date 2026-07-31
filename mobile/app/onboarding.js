@@ -24,12 +24,12 @@ const SLIDES = [
   {
     id: '1',
     icon: 'restaurant',
-    iconColor: '#22c55e',
+    iconColor: '#1BA672',
     title: 'Eat Healthy,\nFeel Amazing',
     subtitle:
       'Freshly crafted power bowls, salads and wraps — made with the finest ingredients, designed for your wellness.',
-    bg: ['#0a2e12', '#166534'],
-    accent: '#22c55e',
+    bg: ['#0B3D2E', '#166534'],
+    accent: '#1BA672',
   },
   {
     id: '2',
@@ -38,7 +38,7 @@ const SLIDES = [
     title: 'Fuel Your\nActive Life',
     subtitle:
       'Track calories, protein, and macros with every meal. Know exactly what goes into your body.',
-    bg: ['#0f3d1a', '#1a7a3c'],
+    bg: ['#0F4A38', '#1A7A3C'],
     accent: '#4ade80',
   },
   {
@@ -48,7 +48,7 @@ const SLIDES = [
     title: 'Delivered to\nYour Door',
     subtitle:
       'Fast, fresh, and eco-friendly delivery. Your perfect meal, at your doorstep in 30 minutes.',
-    bg: ['#14532d', '#22c55e'],
+    bg: ['#0B3D2E', '#1BA672'],
     accent: '#86efac',
   },
 ];
@@ -169,7 +169,7 @@ export default function Onboarding() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   slide: { width, height },
-  safeSlide: { flex: 1, paddingHorizontal: Spacing.lg },
+  safeSlide: { flex: 1, paddingHorizontal: Spacing.base },
 
   skipBtn: {
     alignSelf: 'flex-end',

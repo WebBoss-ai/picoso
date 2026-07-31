@@ -307,10 +307,10 @@ const styles = StyleSheet.create({
   otpBox: {
     width: 62,
     height: 70,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     borderWidth: 2,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#f8fafb',
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceGray,
     fontSize: 28,
     fontWeight: '800',
     color: Colors.textPrimary,
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   },
   otpBoxFilled: {
     borderColor: Colors.primary,
-    backgroundColor: '#f0fdf4',
+    backgroundColor: Colors.primaryBg,
   },
   otpBoxError: {
     borderColor: Colors.error,

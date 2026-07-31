@@ -92,7 +92,6 @@ export default function OrdersScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>My Orders</Text>
         <TouchableOpacity
@@ -105,7 +104,6 @@ export default function OrdersScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Status Filter */}
       <View style={styles.filterRow}>
         {STATUS_FILTERS.map((f) => (
           <TouchableOpacity
@@ -154,7 +152,6 @@ export default function OrdersScreen() {
           renderItem={({ item, index }) => (
             <Animated.View
               entering={FadeInDown.delay(index * 55).duration(400)}
-              style={styles.cardWrapper}
             >
               <OrderCard order={item} />
             </Animated.View>
@@ -177,20 +174,20 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f8fafb' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.base,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: Colors.borderLight,
     backgroundColor: Colors.white,
   },
   title: {
-    fontSize: FontSizes['3xl'],
+    fontSize: FontSizes['2xl'],
     fontWeight: '800',
     color: Colors.textPrimary,
     letterSpacing: -0.5,
@@ -199,29 +196,29 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceGreen,
+    backgroundColor: Colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderGreen,
   },
   filterRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: 14,
     paddingBottom: 10,
     gap: Spacing.sm,
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: Colors.borderLight,
   },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: Radius.full,
-    backgroundColor: '#f8fafb',
+    backgroundColor: Colors.surfaceGray,
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.border,
   },
   filterChipActive: {
     backgroundColor: Colors.primary,
@@ -230,20 +227,19 @@ const styles = StyleSheet.create({
   filterText: {
     fontSize: FontSizes.sm,
     fontWeight: '600',
-    color: '#64748b',
+    color: Colors.textSecondary,
   },
   filterTextActive: { color: Colors.white },
 
   loadingList: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.base,
   },
   listContent: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.base,
     paddingTop: Spacing.base,
     paddingBottom: 100,
   },
-  cardWrapper: {},
 
   emptyState: {
     flex: 1,
@@ -255,9 +251,9 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: Radius.full,
-    backgroundColor: '#f8fafb',
+    backgroundColor: Colors.surfaceGray,
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.base,

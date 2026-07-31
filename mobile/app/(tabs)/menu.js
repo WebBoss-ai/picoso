@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,34 +7,37 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  SectionList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { bowlsAPI } from '../../lib/api';
-import Colors from '../../constants/colors';
+import { useCart } from '../../context/CartContext';
+import Colors, { MENU_CATEGORIES } from '../../constants/colors';
 import { Radius, FontSizes, Spacing, Shadow } from '../../constants/theme';
 import BowlCard from '../../components/BowlCard';
-import CategoryChip from '../../components/CategoryChip';
+import MenuCategoryPopup from '../../components/MenuCategoryPopup';
+import { OfferStrip, CartBar } from '../../components/PromoBanner';
 import { BowlCardSkeleton } from '../../components/ui/Skeleton';
 
-const CATEGORIES = [
-  { id: 'all', label: 'All' },
-  { id: 'meals', label: 'Meals' },
-  { id: 'salads', label: 'Salads' },
-  { id: 'beverages', label: 'Beverages' },
-  { id: 'wraps', label: 'Wraps' },
-  { id: 'sandwiches', label: 'Sandwiches' },
-];
-
 export default function MenuScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const { totalItems, totalAmount, items } = useCart();
+  const listRef = useRef(null);
+
   const [bowls, setBowls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
-  const searchRef = useRef(null);
+  const [search, setSearch] = useState(params.q || '');
+  const [vegOnly, setVegOnly] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(params.category || 'all');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [specialFilter, setSpecialFilter] = useState(params.filter || null);
 
   const fetchBowls = useCallback(async () => {
     try {
@@ -55,120 +58,275 @@ export default function MenuScreen() {
 
   useEffect(() => { fetchBowls(); }, []);
 
+  useEffect(() => {
+    if (params.category) setActiveCategory(params.category);
+    if (params.filter) setSpecialFilter(params.filter);
+    if (params.q) setSearch(params.q);
+  }, [params.category, params.filter, params.q]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchBowls();
   }, [fetchBowls]);
 
-  const filtered = bowls.filter((b) => {
-    const matchesCategory =
-      activeCategory === 'all' || b.pfCategory?.toLowerCase() === activeCategory;
-    const matchesSearch =
-      !search || b.name?.toLowerCase().includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const filtered = useMemo(() => {
+    let list = bowls;
+    if (vegOnly) list = list.filter((b) => b.isVeg !== false);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (b) =>
+          b.name?.toLowerCase().includes(q) ||
+          b.description?.toLowerCase().includes(q)
+      );
+    }
+    if (specialFilter === 'bestsellers') list = list.filter((b) => b.isBestseller);
+    else if (specialFilter === 'under99') list = list.filter((b) => b.price <= 99);
+    else if (specialFilter === 'new') list = list.filter((b) => b.isNew);
 
-  const renderItem = ({ item }) => (
-    <View style={viewMode === 'grid' ? styles.gridItem : styles.listItem}>
-      <BowlCard bowl={item} horizontal={viewMode === 'list'} />
+    if (activeCategory !== 'all' && !specialFilter) {
+      list = list.filter(
+        (b) =>
+          b.pfCategory?.toLowerCase() === activeCategory ||
+          b.category?.toLowerCase() === activeCategory
+      );
+    }
+    return list;
+  }, [bowls, vegOnly, search, activeCategory, specialFilter]);
+
+  // Build sections grouped by category for "all" view
+  const sections = useMemo(() => {
+    if (activeCategory !== 'all' || specialFilter || search.trim()) {
+      const label =
+        specialFilter === 'bestsellers' ? 'Bestsellers'
+          : specialFilter === 'under99' ? 'Under ₹99'
+            : specialFilter === 'new' ? 'Fresh Arrivals'
+              : activeCategory === 'all'
+                ? 'All Items'
+                : MENU_CATEGORIES.find((c) => c.id === activeCategory)?.label || activeCategory;
+
+      // Pair items into rows of 2 for grid
+      const rows = [];
+      for (let i = 0; i < filtered.length; i += 2) {
+        rows.push({ key: `row-${i}`, items: filtered.slice(i, i + 2) });
+      }
+      return [{ title: label, count: filtered.length, data: rows, sampleImage: filtered[0]?.image }];
+    }
+
+    // Group by category
+    const groups = {};
+    filtered.forEach((b) => {
+      const cat = (b.pfCategory || b.category || 'pf-meals').toLowerCase();
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(b);
+    });
+
+    return Object.entries(groups)
+      .map(([cat, items]) => {
+        const meta = MENU_CATEGORIES.find((c) => c.id === cat);
+        const rows = [];
+        for (let i = 0; i < items.length; i += 2) {
+          rows.push({ key: `row-${cat}-${i}`, items: items.slice(i, i + 2) });
+        }
+        return {
+          title: meta?.label || cat.charAt(0).toUpperCase() + cat.slice(1),
+          id: cat,
+          count: items.length,
+          data: rows,
+          sampleImage: items[0]?.image,
+        };
+      })
+      .filter((s) => s.count > 0);
+  }, [filtered, activeCategory, specialFilter, search]);
+
+  const categoryCounts = useMemo(() => {
+    return MENU_CATEGORIES.map((cat) => ({
+      ...cat,
+      count:
+        cat.id === 'all'
+          ? bowls.length
+          : bowls.filter(
+              (b) =>
+                b.pfCategory?.toLowerCase() === cat.id ||
+                b.category?.toLowerCase() === cat.id
+            ).length,
+    })).filter((c) => c.id === 'all' || c.count > 0);
+  }, [bowls]);
+
+  const handleCategorySelect = (catId) => {
+    setActiveCategory(catId);
+    setSpecialFilter(null);
+    setSearch('');
+    listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
+  };
+
+  const cartThumb = items[0]?.image;
+
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      {section.sampleImage && (
+        <Image
+          source={{ uri: section.sampleImage }}
+          style={styles.sectionThumb}
+          contentFit="cover"
+        />
+      )}
+      <View>
+        <Text style={styles.sectionTitle}>{section.title}</Text>
+        <Text style={styles.sectionCount}>{section.count} items</Text>
+      </View>
+    </View>
+  );
+
+  const renderRow = ({ item }) => (
+    <View style={styles.gridRow}>
+      {item.items.map((bowl) => (
+        <View key={bowl._id} style={styles.gridItem}>
+          <BowlCard bowl={bowl} />
+        </View>
+      ))}
+      {item.items.length === 1 && <View style={styles.gridItem} />}
     </View>
   );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
+      {/* Sticky Search Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Menu</Text>
-        <TouchableOpacity
-          onPress={() => setViewMode((v) => (v === 'grid' ? 'list' : 'grid'))}
-          style={styles.viewToggle}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons
-            name={viewMode === 'grid' ? 'list' : 'grid'}
-            size={20}
-            color={Colors.primaryDark}
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={18} color={Colors.primary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={`Search "${bowls[0]?.name || 'Bhel Puri'}"`}
+            placeholderTextColor={Colors.textMuted}
+            value={search}
+            onChangeText={(t) => {
+              setSearch(t);
+              setSpecialFilter(null);
+            }}
+            returnKeyType="search"
           />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+          <View style={styles.searchDivider} />
+          <TouchableOpacity
+            style={styles.vegToggle}
+            onPress={() => setVegOnly((v) => !v)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.vegLabel, vegOnly && styles.vegLabelOn]}>VEG</Text>
+            <View style={[styles.vegSwitch, vegOnly && styles.vegSwitchOn]}>
+              <View style={[styles.vegKnob, vegOnly && styles.vegKnobOn]} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Promo mini banner */}
+        <TouchableOpacity
+          style={styles.promoMini}
+          onPress={() => router.push('/platinum')}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={['#FEF3C7', '#FDE68A']}
+            style={styles.promoMiniInner}
+          >
+            <Text style={styles.promoMiniText}>NEW ON{'\n'}PICOSO</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchWrapper}>
-        <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
-        <TextInput
-          ref={searchRef}
-          style={styles.searchInput}
-          placeholder="Search bowls, salads, wraps..."
-          placeholderTextColor={Colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Categories */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categories}
-        style={styles.categoriesScroll}
-      >
-        {CATEGORIES.map((cat) => (
-          <CategoryChip
-            key={cat.id}
-            category={cat.id}
-            label={cat.label}
-            selected={activeCategory === cat.id}
-            onPress={() => setActiveCategory(cat.id)}
-          />
-        ))}
-      </ScrollView>
-
-      {/* Results Count */}
-      {!loading && (
-        <Text style={styles.resultCount}>
-          {filtered.length} item{filtered.length !== 1 ? 's' : ''}
-        </Text>
+      {/* Explore Menu Banner */}
+      {!search && !specialFilter && activeCategory === 'all' && (
+        <View style={styles.exploreBanner}>
+          <LinearGradient
+            colors={['#E8F8F1', '#D1F2E4']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.exploreInner}
+          >
+            <Ionicons name="book-outline" size={28} color={Colors.primary} />
+            <Text style={styles.exploreText}>explore menu</Text>
+          </LinearGradient>
+        </View>
       )}
 
-      {/* Bowl List */}
+      {/* Active filter chips */}
+      {(specialFilter || activeCategory !== 'all') && (
+        <View style={styles.filterBar}>
+          <TouchableOpacity
+            style={styles.filterChip}
+            onPress={() => {
+              setActiveCategory('all');
+              setSpecialFilter(null);
+            }}
+          >
+            <Ionicons name="close" size={12} color={Colors.primary} />
+            <Text style={styles.filterChipText}>
+              {specialFilter === 'bestsellers'
+                ? 'Bestsellers'
+                : specialFilter === 'under99'
+                  ? 'Under ₹99'
+                  : specialFilter === 'new'
+                    ? 'Fresh Arrivals'
+                    : MENU_CATEGORIES.find((c) => c.id === activeCategory)?.label || activeCategory}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Content */}
       {loading ? (
-        <ScrollView
-          contentContainerStyle={styles.loadingGrid}
-          showsVerticalScrollIndicator={false}
-        >
-          {[1, 2, 3, 4].map((i) => <BowlCardSkeleton key={i} />)}
+        <ScrollView contentContainerStyle={styles.loadingGrid} showsVerticalScrollIndicator={false}>
+          <View style={styles.gridRow}>
+            {[1, 2, 3, 4].map((i) => (
+              <View key={i} style={styles.gridItem}>
+                <BowlCardSkeleton />
+              </View>
+            ))}
+          </View>
         </ScrollView>
-      ) : filtered.length === 0 ? (
+      ) : sections.length === 0 || (sections[0]?.data?.length === 0) ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="search-outline" size={30} color={Colors.textMuted} />
           </View>
           <Text style={styles.emptyTitle}>No results found</Text>
           <Text style={styles.emptySubtitle}>
-            Try adjusting your search or category filter
+            Try adjusting your search or filters
           </Text>
           <TouchableOpacity
-            onPress={() => { setSearch(''); setActiveCategory('all'); }}
-            style={styles.clearFiltersBtn}
+            onPress={() => {
+              setSearch('');
+              setActiveCategory('all');
+              setSpecialFilter(null);
+              setVegOnly(false);
+            }}
+            style={styles.clearBtn}
           >
-            <Text style={styles.clearFiltersText}>Clear filters</Text>
+            <Text style={styles.clearBtnText}>Clear filters</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <FlashList
-          data={filtered}
-          renderItem={renderItem}
-          estimatedItemSize={viewMode === 'grid' ? 220 : 110}
-          numColumns={viewMode === 'grid' ? 2 : 1}
-          key={viewMode}
-          contentContainerStyle={styles.listContent}
+        <SectionList
+          ref={listRef}
+          sections={sections}
+          keyExtractor={(item) => item.key}
+          renderItem={renderRow}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: totalItems > 0 ? 160 : 100 },
+          ]}
+          onScroll={(e) => {
+            setShowBackToTop(e.nativeEvent.contentOffset.y > 400);
+          }}
+          scrollEventThrottle={100}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -179,83 +337,224 @@ export default function MenuScreen() {
           }
         />
       )}
+
+      {/* Back to top */}
+      {showBackToTop && (
+        <TouchableOpacity
+          style={styles.backToTop}
+          onPress={() => listRef.current?.scrollToLocation?.({ sectionIndex: 0, itemIndex: 0, animated: true })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="arrow-up" size={14} color={Colors.white} />
+          <Text style={styles.backToTopText}>Back to top</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Floating Menu FAB */}
+      <TouchableOpacity
+        style={[styles.menuFab, totalItems > 0 && styles.menuFabRaised]}
+        onPress={() => setMenuOpen(true)}
+        activeOpacity={0.9}
+      >
+        <Ionicons name="restaurant" size={16} color={Colors.white} />
+        <Text style={styles.menuFabText}>Menu</Text>
+      </TouchableOpacity>
+
+      {/* Offer + Cart */}
+      {totalItems > 0 && (
+        <View style={styles.bottomBars}>
+          <OfferStrip />
+          <CartBar
+            totalItems={totalItems}
+            totalAmount={totalAmount}
+            thumbnail={cartThumb}
+            onPress={() => router.push('/(tabs)/cart')}
+          />
+        </View>
+      )}
+
+      <MenuCategoryPopup
+        visible={menuOpen}
+        categories={categoryCounts}
+        activeCategory={activeCategory}
+        onSelect={handleCategorySelect}
+        onClose={() => setMenuOpen(false)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f8fafb' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
     paddingBottom: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
     backgroundColor: Colors.white,
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
-  title: {
-    fontSize: FontSizes['3xl'],
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  viewToggle: {
-    width: 40,
-    height: 40,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  searchWrapper: {
+  searchBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.base,
-    height: 48,
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    gap: Spacing.sm,
-    ...Shadow.sm,
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    height: 44,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   searchInput: {
     flex: 1,
-    fontSize: FontSizes.base,
+    fontSize: FontSizes.sm,
     color: Colors.textPrimary,
     fontWeight: '500',
   },
-  categoriesScroll: { maxHeight: 52 },
-  categories: {
-    paddingHorizontal: Spacing.lg,
-    paddingRight: Spacing.xl,
-    paddingBottom: 4,
+  searchDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: Colors.border,
   },
-  resultCount: {
+  vegToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  vegLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0.5,
+  },
+  vegLabelOn: { color: Colors.primary },
+  vegSwitch: {
+    width: 32,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.borderMedium,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  vegSwitchOn: { backgroundColor: Colors.primary },
+  vegKnob: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: Colors.white,
+  },
+  vegKnobOn: { alignSelf: 'flex-end' },
+
+  promoMini: {
+    width: 56,
+    height: 44,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+  },
+  promoMiniInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  promoMiniText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#92400E',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    lineHeight: 11,
+  },
+
+  exploreBanner: {
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+  },
+  exploreInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    gap: 10,
+  },
+  exploreText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primaryDarker,
+    fontStyle: 'italic',
+    letterSpacing: 0.5,
+  },
+
+  filterBar: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: 8,
+    flexDirection: 'row',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryBg,
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 5,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+    backgroundColor: Colors.surface,
+  },
+  sectionThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.full,
+  },
+  sectionTitle: {
+    fontSize: FontSizes.lg,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  sectionCount: {
     fontSize: FontSizes.xs,
     color: Colors.textMuted,
     fontWeight: '500',
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
+    marginTop: 1,
   },
-  loadingGrid: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: 100,
-  },
+
   listContent: {
     paddingHorizontal: Spacing.sm,
-    paddingBottom: 100,
   },
-  gridItem: { flex: 1, padding: 6 },
-  listItem: { paddingHorizontal: Spacing.sm },
+  loadingGrid: {
+    paddingHorizontal: Spacing.sm,
+    paddingTop: Spacing.base,
+  },
+  gridRow: {
+    flexDirection: 'row',
+  },
+  gridItem: {
+    width: '50%',
+  },
+
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -267,9 +566,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: Radius.full,
-    backgroundColor: '#f8fafb',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    backgroundColor: Colors.surfaceGray,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -287,17 +584,66 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: Spacing.xl,
   },
-  clearFiltersBtn: {
+  clearBtn: {
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.surfaceGreen,
+    backgroundColor: Colors.primaryBg,
     borderRadius: Radius.full,
     borderWidth: 1.5,
     borderColor: Colors.primary,
   },
-  clearFiltersText: {
+  clearBtnText: {
     color: Colors.primary,
     fontSize: FontSizes.sm,
     fontWeight: '700',
+  },
+
+  backToTop: {
+    position: 'absolute',
+    top: 110,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.cartBarBg,
+    borderRadius: Radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 5,
+    zIndex: 25,
+    ...Shadow.md,
+  },
+  backToTopText: {
+    color: Colors.white,
+    fontSize: FontSizes.xs,
+    fontWeight: '600',
+  },
+
+  menuFab: {
+    position: 'absolute',
+    bottom: 80,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.full,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    gap: 6,
+    ...Shadow.green,
+    zIndex: 20,
+  },
+  menuFabRaised: { bottom: 140 },
+  menuFabText: {
+    color: Colors.white,
+    fontSize: FontSizes.sm,
+    fontWeight: '700',
+  },
+
+  bottomBars: {
+    position: 'absolute',
+    bottom: 64,
+    left: 0,
+    right: 0,
+    zIndex: 15,
   },
 });

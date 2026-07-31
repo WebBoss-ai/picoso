@@ -1,13 +1,17 @@
 import { Platform, Dimensions } from 'react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export const Layout = {
   screenWidth: SCREEN_WIDTH,
-  horizontalPadding: 20,
-  cardPadding: 16,
-  sectionGap: 28,
+  screenHeight: SCREEN_HEIGHT,
+  horizontalPadding: 16,
+  cardPadding: 14,
+  sectionGap: 24,
   tabBarHeight: 64,
+  cartBarHeight: 64,
+  gridGap: 12,
+  cardWidth: (SCREEN_WIDTH - 32 - 12) / 2,
 };
 
 export const FontSizes = {
@@ -35,6 +39,7 @@ export const Spacing = {
 };
 
 export const Radius = {
+  xs: 6,
   sm: 8,
   md: 12,
   lg: 16,
@@ -46,31 +51,35 @@ export const Radius = {
 
 export const Shadow = {
   sm: Platform.select({
-    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6 },
-    android: { elevation: 2 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
+    android: { elevation: 1 },
   }),
   md: Platform.select({
-    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 12 },
-    android: { elevation: 4 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 10 },
+    android: { elevation: 3 },
   }),
   lg: Platform.select({
-    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.10, shadowRadius: 20 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 16 },
     android: { elevation: 6 },
   }),
   xl: Platform.select({
-    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 30 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 24 },
     android: { elevation: 10 },
   }),
   card: Platform.select({
-    ios: { shadowColor: '#14532d', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 10 },
-    android: { elevation: 3 },
+    ios: { shadowColor: '#1C1C1C', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+    android: { elevation: 2 },
   }),
   green: Platform.select({
-    ios: { shadowColor: '#22c55e', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 14 },
+    ios: { shadowColor: '#1BA672', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.30, shadowRadius: 12 },
     android: { elevation: 6 },
   }),
   tab: Platform.select({
-    ios: { shadowColor: '#14532d', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.06, shadowRadius: 16 },
+    ios: { shadowColor: '#1C1C1C', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 12 },
+    android: { elevation: 12 },
+  }),
+  popup: Platform.select({
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 24 },
     android: { elevation: 16 },
   }),
 };

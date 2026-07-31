@@ -69,17 +69,17 @@ export function OrderCardSkeleton() {
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: Colors.borderMedium,
+    backgroundColor: Colors.border,
   },
   cardSkeleton: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.md,
     overflow: 'hidden',
     marginBottom: 12,
   },
   orderSkeleton: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.md,
     padding: 16,
     marginBottom: 12,
   },

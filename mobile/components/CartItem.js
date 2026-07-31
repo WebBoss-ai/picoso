@@ -25,7 +25,12 @@ export default function CartItem({ item }) {
       />
 
       <View style={styles.details}>
-        <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+        <View style={styles.nameRow}>
+          <View style={[styles.vegSquare, { borderColor: item.isVeg !== false ? Colors.primary : Colors.error }]}>
+            <View style={[styles.vegDot, { backgroundColor: item.isVeg !== false ? Colors.primary : Colors.error }]} />
+          </View>
+          <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+        </View>
         {item.customizations && (
           <Text style={styles.customText} numberOfLines={1}>Custom bowl</Text>
         )}
@@ -48,7 +53,7 @@ export default function CartItem({ item }) {
             style={styles.qtyBtn}
             activeOpacity={0.7}
           >
-            <Ionicons name="remove" size={13} color={Colors.primaryDark} />
+            <Ionicons name="remove" size={13} color={Colors.primary} />
           </TouchableOpacity>
           <Text style={styles.qtyText}>{item.quantity}</Text>
           <TouchableOpacity
@@ -56,7 +61,7 @@ export default function CartItem({ item }) {
             style={styles.qtyBtn}
             activeOpacity={0.7}
           >
-            <Ionicons name="add" size={13} color={Colors.primaryDark} />
+            <Ionicons name="add" size={13} color={Colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -69,30 +74,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     padding: 12,
     marginBottom: 10,
     ...Shadow.sm,
     borderWidth: 1,
-    borderColor: '#f8fafb',
+    borderColor: Colors.borderLight,
   },
   image: {
     width: 66,
     height: 66,
-    borderRadius: Radius.md,
-    backgroundColor: '#f1f5f9',
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceGray,
   },
   details: {
     flex: 1,
     marginLeft: 12,
     justifyContent: 'center',
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  vegSquare: {
+    width: 12,
+    height: 12,
+    borderWidth: 1.5,
+    borderRadius: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vegDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
   name: {
     fontSize: FontSizes.sm,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 3,
     letterSpacing: -0.1,
+    flex: 1,
   },
   customText: {
     fontSize: FontSizes.xs,
@@ -103,7 +127,7 @@ const styles = StyleSheet.create({
   price: {
     fontSize: FontSizes.base,
     fontWeight: '800',
-    color: Colors.primaryDark,
+    color: Colors.textPrimary,
     letterSpacing: -0.2,
   },
   controls: {
@@ -111,14 +135,12 @@ const styles = StyleSheet.create({
     gap: 10,
     marginLeft: 8,
   },
-  deleteBtn: {
-    padding: 4,
-  },
+  deleteBtn: { padding: 4 },
   quantityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceGreen,
-    borderRadius: Radius.full,
+    backgroundColor: Colors.white,
+    borderRadius: Radius.sm,
     borderWidth: 1.5,
     borderColor: Colors.primary,
   },
@@ -130,8 +152,8 @@ const styles = StyleSheet.create({
   },
   qtyText: {
     fontSize: FontSizes.sm,
-    fontWeight: '700',
-    color: Colors.primaryDark,
+    fontWeight: '800',
+    color: Colors.primary,
     minWidth: 20,
     textAlign: 'center',
   },

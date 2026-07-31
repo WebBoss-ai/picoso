@@ -218,10 +218,10 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafb',
-    borderRadius: Radius.lg,
+    backgroundColor: Colors.surfaceGray,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.border,
     marginBottom: Spacing.md,
     height: 56,
     overflow: 'hidden',
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   separator: {
     width: 1.5,
     height: 22,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: Colors.border,
     marginLeft: 4,
   },
   phoneInput: {
@@ -290,13 +290,13 @@ const styles = StyleSheet.create({
   devNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceGreen,
+    backgroundColor: Colors.primaryBg,
     borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 9,
     gap: 6,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderGreen,
   },
   devNoteText: {
     fontSize: FontSizes.xs,

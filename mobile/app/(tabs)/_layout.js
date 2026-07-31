@@ -14,7 +14,7 @@ function TabIcon({ iconActive, iconInactive, focused, label, badge }) {
         <Ionicons
           name={focused ? iconActive : iconInactive}
           size={22}
-          color={focused ? Colors.primary : '#94a3b8'}
+          color={focused ? Colors.primary : Colors.textMuted}
         />
         {badge > 0 && (
           <View style={styles.badge}>
@@ -46,7 +46,7 @@ export default function TabsLayout() {
           height: TAB_BAR_HEIGHT + bottomInset,
           backgroundColor: Colors.white,
           borderTopWidth: 1,
-          borderTopColor: '#f1f5f9',
+          borderTopColor: Colors.borderLight,
           paddingBottom: bottomInset,
           paddingTop: 6,
           ...Platform.select({
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -3,
     right: -6,
-    backgroundColor: '#ef4444',
+    backgroundColor: Colors.error,
     borderRadius: 10,
     minWidth: 16,
     height: 16,
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: '500',
-    color: '#94a3b8',
+    color: Colors.textMuted,
     letterSpacing: 0.1,
   },
   labelActive: {
