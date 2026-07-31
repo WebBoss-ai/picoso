@@ -1,10 +1,13 @@
-import { Inter } from 'next/font/google';
+import { Inter, Fraunces, Caveat, Nunito } from 'next/font/google';
 import './globals.css';
 import { CartProvider } from '@/context/CartContext';
 import { AuthProvider } from '@/context/AuthContext';
 import ClientShell from '@/components/ClientShell';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
+const fraunces = Fraunces({ subsets: ['latin'], display: 'swap', variable: '--font-closed-display' });
+const caveat = Caveat({ subsets: ['latin'], display: 'swap', variable: '--font-closed-script' });
+const nunito = Nunito({ subsets: ['latin'], display: 'swap', variable: '--font-closed-sans' });
 
 export const metadata = {
   title: 'Picoso — Healthy Food Delivered',
@@ -14,7 +17,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${fraunces.variable} ${caveat.variable} ${nunito.variable}`}>
       <head>
         {/* 🔥 META PIXEL BASE CODE (REQUIRED) */}
         {/* 👉 Replace PIXEL_ID with your actual Meta Pixel ID */}
