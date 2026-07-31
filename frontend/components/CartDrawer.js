@@ -29,6 +29,12 @@ const COFFEE_GRADIENTS = [
   ['#eff6ff','#bfdbfe'],
 ];
 
+function cartDbg(step, data) {
+  const payload = data === undefined ? '' : data;
+  // eslint-disable-next-line no-console
+  console.log(`%c[CartFlow] ${step}`, 'color:#0B5C3A;font-weight:bold', payload);
+}
+
 // Volume badge shown on every coffee item — no emoji, uses Coffee icon
 function VolumeBadge() {
   return (
@@ -52,9 +58,10 @@ export default function CartDrawer({ onAuthRequired }) {
   const [notifyDone,      setNotifyDone]     = useState(false);
   const [notifySend,      setNotifySend]     = useState(false);
   const [adminSent,       setAdminSent]      = useState(false); // prevent double-send
+  const [lastStatusFetch, setLastStatusFetch] = useState(null);
 
   const openClosedPoster = (reason = 'unknown') => {
-    console.log('[CartDrawer] openClosedPoster →', reason);
+    cartDbg('OPEN_CLOSED_POSTER', { reason, items: items.length, cartTotal });
     setShowClosed(true);
     setIsOpen(false);
     if (!adminSent && items.length > 0) {
@@ -64,55 +71,122 @@ export default function CartDrawer({ onAuthRequired }) {
         userId: user?._id || null,
         items: items.map(i => ({ name: i.name, price: i.price, qty: i.quantity })),
         total: cartTotal,
-      }).catch(() => {});
+      })
+        .then(() => cartDbg('closed-checkout saved OK'))
+        .catch((err) => cartDbg('closed-checkout save FAIL', err?.message || err));
     }
   };
 
-  // Prefetch store status on mount + refresh when cart opens
+  // Prefetch store status on mount
   useEffect(() => {
-    storeApi.get()
-      .then(res => setStore(res?.data?.status ?? { isOpen: true }))
-      .catch(() => setStore({ isOpen: true }));
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
+    cartDbg('MOUNT prefetch store status', { apiBase });
     storeApi.get()
       .then(res => {
-        if (cancelled) return;
-        const status = res?.data?.status ?? null;
+        const status = res?.data?.status ?? { isOpen: true };
+        cartDbg('MOUNT status OK', {
+          isOpen: status.isOpen,
+          typeofIsOpen: typeof status.isOpen,
+          raw: status,
+        });
         setStore(status);
-        // Only swap to closed poster when store is confirmed closed
+        setLastStatusFetch({ at: new Date().toISOString(), source: 'mount', isOpen: status.isOpen });
+      })
+      .catch((err) => {
+        cartDbg('MOUNT status FAIL → default OPEN', err?.message || err);
+        setStore({ isOpen: true });
+        setLastStatusFetch({ at: new Date().toISOString(), source: 'mount-fail', isOpen: true });
+      });
+  }, []);
+
+  // When cart opens: if store OPEN → keep drawer; if CLOSED → closed poster
+  useEffect(() => {
+    cartDbg('isOpen changed', { isOpen, showClosed, storeIsOpen: store?.isOpen });
+    if (!isOpen) return;
+
+    let cancelled = false;
+    cartDbg('CART OPENED → fetching fresh store status…');
+    storeApi.get()
+      .then(res => {
+        if (cancelled) {
+          cartDbg('CART OPEN fetch ignored (cancelled)');
+          return;
+        }
+        const status = res?.data?.status ?? null;
+        cartDbg('CART OPEN status response', {
+          isOpen: status?.isOpen,
+          strictClosed: status && status.isOpen === false,
+          full: status,
+          resDataKeys: res?.data ? Object.keys(res.data) : [],
+        });
+        setStore(status);
+        setLastStatusFetch({ at: new Date().toISOString(), source: 'cart-open', isOpen: status?.isOpen });
+
         if (status && status.isOpen === false) {
+          cartDbg('STORE CLOSED → switching to closed poster');
           openClosedPoster('auto-on-cart-open');
+        } else {
+          cartDbg('STORE OPEN (or unknown) → clearing showClosed, keeping drawer', {
+            willClearShowClosed: showClosed,
+          });
+          setShowClosed(false);
         }
       })
-      .catch(() => {
-        if (!cancelled) setStore({ isOpen: true });
+      .catch((err) => {
+        if (cancelled) return;
+        cartDbg('CART OPEN status FAIL → treat as OPEN, show drawer', err?.message || err);
+        setStore({ isOpen: true });
+        setShowClosed(false);
+        setLastStatusFetch({ at: new Date().toISOString(), source: 'cart-open-fail', isOpen: true });
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  useEffect(() => {
+    cartDbg('STATE snapshot', {
+      isOpen,
+      showClosed,
+      storeIsOpen: store?.isOpen,
+      cartCount,
+      items: items.length,
+      coffeeOffers: coffeeOffers.length,
+      isLoggedIn,
+      lastStatusFetch,
+      renderPath: showClosed && !isOpen
+        ? 'CLOSED_POSTER'
+        : !isOpen
+          ? 'NULL (hidden)'
+          : 'DRAWER',
+    });
+  }, [isOpen, showClosed, store, cartCount, items.length, coffeeOffers.length, isLoggedIn, lastStatusFetch]);
+
   const submitNotify = async (phoneOverride, location = {}) => {
     const phone = String(phoneOverride ?? notifyPhone).trim().replace(/\D/g, '').slice(-10);
-    if (!phone || phone.length < 10) return;
+    cartDbg('submitNotify start', { phone, location, isLoggedIn });
+    if (!phone || phone.length < 10) {
+      cartDbg('submitNotify abort — bad phone');
+      return;
+    }
     if (phone !== notifyPhone) setNotifyPhone(phone);
     setNotifySend(true);
     try {
       let userId = user?.id || user?._id || null;
 
       if (!isLoggedIn || (user?.phone && user.phone !== phone)) {
+        cartDbg('background login…');
         const authRes = await authApi.verifyOTP(phone, '0000');
         const { token, user: authUser } = authRes.data || {};
         if (token && authUser) {
           login(token, authUser);
           userId = authUser.id || authUser._id || null;
+          cartDbg('background login OK', { userId });
+        } else {
+          cartDbg('background login missing token/user', authRes?.data);
         }
       }
 
-      await storeApi.notifyMe({
+      const notifyRes = await storeApi.notifyMe({
         phone,
         userId,
         source: 'closed_store_bounty',
@@ -123,8 +197,10 @@ export default function CartDrawer({ onAuthRequired }) {
         city: location.city || '',
         pincode: location.pincode || '',
       });
+      cartDbg('notifyMe OK', notifyRes?.data);
       setNotifyDone(true);
       setTimeout(() => {
+        cartDbg('redirect → /menu');
         setShowClosed(false);
         setNotifyDone(false);
         setNotifyPhone('');
@@ -132,20 +208,22 @@ export default function CartDrawer({ onAuthRequired }) {
         router.push('/menu');
       }, 600);
     } catch (err) {
-      console.error('[CartDrawer] notifyMe FAILED', err?.response?.data || err?.message || err);
+      cartDbg('notifyMe FAIL', err?.response?.data || err?.message || err);
     }
     setNotifySend(false);
   };
 
   // Fetch beverages + Coke once
   useEffect(() => {
+    cartDbg('fetching bowls for coffee offers…');
     bowlsApi.getAll().then(res => {
       const all = res.data.bowls || [];
-      setCoffeeOffers(
-        all.filter(b => b.pfCategory === 'pf-beverages' && !isCokeName(b.name) && !isExcluded(b.name))
-      );
-      setCokeProduct(all.find(b => isCokeName(b.name)) || null);
-    }).catch(() => {});
+      const coffees = all.filter(b => b.pfCategory === 'pf-beverages' && !isCokeName(b.name) && !isExcluded(b.name));
+      const coke = all.find(b => isCokeName(b.name)) || null;
+      cartDbg('bowls loaded', { total: all.length, coffees: coffees.length, hasCoke: !!coke });
+      setCoffeeOffers(coffees);
+      setCokeProduct(coke);
+    }).catch((err) => cartDbg('bowls FAIL', err?.message || err));
   }, []);
 
   useEffect(() => {
@@ -154,6 +232,7 @@ export default function CartDrawer({ onAuthRequired }) {
   }, [isOpen, showClosed]);
 
   const dismissClosedToMenu = () => {
+    cartDbg('Explore menu → clear closed + /menu');
     setShowClosed(false);
     setNotifyPhone('');
     setNotifyDone(false);
@@ -162,8 +241,10 @@ export default function CartDrawer({ onAuthRequired }) {
 
   // ── All hooks must be above this line ─────────────────────────────────────
 
-  // Closed store → fullscreen poster only
-  if (showClosed) {
+  // Closed poster only when cart is NOT open (openClosedPoster sets isOpen false).
+  // If isOpen is true, always prefer the drawer path so "store opened" works.
+  if (showClosed && !isOpen) {
+    cartDbg('RENDER → StoreClosedPoster');
     return (
       <StoreClosedPoster
         notifyPhone={notifyPhone}
@@ -177,8 +258,15 @@ export default function CartDrawer({ onAuthRequired }) {
     );
   }
 
-  // Store open (or unknown) → normal right-side cart drawer
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
+
+  cartDbg('RENDER → normal Cart DRAWER', {
+    storeIsOpen: store?.isOpen,
+    items: items.length,
+    coffeeOffers: coffeeOffers.length,
+  });
 
   const realItems  = items.filter(i => !i.isOfferCoffee && !i.name?.toLowerCase().includes('cappuccino'));
   const hasReal    = realItems.length > 0;
@@ -187,22 +275,36 @@ export default function CartDrawer({ onAuthRequired }) {
   const savings       = cartTotal - platinumTotal;
 
   const handleCheckout = async () => {
-    // Re-check status at checkout time
+    cartDbg('Proceed to Checkout clicked', {
+      store,
+      storeIsOpen: store?.isOpen,
+      isLoggedIn,
+      items: items.length,
+    });
+
     let status = store;
-    if (status == null || status.isOpen !== false) {
-      try {
-        const res = await storeApi.get();
-        status = res?.data?.status ?? status;
-        setStore(status);
-      } catch {}
+    try {
+      const res = await storeApi.get();
+      status = res?.data?.status ?? status;
+      setStore(status);
+      cartDbg('checkout-time status', { isOpen: status?.isOpen, status });
+    } catch (err) {
+      cartDbg('checkout-time status FAIL', err?.message || err);
     }
 
     if (status && status.isOpen === false) {
+      cartDbg('checkout blocked — store closed');
       openClosedPoster('checkout-click');
       return;
     }
 
-    if (!isLoggedIn) { setIsOpen(false); onAuthRequired?.('checkout'); return; }
+    if (!isLoggedIn) {
+      cartDbg('checkout → auth required');
+      setIsOpen(false);
+      onAuthRequired?.('checkout');
+      return;
+    }
+    cartDbg('checkout → /checkout');
     setIsOpen(false);
     router.push('/checkout');
   };
@@ -215,8 +317,13 @@ export default function CartDrawer({ onAuthRequired }) {
 
   return (
     <>
-      <div className="drawer-overlay" onClick={() => setIsOpen(false)} />
+      <div className="drawer-overlay" onClick={() => { cartDbg('overlay click → close drawer'); setIsOpen(false); }} />
       <div className="drawer relative">
+
+        {/* Debug strip — remove later */}
+        <div className="px-3 py-1.5 bg-black text-[10px] font-mono text-lime-300 leading-tight break-all">
+          DBG drawer | store.isOpen={String(store?.isOpen)} | showClosed={String(showClosed)} | items={items.length} | coffee={coffeeOffers.length} | {lastStatusFetch?.source}@{lastStatusFetch?.at || '—'}
+        </div>
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100">

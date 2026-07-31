@@ -108,7 +108,10 @@ export default function Header({ onAuthClick }) {
           <div className="flex items-center gap-1.5">
 
             {/* Cart */}
-            <button onClick={() => openCart(true)}
+            <button onClick={() => {
+              console.log('%c[CartFlow] Header cart icon clicked → openCart(true)', 'color:#0B5C3A;font-weight:bold', { cartCount });
+              openCart(true);
+            }}
               className={`relative flex items-center justify-center w-9 h-9 rounded-xl transition-colors
                 ${greenNav ? 'hover:bg-white/15 md:hover:bg-surface-50' : 'hover:bg-surface-50'}`}
               aria-label="Cart">
