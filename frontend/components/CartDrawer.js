@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -59,6 +60,40 @@ export default function CartDrawer({ onAuthRequired }) {
   const [notifySend,      setNotifySend]     = useState(false);
   const [adminSent,       setAdminSent]      = useState(false); // prevent double-send
   const [lastStatusFetch, setLastStatusFetch] = useState(null);
+  const [portalReady,     setPortalReady]    = useState(false);
+  const drawerRef = useRef(null);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  // Measure drawer after it paints — proves visibility to console
+  useEffect(() => {
+    if (!isOpen || showClosed) return;
+    const t = requestAnimationFrame(() => {
+      const el = drawerRef.current;
+      if (!el) {
+        cartDbg('DRAWER DOM missing after render!');
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      const cs = window.getComputedStyle(el);
+      cartDbg('DRAWER DOM measure', {
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+        top: Math.round(r.top),
+        right: Math.round(r.right),
+        left: Math.round(r.left),
+        opacity: cs.opacity,
+        transform: cs.transform,
+        zIndex: cs.zIndex,
+        display: cs.display,
+        visibility: cs.visibility,
+        inViewport: r.width > 0 && r.height > 0 && r.left < window.innerWidth,
+      });
+    });
+    return () => cancelAnimationFrame(t);
+  }, [isOpen, showClosed, items.length]);
 
   const openClosedPoster = (reason = 'unknown') => {
     cartDbg('OPEN_CLOSED_POSTER', { reason, items: items.length, cartTotal });
@@ -315,18 +350,44 @@ export default function CartDrawer({ onAuthRequired }) {
     addItem({ ...product, price: offerPrice, isOfferCoffee: true }, 1);
   };
 
-  return (
+  if (!portalReady) return null;
+
+  const drawerUi = (
     <>
-      <div className="drawer-overlay" onClick={() => { cartDbg('overlay click → close drawer'); setIsOpen(false); }} />
-      <div className="drawer relative">
+      <div
+        className="drawer-overlay"
+        onClick={() => { cartDbg('overlay click → close drawer'); setIsOpen(false); }}
+      />
+      <div
+        ref={drawerRef}
+        className="drawer relative"
+        data-testid="cart-drawer"
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: '100%',
+          maxWidth: '24rem',
+          height: '100%',
+          zIndex: 70,
+          background: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          transform: 'translateX(0)',
+          opacity: 1,
+          visibility: 'visible',
+          pointerEvents: 'auto',
+        }}
+      >
 
         {/* Debug strip — remove later */}
-        <div className="px-3 py-1.5 bg-black text-[10px] font-mono text-lime-300 leading-tight break-all">
+        <div className="px-3 py-1.5 bg-black text-[10px] font-mono text-lime-300 leading-tight break-all flex-shrink-0">
           DBG drawer | store.isOpen={String(store?.isOpen)} | showClosed={String(showClosed)} | items={items.length} | coffee={coffeeOffers.length} | {lastStatusFetch?.source}@{lastStatusFetch?.at || '—'}
         </div>
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <ShoppingBag size={18} className="text-brand-600" />
             <span className="font-bold text-gray-900">Your Cart</span>
@@ -343,7 +404,7 @@ export default function CartDrawer({ onAuthRequired }) {
         </div>
 
         {/* ── Scrollable body ── */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
               <div className="w-20 h-20 bg-surface-100 rounded-full flex items-center justify-center">
@@ -551,7 +612,7 @@ export default function CartDrawer({ onAuthRequired }) {
 
         {/* ── Footer ── */}
         {items.length > 0 && (
-          <div className="border-t border-surface-100 p-4 space-y-3">
+          <div className="border-t border-surface-100 p-4 space-y-3 flex-shrink-0 bg-white">
             {isPlatinum ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-xl">
                 <Crown size={14} className="text-platinum-500 flex-shrink-0" />
@@ -589,4 +650,6 @@ export default function CartDrawer({ onAuthRequired }) {
       </div>
     </>
   );
+
+  return createPortal(drawerUi, document.body);
 }

@@ -94,11 +94,14 @@
   }
 
   .drawer-overlay {
-    @apply fixed inset-0 bg-black/40 backdrop-blur-sm z-40 animate-fade-in;
+    @apply fixed inset-0 bg-black/40 backdrop-blur-sm z-[60];
   }
 
   .drawer {
-    @apply fixed right-0 top-0 h-full w-full max-w-sm bg-white z-50 shadow-modal flex flex-col animate-slide-in-right;
+    @apply fixed right-0 top-0 h-full w-full max-w-sm bg-white z-[70] shadow-modal flex flex-col;
+    transform: translateX(0);
+    opacity: 1;
+    animation: slideInRight 0.28s ease-out forwards;
   }
 
   .modal-overlay {
