@@ -1796,6 +1796,7 @@ function BountyWaitlistSection() {
   const [list, setList]           = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState('pending'); // pending | notified | all
+  const [sortBy, setSortBy]       = useState('newest'); // newest | nearest | farthest
   const [search, setSearch]       = useState('');
   const [markingId, setMarkingId] = useState(null);
   const [stats, setStats]         = useState({ total: 0, pending: 0, notified: 0 });
@@ -1830,8 +1831,16 @@ function BountyWaitlistSection() {
     setMarkingId(null);
   };
 
+  const withDistance = useMemo(() => {
+    return list.map(r => {
+      const hasPin = r.lat != null && r.lng != null && !Number.isNaN(Number(r.lat)) && !Number.isNaN(Number(r.lng));
+      const km = hasPin ? haversineKm(STORE_LAT, STORE_LNG, Number(r.lat), Number(r.lng)) : null;
+      return { ...r, hasPin, km };
+    });
+  }, [list]);
+
   const filtered = useMemo(() => {
-    let rows = list;
+    let rows = withDistance;
     if (filter === 'pending') rows = rows.filter(r => !r.notified);
     if (filter === 'notified') rows = rows.filter(r => r.notified);
     const q = search.trim().toLowerCase();
@@ -1845,240 +1854,294 @@ function BountyWaitlistSection() {
         String(r.userId?.name || '').toLowerCase().includes(q)
       );
     }
+    rows = [...rows].sort((a, b) => {
+      if (sortBy === 'nearest') {
+        if (a.km == null && b.km == null) return 0;
+        if (a.km == null) return 1;
+        if (b.km == null) return -1;
+        return a.km - b.km;
+      }
+      if (sortBy === 'farthest') {
+        if (a.km == null && b.km == null) return 0;
+        if (a.km == null) return 1;
+        if (b.km == null) return -1;
+        return b.km - a.km;
+      }
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
     return rows;
-  }, [list, filter, search]);
+  }, [withDistance, filter, search, sortBy]);
 
-  const withPin = list.filter(r => r.lat != null && r.lng != null).length;
+  const withPin = withDistance.filter(r => r.hasPin).length;
+  const avgKm = (() => {
+    const vals = withDistance.filter(r => r.km != null).map(r => r.km);
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  })();
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-gray-400" />
+        <Loader2 size={20} className="animate-spin text-gray-300" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+    <div className="space-y-5 max-w-5xl">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold uppercase tracking-wide mb-2">
-            <Coffee size={12} /> Free Tall Cappuccino
-          </div>
-          <h2 className="text-xl font-bold text-gray-900">Bounty Waitlist</h2>
-          <p className="text-sm text-gray-400 mt-0.5">
-            People waiting for a free coffee when the store reopens
+          <p className="text-[11px] font-medium tracking-[0.16em] uppercase text-gray-400 mb-1.5">
+            Free Tall Cappuccino
+          </p>
+          <h2 className="text-[22px] font-semibold text-gray-950 tracking-tight">Bounty Waitlist</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Store pin {STORE_LAT.toFixed(5)}, {STORE_LNG.toFixed(5)}
+            <a
+              href={`https://www.google.com/maps?q=${STORE_LAT},${STORE_LNG}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 ml-2 text-brand-700 hover:text-brand-800 font-medium"
+            >
+              View store <ExternalLink size={11} />
+            </a>
           </p>
         </div>
-        <button onClick={load} className="btn-secondary text-sm gap-1.5 self-start">
-          <RefreshCw size={14} /> Refresh
+        <button
+          onClick={load}
+          className="inline-flex items-center gap-1.5 self-start px-3.5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-colors"
+        >
+          <RefreshCw size={13} /> Refresh
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Stats — minimal */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         {[
-          { label: 'Total signed up', value: stats.total, tone: 'bg-emerald-50 border-emerald-100 text-emerald-800', icon: Users },
-          { label: 'Waiting', value: stats.pending, tone: 'bg-amber-50 border-amber-100 text-amber-800', icon: BellRing },
-          { label: 'Notified', value: stats.notified, tone: 'bg-sky-50 border-sky-100 text-sky-800', icon: CheckCheck },
-          { label: 'With pin', value: withPin, tone: 'bg-violet-50 border-violet-100 text-violet-800', icon: MapPin },
-        ].map(s => {
-          const Icon = s.icon;
-          return (
-            <div key={s.label} className={`rounded-2xl border p-4 ${s.tone}`}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">{s.label}</p>
-                <Icon size={15} className="opacity-60" />
-              </div>
-              <p className="text-2xl font-extrabold tabular-nums">{s.value}</p>
-            </div>
-          );
-        })}
+          { label: 'Total', value: stats.total },
+          { label: 'Waiting', value: stats.pending },
+          { label: 'Notified', value: stats.notified },
+          { label: 'With pin', value: withPin, sub: avgKm != null ? `avg ${avgKm.toFixed(1)} km` : null },
+        ].map(s => (
+          <div
+            key={s.label}
+            className="bg-white border border-gray-200 rounded-[14px] px-4 py-3.5"
+          >
+            <p className="text-[11px] font-medium text-gray-400 tracking-wide">{s.label}</p>
+            <p className="text-[26px] font-semibold text-gray-950 tabular-nums leading-tight mt-1">{s.value}</p>
+            {s.sub && <p className="text-[11px] text-brand-700 font-medium mt-0.5">{s.sub}</p>}
+          </div>
+        ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
-        <div className="flex gap-1.5 p-1 bg-surface-100 rounded-xl w-fit">
-          {[
-            { id: 'pending', label: 'Waiting' },
-            { id: 'notified', label: 'Notified' },
-            { id: 'all', label: 'All' },
-          ].map(t => (
-            <button
-              key={t.id}
-              onClick={() => setFilter(t.id)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                filter === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      {/* Toolbar */}
+      <div className="flex flex-col lg:flex-row gap-2.5 lg:items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          <div className="inline-flex items-center border border-gray-200 rounded-full p-0.5 bg-white">
+            {[
+              { id: 'pending', label: 'Waiting' },
+              { id: 'notified', label: 'Notified' },
+              { id: 'all', label: 'All' },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setFilter(t.id)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  filter === t.id
+                    ? 'bg-gray-950 text-white'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="inline-flex items-center border border-gray-200 rounded-full p-0.5 bg-white">
+            {[
+              { id: 'newest', label: 'Newest' },
+              { id: 'nearest', label: 'Nearest' },
+              { id: 'farthest', label: 'Farthest' },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSortBy(t.id)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  sortBy === t.id
+                    ? 'bg-brand-600 text-white'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full lg:w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search phone, area, pin…"
-            className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-surface-200 bg-white focus:outline-none focus:ring-2 focus:ring-brand-200"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-full border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-brand-500"
           />
         </div>
       </div>
 
-      {/* Cards */}
+      {/* List */}
       {filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-surface-200 bg-white py-16 text-center">
-          <Coffee size={32} className="mx-auto mb-3 text-gray-300" />
-          <p className="font-semibold text-gray-700">No waitlist entries yet</p>
-          <p className="text-sm text-gray-400 mt-1">Signups from the closed-store bounty will appear here</p>
+        <div className="bg-white border border-gray-200 rounded-[16px] py-16 text-center">
+          <Coffee size={28} className="mx-auto mb-3 text-gray-300" strokeWidth={1.5} />
+          <p className="text-sm font-medium text-gray-800">No waitlist entries</p>
+          <p className="text-xs text-gray-400 mt-1">Closed-store bounty signups will show here</p>
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="space-y-2.5">
           {filtered.map((r, idx) => {
-            const hasPin = r.lat != null && r.lng != null;
-            const mapsUrl = hasPin
-              ? `https://www.google.com/maps?q=${r.lat},${r.lng}`
-              : null;
             const when = r.createdAt
               ? new Date(r.createdAt).toLocaleString('en-IN', {
-                  day: '2-digit', month: 'short', year: 'numeric',
-                  hour: '2-digit', minute: '2-digit',
+                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
                 })
               : '—';
-            const name = r.userId?.name || 'Guest';
+            const name = r.userId?.name?.trim() || 'Guest';
+            const place = [r.area, r.city].filter(Boolean).join(', ') || r.address || null;
 
             return (
-              <div
+              <article
                 key={r._id}
-                className={`rounded-2xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
-                  r.notified ? 'border-surface-100 opacity-80' : 'border-amber-100'
-                }`}
+                className="bg-white border border-gray-200 rounded-[16px] overflow-hidden hover:border-gray-300 transition-colors"
               >
-                <div className="flex flex-col lg:flex-row lg:items-stretch">
-                  {/* Left accent */}
-                  <div
-                    className="lg:w-1.5 h-1.5 lg:h-auto"
-                    style={{ background: r.notified ? '#94a3b8' : 'linear-gradient(180deg,#f59e0b,#16a34a)' }}
-                  />
-
-                  <div className="flex-1 p-4 sm:p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-extrabold text-emerald-700">#{idx + 1}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-bold text-gray-900 text-base">{name}</p>
-                            {r.notified ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
-                                Notified
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
-                                Waiting · Free coffee
-                              </span>
-                            )}
-                            {r.userId?.isPlatinum && (
-                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-100 flex items-center gap-1">
-                                <Crown size={10} /> Platinum
-                              </span>
-                            )}
-                          </div>
-                          <a
-                            href={`tel:${r.phone}`}
-                            className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:underline mt-0.5"
+                <div className="p-4 sm:p-5">
+                  {/* Top row */}
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-full border border-gray-200 flex items-center justify-center flex-shrink-0 text-[11px] font-semibold text-gray-500 tabular-nums">
+                        {String(idx + 1).padStart(2, '0')}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-[15px] font-semibold text-gray-950 tracking-tight">{name}</h3>
+                          <span
+                            className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                              r.notified
+                                ? 'border-gray-200 text-gray-500 bg-gray-50'
+                                : 'border-brand-200 text-brand-700 bg-brand-50'
+                            }`}
                           >
-                            <Phone size={13} /> {r.phone}
-                          </a>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-gray-400 font-medium flex items-center gap-1">
-                        <Clock size={12} /> {when}
-                      </p>
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {/* Location card */}
-                      <div className={`rounded-xl border p-3 ${hasPin ? 'bg-emerald-50/60 border-emerald-100' : 'bg-surface-50 border-surface-100'}`}>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center gap-1">
-                          <MapPin size={11} /> Location pin
-                        </p>
-                        {hasPin ? (
-                          <>
-                            <p className="text-sm font-semibold text-gray-900 leading-snug">
-                              {[r.area, r.city].filter(Boolean).join(', ') || r.address || 'Pin captured'}
-                            </p>
-                            {r.address && (
-                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{r.address}</p>
-                            )}
-                            <div className="flex flex-wrap items-center gap-2 mt-2">
-                              {r.pincode && (
-                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-800">
-                                  PIN {r.pincode}
-                                </span>
-                              )}
-                              <span className="text-[10px] font-mono text-gray-500">
-                                {Number(r.lat).toFixed(5)}, {Number(r.lng).toFixed(5)}
-                              </span>
-                              <a
-                                href={mapsUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
-                              >
-                                Open maps <ExternalLink size={10} />
-                              </a>
-                            </div>
-                          </>
-                        ) : (
-                          <p className="text-sm text-gray-400 italic">No location shared</p>
-                        )}
-                      </div>
-
-                      {/* Meta card */}
-                      <div className="rounded-xl border border-surface-100 bg-surface-50 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Details</p>
-                        <div className="space-y-1.5 text-sm">
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">User ID</span>
-                            <span className="font-mono text-xs text-gray-700 truncate max-w-[160px]">
-                              {r.userId?._id || r.userId || '—'}
+                            {r.notified ? 'Notified' : 'Waiting'}
+                          </span>
+                          {r.userId?.isPlatinum && (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-gray-200 text-gray-600">
+                              Platinum
                             </span>
-                          </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Source</span>
-                            <span className="font-medium text-gray-800">{r.source || 'closed_store'}</span>
-                          </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Bounty</span>
-                            <span className="font-semibold text-amber-700 flex items-center gap-1">
-                              <Coffee size={12} /> Free Tall Cappuccino
-                            </span>
-                          </div>
+                          )}
                         </div>
-                      </div>
-                    </div>
-
-                    {!r.notified && (
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          onClick={() => markDone(r._id)}
-                          disabled={markingId === r._id}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50 transition-colors"
+                        <a
+                          href={`tel:${r.phone}`}
+                          className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-brand-700 mt-0.5"
                         >
-                          {markingId === r._id
-                            ? <Loader2 size={13} className="animate-spin" />
-                            : <CheckCheck size={13} />}
-                          Mark notified
-                        </button>
+                          <Phone size={12} strokeWidth={1.75} />
+                          <span className="font-medium tracking-wide">{r.phone}</span>
+                        </a>
                       </div>
+                    </div>
+                    <time className="text-[11px] text-gray-400 font-medium whitespace-nowrap pt-1">
+                      {when}
+                    </time>
+                  </div>
+
+                  {/* Info grid */}
+                  <div className="grid sm:grid-cols-3 gap-2.5">
+                    {/* Distance */}
+                    <div className="rounded-[12px] border border-gray-200 px-3.5 py-3">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-gray-400 mb-1.5">
+                        Distance
+                      </p>
+                      {r.hasPin ? (
+                        <>
+                          <p className="text-lg font-semibold text-gray-950 tabular-nums leading-none">
+                            {r.km < 1 ? `${Math.round(r.km * 1000)} m` : `${r.km.toFixed(1)} km`}
+                          </p>
+                          <p className="text-[11px] text-gray-500 mt-1">{formatDist(r.km)}</p>
+                          <a
+                            href={mapsRouteUrl(r.lat, r.lng)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-700 hover:text-brand-800 mt-2"
+                          >
+                            Route from store <ExternalLink size={10} />
+                          </a>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-400 pt-0.5">No pin</p>
+                      )}
+                    </div>
+
+                    {/* Location */}
+                    <div className="rounded-[12px] border border-gray-200 px-3.5 py-3 sm:col-span-2">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-gray-400 mb-1.5">
+                        Location
+                      </p>
+                      {r.hasPin ? (
+                        <>
+                          <p className="text-sm font-medium text-gray-900 leading-snug">
+                            {place || 'Pin captured'}
+                          </p>
+                          {r.address && place !== r.address && (
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{r.address}</p>
+                          )}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+                            {r.pincode && (
+                              <span className="text-[11px] font-medium text-gray-700 border border-gray-200 rounded-full px-2 py-0.5">
+                                PIN {r.pincode}
+                              </span>
+                            )}
+                            <span className="text-[11px] font-mono text-gray-400">
+                              {Number(r.lat).toFixed(5)}, {Number(r.lng).toFixed(5)}
+                            </span>
+                            <a
+                              href={`https://www.google.com/maps?q=${r.lat},${r.lng}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-700 hover:text-brand-800"
+                            >
+                              Open map <ExternalLink size={10} />
+                            </a>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-400 pt-0.5">Location not shared</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Footer meta + action */}
+                  <div className="mt-3.5 pt-3.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400">
+                      <span className="inline-flex items-center gap-1">
+                        <Coffee size={11} strokeWidth={1.75} className="text-brand-600" />
+                        <span className="text-gray-600 font-medium">Free Tall Cappuccino</span>
+                      </span>
+                      <span className="font-mono truncate max-w-[140px]">
+                        {String(r.userId?._id || r.userId || '—').slice(0, 12)}
+                        {(r.userId?._id || r.userId) ? '…' : ''}
+                      </span>
+                    </div>
+                    {!r.notified && (
+                      <button
+                        onClick={() => markDone(r._id)}
+                        disabled={markingId === r._id}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium border border-gray-900 bg-gray-950 text-white hover:bg-black disabled:opacity-40 transition-colors"
+                      >
+                        {markingId === r._id
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCheck size={12} />}
+                        Mark notified
+                      </button>
                     )}
                   </div>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
