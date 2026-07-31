@@ -46,9 +46,9 @@ export default function CartDrawer({ onAuthRequired }) {
   const [coffeeOffers,    setCoffeeOffers]   = useState([]);
   const [cokeProduct,     setCokeProduct]    = useState(null);
   const [store,           setStore]          = useState(null);
+  const [storeReady,      setStoreReady]     = useState(false);
   // Closed checkout panel state
   const [showClosed,      setShowClosed]     = useState(false);
-  const [closedDismissed, setClosedDismissed] = useState(false); // user hit Back on poster
   const [notifyPhone,     setNotifyPhone]    = useState('');
   const [notifyDone,      setNotifyDone]     = useState(false);
   const [notifySend,      setNotifySend]     = useState(false);
@@ -57,6 +57,8 @@ export default function CartDrawer({ onAuthRequired }) {
   const openClosedPoster = (reason = 'unknown') => {
     console.log('[CartDrawer] openClosedPoster →', reason);
     setShowClosed(true);
+    // Close the sliding cart drawer — poster is fullscreen on its own
+    setIsOpen(false);
     if (!adminSent && items.length > 0) {
       setAdminSent(true);
       storeApi.saveClosedCheckout({
@@ -69,30 +71,36 @@ export default function CartDrawer({ onAuthRequired }) {
     }
   };
 
-  // Fetch store status (and refresh when cart opens)
+  // Fetch store status when cart opens — if closed, show fullscreen poster (no drawer slide)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setStoreReady(false);
+      return;
+    }
+    let cancelled = false;
+    setStoreReady(false);
     console.log('[CartDrawer] fetching store status…');
     storeApi.get()
       .then(res => {
+        if (cancelled) return;
         const status = res?.data?.status ?? null;
         console.log('[CartDrawer] store status OK', status);
         setStore(status);
+        if (status && status.isOpen === false) {
+          openClosedPoster('auto-on-cart-open');
+        } else {
+          setStoreReady(true);
+        }
       })
       .catch((err) => {
+        if (cancelled) return;
         console.warn('[CartDrawer] store status FAILED — defaulting open', err?.message || err);
         setStore({ isOpen: true });
+        setStoreReady(true);
       });
-  }, [isOpen]);
-
-  // Auto-show closed design as soon as cart is open + store is closed
-  useEffect(() => {
-    if (!isOpen || closedDismissed) return;
-    if (store && store.isOpen === false) {
-      openClosedPoster('auto-on-cart-open');
-    }
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, store, closedDismissed]);
+  }, [isOpen]);
 
   const submitNotify = async (phoneOverride, location = {}) => {
     const phone = String(phoneOverride ?? notifyPhone).trim().replace(/\D/g, '').slice(-10);
@@ -103,7 +111,6 @@ export default function CartDrawer({ onAuthRequired }) {
     try {
       let userId = user?.id || user?._id || null;
 
-      // Background login so waitlist user is authenticated
       if (!isLoggedIn || (user?.phone && user.phone !== phone)) {
         console.log('[CartDrawer] background login via OTP 0000…');
         const authRes = await authApi.verifyOTP(phone, '0000');
@@ -111,7 +118,6 @@ export default function CartDrawer({ onAuthRequired }) {
         if (token && authUser) {
           login(token, authUser);
           userId = authUser.id || authUser._id || null;
-          console.log('[CartDrawer] background login OK', userId);
         }
       }
 
@@ -129,6 +135,14 @@ export default function CartDrawer({ onAuthRequired }) {
       const res = await storeApi.notifyMe(payload);
       console.log('[CartDrawer] notifyMe OK', res?.data);
       setNotifyDone(true);
+      // Redirect to menu after successful signup
+      setTimeout(() => {
+        setShowClosed(false);
+        setNotifyDone(false);
+        setNotifyPhone('');
+        setAdminSent(false);
+        router.push('/menu');
+      }, 600);
     } catch (err) {
       console.error('[CartDrawer] notifyMe FAILED', err?.response?.data || err?.message || err);
     }
@@ -147,27 +161,45 @@ export default function CartDrawer({ onAuthRequired }) {
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = isOpen ? 'hidden' : '';
+    document.body.style.overflow = (isOpen || showClosed) ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [isOpen]);
-
-  // Reset closed panel when drawer is closed/reopened — MUST be before early return
-  useEffect(() => {
-    if (!isOpen) {
-      setShowClosed(false);
-      setNotifyDone(false);
-      setNotifyPhone('');
-      setAdminSent(false);
-      setClosedDismissed(false);
-    }
-  }, [isOpen]);
+  }, [isOpen, showClosed]);
 
   useEffect(() => {
     console.log('[CartDrawer] showClosed changed →', showClosed, 'store=', store);
   }, [showClosed, store]);
 
+  const dismissClosedToMenu = () => {
+    setShowClosed(false);
+    setNotifyPhone('');
+    setNotifyDone(false);
+    router.push('/menu');
+  };
+
   // ── All hooks must be above this line ─────────────────────────────────────
+
+  // Fullscreen closed poster — independent of cart drawer animation/width
+  if (showClosed) {
+    return (
+      <StoreClosedPoster
+        notifyPhone={notifyPhone}
+        setNotifyPhone={setNotifyPhone}
+        notifyDone={notifyDone}
+        notifySend={notifySend}
+        onNotify={submitNotify}
+        placeholderPhone={isLoggedIn && user?.phone ? user.phone : ''}
+        onExploreMenu={dismissClosedToMenu}
+      />
+    );
+  }
+
+  // Wait for store status so we don't flash the right-side drawer when closed
   if (!isOpen) return null;
+  if (!storeReady) {
+    return (
+      <div className="fixed inset-0 z-[80] bg-[#F7F8F2]/80" aria-hidden />
+    );
+  }
 
   const realItems  = items.filter(i => !i.isOfferCoffee && !i.name?.toLowerCase().includes('cappuccino'));
   const hasReal    = realItems.length > 0;
@@ -186,7 +218,6 @@ export default function CartDrawer({ onAuthRequired }) {
 
     const closed = store != null && store.isOpen === false;
     if (closed) {
-      setClosedDismissed(false);
       openClosedPoster('checkout-click');
       return;
     }
@@ -199,7 +230,6 @@ export default function CartDrawer({ onAuthRequired }) {
         console.log('[CartDrawer] late store status', status);
         setStore(status);
         if (status && status.isOpen === false) {
-          setClosedDismissed(false);
           openClosedPoster('checkout-late-fetch');
           return;
         }
@@ -240,23 +270,6 @@ export default function CartDrawer({ onAuthRequired }) {
             <X size={18} />
           </button>
         </div>
-
-        {/* ── Closed poster (portaled fullscreen — above drawer blur) ── */}
-        {showClosed && (
-          <StoreClosedPoster
-            onBack={() => {
-              console.log('[CartDrawer] poster back → hide closed (dismissed)');
-              setShowClosed(false);
-              setClosedDismissed(true);
-            }}
-            notifyPhone={notifyPhone}
-            setNotifyPhone={setNotifyPhone}
-            notifyDone={notifyDone}
-            notifySend={notifySend}
-            onNotify={submitNotify}
-            placeholderPhone={isLoggedIn && user?.phone ? user.phone : ''}
-          />
-        )}
 
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto">
