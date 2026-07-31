@@ -21,17 +21,10 @@ export default function CartBar({ onAuthRequired }) {
     : cartTotal;
 
   const handleClick = () => {
-    console.log('%c[CartFlow] CartBar View Cart clicked', 'color:#0B5C3A;font-weight:bold', {
-      isLoggedIn,
-      cartCount,
-      pathname,
-    });
     if (!isLoggedIn) {
-      console.log('%c[CartFlow] CartBar → auth required (not logged in)', 'color:#b45309;font-weight:bold');
       onAuthRequired?.('checkout');
       return;
     }
-    console.log('%c[CartFlow] CartBar → setIsOpen(true)', 'color:#0B5C3A;font-weight:bold');
     setIsOpen(true);
   };
 

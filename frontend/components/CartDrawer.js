@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -30,12 +30,6 @@ const COFFEE_GRADIENTS = [
   ['#eff6ff','#bfdbfe'],
 ];
 
-function cartDbg(step, data) {
-  const payload = data === undefined ? '' : data;
-  // eslint-disable-next-line no-console
-  console.log(`%c[CartFlow] ${step}`, 'color:#0B5C3A;font-weight:bold', payload);
-}
-
 // Volume badge shown on every coffee item — no emoji, uses Coffee icon
 function VolumeBadge() {
   return (
@@ -53,50 +47,18 @@ export default function CartDrawer({ onAuthRequired }) {
   const [coffeeOffers,    setCoffeeOffers]   = useState([]);
   const [cokeProduct,     setCokeProduct]    = useState(null);
   const [store,           setStore]          = useState(null);
-  // Closed checkout panel state
   const [showClosed,      setShowClosed]     = useState(false);
   const [notifyPhone,     setNotifyPhone]    = useState('');
   const [notifyDone,      setNotifyDone]     = useState(false);
   const [notifySend,      setNotifySend]     = useState(false);
-  const [adminSent,       setAdminSent]      = useState(false); // prevent double-send
-  const [lastStatusFetch, setLastStatusFetch] = useState(null);
+  const [adminSent,       setAdminSent]      = useState(false);
   const [portalReady,     setPortalReady]    = useState(false);
-  const drawerRef = useRef(null);
 
   useEffect(() => {
     setPortalReady(true);
   }, []);
 
-  // Measure drawer after it paints — proves visibility to console
-  useEffect(() => {
-    if (!isOpen || showClosed) return;
-    const t = requestAnimationFrame(() => {
-      const el = drawerRef.current;
-      if (!el) {
-        cartDbg('DRAWER DOM missing after render!');
-        return;
-      }
-      const r = el.getBoundingClientRect();
-      const cs = window.getComputedStyle(el);
-      cartDbg('DRAWER DOM measure', {
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-        top: Math.round(r.top),
-        right: Math.round(r.right),
-        left: Math.round(r.left),
-        opacity: cs.opacity,
-        transform: cs.transform,
-        zIndex: cs.zIndex,
-        display: cs.display,
-        visibility: cs.visibility,
-        inViewport: r.width > 0 && r.height > 0 && r.left < window.innerWidth,
-      });
-    });
-    return () => cancelAnimationFrame(t);
-  }, [isOpen, showClosed, items.length]);
-
-  const openClosedPoster = (reason = 'unknown') => {
-    cartDbg('OPEN_CLOSED_POSTER', { reason, items: items.length, cartTotal });
+  const openClosedPoster = () => {
     setShowClosed(true);
     setIsOpen(false);
     if (!adminSent && items.length > 0) {
@@ -106,122 +68,57 @@ export default function CartDrawer({ onAuthRequired }) {
         userId: user?._id || null,
         items: items.map(i => ({ name: i.name, price: i.price, qty: i.quantity })),
         total: cartTotal,
-      })
-        .then(() => cartDbg('closed-checkout saved OK'))
-        .catch((err) => cartDbg('closed-checkout save FAIL', err?.message || err));
+      }).catch(() => {});
     }
   };
 
-  // Prefetch store status on mount
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
-    cartDbg('MOUNT prefetch store status', { apiBase });
     storeApi.get()
-      .then(res => {
-        const status = res?.data?.status ?? { isOpen: true };
-        cartDbg('MOUNT status OK', {
-          isOpen: status.isOpen,
-          typeofIsOpen: typeof status.isOpen,
-          raw: status,
-        });
-        setStore(status);
-        setLastStatusFetch({ at: new Date().toISOString(), source: 'mount', isOpen: status.isOpen });
-      })
-      .catch((err) => {
-        cartDbg('MOUNT status FAIL → default OPEN', err?.message || err);
-        setStore({ isOpen: true });
-        setLastStatusFetch({ at: new Date().toISOString(), source: 'mount-fail', isOpen: true });
-      });
+      .then(res => setStore(res?.data?.status ?? { isOpen: true }))
+      .catch(() => setStore({ isOpen: true }));
   }, []);
 
-  // When cart opens: if store OPEN → keep drawer; if CLOSED → closed poster
   useEffect(() => {
-    cartDbg('isOpen changed', { isOpen, showClosed, storeIsOpen: store?.isOpen });
     if (!isOpen) return;
-
     let cancelled = false;
-    cartDbg('CART OPENED → fetching fresh store status…');
     storeApi.get()
       .then(res => {
-        if (cancelled) {
-          cartDbg('CART OPEN fetch ignored (cancelled)');
-          return;
-        }
+        if (cancelled) return;
         const status = res?.data?.status ?? null;
-        cartDbg('CART OPEN status response', {
-          isOpen: status?.isOpen,
-          strictClosed: status && status.isOpen === false,
-          full: status,
-          resDataKeys: res?.data ? Object.keys(res.data) : [],
-        });
         setStore(status);
-        setLastStatusFetch({ at: new Date().toISOString(), source: 'cart-open', isOpen: status?.isOpen });
-
         if (status && status.isOpen === false) {
-          cartDbg('STORE CLOSED → switching to closed poster');
-          openClosedPoster('auto-on-cart-open');
+          openClosedPoster();
         } else {
-          cartDbg('STORE OPEN (or unknown) → clearing showClosed, keeping drawer', {
-            willClearShowClosed: showClosed,
-          });
           setShowClosed(false);
         }
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return;
-        cartDbg('CART OPEN status FAIL → treat as OPEN, show drawer', err?.message || err);
         setStore({ isOpen: true });
         setShowClosed(false);
-        setLastStatusFetch({ at: new Date().toISOString(), source: 'cart-open-fail', isOpen: true });
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
-  useEffect(() => {
-    cartDbg('STATE snapshot', {
-      isOpen,
-      showClosed,
-      storeIsOpen: store?.isOpen,
-      cartCount,
-      items: items.length,
-      coffeeOffers: coffeeOffers.length,
-      isLoggedIn,
-      lastStatusFetch,
-      renderPath: showClosed && !isOpen
-        ? 'CLOSED_POSTER'
-        : !isOpen
-          ? 'NULL (hidden)'
-          : 'DRAWER',
-    });
-  }, [isOpen, showClosed, store, cartCount, items.length, coffeeOffers.length, isLoggedIn, lastStatusFetch]);
-
   const submitNotify = async (phoneOverride, location = {}) => {
     const phone = String(phoneOverride ?? notifyPhone).trim().replace(/\D/g, '').slice(-10);
-    cartDbg('submitNotify start', { phone, location, isLoggedIn });
-    if (!phone || phone.length < 10) {
-      cartDbg('submitNotify abort — bad phone');
-      return;
-    }
+    if (!phone || phone.length < 10) return;
     if (phone !== notifyPhone) setNotifyPhone(phone);
     setNotifySend(true);
     try {
       let userId = user?.id || user?._id || null;
 
       if (!isLoggedIn || (user?.phone && user.phone !== phone)) {
-        cartDbg('background login…');
         const authRes = await authApi.verifyOTP(phone, '0000');
         const { token, user: authUser } = authRes.data || {};
         if (token && authUser) {
           login(token, authUser);
           userId = authUser.id || authUser._id || null;
-          cartDbg('background login OK', { userId });
-        } else {
-          cartDbg('background login missing token/user', authRes?.data);
         }
       }
 
-      const notifyRes = await storeApi.notifyMe({
+      await storeApi.notifyMe({
         phone,
         userId,
         source: 'closed_store_bounty',
@@ -232,33 +129,26 @@ export default function CartDrawer({ onAuthRequired }) {
         city: location.city || '',
         pincode: location.pincode || '',
       });
-      cartDbg('notifyMe OK', notifyRes?.data);
       setNotifyDone(true);
       setTimeout(() => {
-        cartDbg('redirect → /menu');
         setShowClosed(false);
         setNotifyDone(false);
         setNotifyPhone('');
         setAdminSent(false);
         router.push('/menu');
       }, 600);
-    } catch (err) {
-      cartDbg('notifyMe FAIL', err?.response?.data || err?.message || err);
-    }
+    } catch {}
     setNotifySend(false);
   };
 
-  // Fetch beverages + Coke once
   useEffect(() => {
-    cartDbg('fetching bowls for coffee offers…');
     bowlsApi.getAll().then(res => {
       const all = res.data.bowls || [];
-      const coffees = all.filter(b => b.pfCategory === 'pf-beverages' && !isCokeName(b.name) && !isExcluded(b.name));
-      const coke = all.find(b => isCokeName(b.name)) || null;
-      cartDbg('bowls loaded', { total: all.length, coffees: coffees.length, hasCoke: !!coke });
-      setCoffeeOffers(coffees);
-      setCokeProduct(coke);
-    }).catch((err) => cartDbg('bowls FAIL', err?.message || err));
+      setCoffeeOffers(
+        all.filter(b => b.pfCategory === 'pf-beverages' && !isCokeName(b.name) && !isExcluded(b.name))
+      );
+      setCokeProduct(all.find(b => isCokeName(b.name)) || null);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -267,7 +157,6 @@ export default function CartDrawer({ onAuthRequired }) {
   }, [isOpen, showClosed]);
 
   const dismissClosedToMenu = () => {
-    cartDbg('Explore menu → clear closed + /menu');
     setShowClosed(false);
     setNotifyPhone('');
     setNotifyDone(false);
@@ -276,10 +165,7 @@ export default function CartDrawer({ onAuthRequired }) {
 
   // ── All hooks must be above this line ─────────────────────────────────────
 
-  // Closed poster only when cart is NOT open (openClosedPoster sets isOpen false).
-  // If isOpen is true, always prefer the drawer path so "store opened" works.
   if (showClosed && !isOpen) {
-    cartDbg('RENDER → StoreClosedPoster');
     return (
       <StoreClosedPoster
         notifyPhone={notifyPhone}
@@ -293,15 +179,7 @@ export default function CartDrawer({ onAuthRequired }) {
     );
   }
 
-  if (!isOpen) {
-    return null;
-  }
-
-  cartDbg('RENDER → normal Cart DRAWER', {
-    storeIsOpen: store?.isOpen,
-    items: items.length,
-    coffeeOffers: coffeeOffers.length,
-  });
+  if (!isOpen) return null;
 
   const realItems  = items.filter(i => !i.isOfferCoffee && !i.name?.toLowerCase().includes('cappuccino'));
   const hasReal    = realItems.length > 0;
@@ -310,36 +188,23 @@ export default function CartDrawer({ onAuthRequired }) {
   const savings       = cartTotal - platinumTotal;
 
   const handleCheckout = async () => {
-    cartDbg('Proceed to Checkout clicked', {
-      store,
-      storeIsOpen: store?.isOpen,
-      isLoggedIn,
-      items: items.length,
-    });
-
     let status = store;
     try {
       const res = await storeApi.get();
       status = res?.data?.status ?? status;
       setStore(status);
-      cartDbg('checkout-time status', { isOpen: status?.isOpen, status });
-    } catch (err) {
-      cartDbg('checkout-time status FAIL', err?.message || err);
-    }
+    } catch {}
 
     if (status && status.isOpen === false) {
-      cartDbg('checkout blocked — store closed');
-      openClosedPoster('checkout-click');
+      openClosedPoster();
       return;
     }
 
     if (!isLoggedIn) {
-      cartDbg('checkout → auth required');
       setIsOpen(false);
       onAuthRequired?.('checkout');
       return;
     }
-    cartDbg('checkout → /checkout');
     setIsOpen(false);
     router.push('/checkout');
   };
@@ -356,10 +221,9 @@ export default function CartDrawer({ onAuthRequired }) {
     <>
       <div
         className="drawer-overlay"
-        onClick={() => { cartDbg('overlay click → close drawer'); setIsOpen(false); }}
+        onClick={() => setIsOpen(false)}
       />
       <div
-        ref={drawerRef}
         className="drawer relative"
         data-testid="cart-drawer"
         style={{
@@ -380,11 +244,6 @@ export default function CartDrawer({ onAuthRequired }) {
           pointerEvents: 'auto',
         }}
       >
-
-        {/* Debug strip — remove later */}
-        <div className="px-3 py-1.5 bg-black text-[10px] font-mono text-lime-300 leading-tight break-all flex-shrink-0">
-          DBG drawer | store.isOpen={String(store?.isOpen)} | showClosed={String(showClosed)} | items={items.length} | coffee={coffeeOffers.length} | {lastStatusFetch?.source}@{lastStatusFetch?.at || '—'}
-        </div>
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100 flex-shrink-0">
