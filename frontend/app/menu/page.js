@@ -1,33 +1,19 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
 import {
   Search, X, Leaf, Star, ChefHat, Clock,
-  Truck, Crown, Zap, ArrowRight, ChevronLeft, ChevronRight, Coffee,
-  LayoutGrid, List, Heart, Loader2, CheckCircle2, Phone, Salad,
-  Utensils, BookOpen, ChevronUp, Sparkles, Gift, Plus, Share2, ShoppingBag,
+  ArrowRight, ChevronRight,
+  LayoutGrid, List, Heart, Loader2, CheckCircle2,
+  Utensils, BookOpen, ChevronUp,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
-import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES, WrapIllustration } from '@/components/CategoryIllustrations';
+import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
 import { useCart } from '@/context/CartContext';
-import { useAuth } from '@/context/AuthContext';
 
-// ── Combo of the day (billboard) ─────────────────────────────────────────────
-const COMBO_MEAL = {
-  _id: 'combo-paneer-lababdar-mango-lassi',
-  name: 'Paneer Lababdar Rice Bowl + Mango Lassi',
-  price: 249,
-  image: '/combo-meal.png',
-  pfCategory: 'pf-meals',
-  isVeg: true,
-  isCombo: true,
-};
-
-/* ── Promo banners (commented out — replaced by Helping Hands banner) ─────────
+/* ── Promo banners (commented out — replaced by referral billboard) ───────────
 const BANNERS = [
   {
     id: 'beverages',
@@ -200,70 +186,33 @@ function GetLinkModal({ onClose }) {
   );
 }
 
-// ── Helping Hands Banner — sleek, minimal "free wrap" referral card ──────────
-function HelpingHandsBanner({ onGetLink }) {
-  return (
-    <div className="relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_-16px_rgba(0,0,0,0.12)] select-none">
-      <div className="flex items-center gap-4 p-4 sm:px-5 sm:py-4">
-        {/* Emblem */}
-        <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
-          <Gift size={20} className="text-emerald-600" strokeWidth={2} />
-        </div>
-
-        {/* Copy */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Helping Hands</span>
-            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Reward</span>
-          </div>
-          <p className="text-[15px] sm:text-[16px] font-bold text-gray-900 leading-snug mt-0.5">
-            Refer a friend, get a <span className="text-emerald-600">free wrap</span>
-          </p>
-          <p className="hidden sm:block text-[12px] text-gray-400 leading-snug mt-0.5">
-            Share your link — the moment they order, your wrap is on us.
-          </p>
-        </div>
-
-        {/* CTA */}
-        <button
-          onClick={onGetLink}
-          className="group flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-gray-900 hover:bg-gray-800 active:scale-95 text-white font-semibold text-[13px] px-4 py-2.5 transition-all"
-        >
-          Get link
-          <ArrowRight size={14} strokeWidth={2.5} className="transition-transform group-hover:translate-x-0.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Combo Billboard — designed artwork + real clickable CTA overlay ──────────
-function ComboBillboard({ onGrab }) {
+// ── Referral Billboard — designed artwork + real clickable CTA overlay ───────
+function ReferralBillboard({ onGetLink }) {
   return (
     <div className="relative w-full select-none">
       <Image
-        src="/combo-billboard.png"
-        alt="Combo of the Day — Paneer Lababdar paired with Mango Lassi, all-in-one at ₹249"
+        src="/referral-billboard.png"
+        alt="Refer a friend, get a free wrap — share your referral link with friends"
         width={1024}
-        height={528}
+        height={532}
         priority
         quality={100}
         className="w-full h-auto"
         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 640px, 900px"
       />
 
-      {/* Real working button — sits exactly over the artwork's reserved white pill */}
+      {/* Real working button — sits over the artwork's reserved white slot */}
       <button
-        onClick={onGrab}
-        aria-label="Grab this combo — Paneer Lababdar with Mango Lassi for ₹249"
-        className="absolute flex items-center justify-center gap-[0.6em] rounded-full font-extrabold tracking-tight transition-all active:scale-[0.97] hover:bg-slate-900/[0.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        onClick={onGetLink}
+        aria-label="Get your referral link — refer a friend and earn a free wrap"
+        className="absolute flex items-center justify-center gap-[0.55em] rounded-[1.1em] font-extrabold tracking-tight transition-all active:scale-[0.97] hover:bg-emerald-900/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
         style={{
-          left: '5.3%', top: '78%', width: '41.5%', height: '12.6%',
-          color: '#0b2e4f',
+          left: '6%', top: '70%', width: '47.5%', height: '20.5%',
+          color: '#006838',
           fontSize: 'clamp(11px, 2.4vw, 17px)',
         }}
       >
-        Grab This Combo
+        Get my link
         <ArrowRight strokeWidth={2.75} style={{ width: '1.1em', height: '1.1em' }} />
       </button>
     </div>
@@ -474,19 +423,7 @@ export default function MenuPage() {
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
-  const { cartCount, addCombo } = useCart();
-  const { isLoggedIn } = useAuth();
-  const router = useRouter();
-
-  // One-click combo → add to cart, then straight to checkout (auth-gated)
-  const handleGrabCombo = () => {
-    addCombo(COMBO_MEAL);
-    if (isLoggedIn) {
-      router.push('/checkout');
-    } else {
-      window.dispatchEvent(new CustomEvent('picoso:require-auth', { detail: 'checkout' }));
-    }
-  };
+  const { cartCount } = useCart();
 
   // Load categories
   useEffect(() => {
@@ -666,11 +603,6 @@ export default function MenuPage() {
         {/* Explore menu header */}
         <ExploreMenuHeader itemCount={loading ? '—' : totalFiltered} catCount={cats.length} />
 
-        {/* Combo of the day billboard */}
-        <div className="mb-6">
-          <ComboBillboard onGrab={handleGrabCombo} />
-        </div>
-
         {/* ── Category sections ─────────────────────────────────── */}
         {loading ? (
           <div className="space-y-8">
@@ -764,10 +696,10 @@ export default function MenuPage() {
                     )}
                   </div>
 
-                  {/* Helping Hands (free wrap) — right after the bowls section */}
+                  {/* Referral billboard — right after the bowls section */}
                   {isMeals && (
                     <div className="mt-7">
-                      <HelpingHandsBanner onGetLink={() => setLinkModalOpen(true)} />
+                      <ReferralBillboard onGetLink={() => setLinkModalOpen(true)} />
                     </div>
                   )}
 
