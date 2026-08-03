@@ -600,6 +600,11 @@ export default function MenuPage() {
       {/* ── Content area ─────────────────────────────────────────── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 pb-28">
 
+        {/* Referral billboard — top of menu */}
+        <div className="mb-6">
+          <ReferralBillboard onGetLink={() => setLinkModalOpen(true)} />
+        </div>
+
         {/* Explore menu header */}
         <ExploreMenuHeader itemCount={loading ? '—' : totalFiltered} catCount={cats.length} />
 
@@ -695,13 +700,6 @@ export default function MenuPage() {
                       </div>
                     )}
                   </div>
-
-                  {/* Referral billboard — right after the bowls section */}
-                  {isMeals && (
-                    <div className="mt-7">
-                      <ReferralBillboard onGetLink={() => setLinkModalOpen(true)} />
-                    </div>
-                  )}
 
                   {/* Healthy Subscription card — only after Cold Drinks */}
                   {isBev && (
