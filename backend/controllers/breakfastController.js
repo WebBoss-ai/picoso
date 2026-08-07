@@ -83,6 +83,53 @@ function startDateInTwoDays() {
   return d;
 }
 
+/**
+ * Meal index for a calendar date from sorted menu (sortOrder).
+ * Day 1 of the month → first plate, day 2 → second, … after N items the cycle restarts.
+ * Everyone receives the same plate on a given calendar date.
+ * e.g. 5 items: 1st→#1, 6th→#1, 9th→#4
+ */
+export function mealIndexForDate(date, count) {
+  if (!count || count < 1) return 0;
+  const d = new Date(date);
+  const dayOfMonth = d.getDate();
+  return ((dayOfMonth - 1) % count + count) % count;
+}
+
+/** Next `days` plates starting on startDate (inclusive). */
+export function buildRotationSchedule(items, startDate, days = 5) {
+  const list = Array.isArray(items) ? items : [];
+  const count = list.length;
+  const schedule = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(startDate);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + i);
+    const idx = mealIndexForDate(d, count);
+    const item = count ? list[idx] : null;
+    schedule.push({
+      date: d,
+      dayOffset: i,
+      itemIndex: idx,
+      item: item
+        ? {
+            _id: item._id,
+            name: item.name,
+            description: item.description,
+            tag: item.tag,
+            calories: item.calories,
+            protein: item.protein,
+            carbs: item.carbs,
+            fats: item.fats,
+            isVeg: item.isVeg,
+            image: item.image || '',
+          }
+        : null,
+    });
+  }
+  return schedule;
+}
+
 const VALID_SLOTS = [
   '08:00-08:30',
   '08:30-09:00',
@@ -103,10 +150,22 @@ export const getBreakfastMenu = async (req, res) => {
     await ensureDefaultMenu();
     const items = await BreakfastMenuItem.find({ available: true }).sort({ sortOrder: 1, createdAt: 1 });
     const startDate = startDateInTwoDays();
+    const planDays = 5;
+    const schedule = buildRotationSchedule(items, startDate, planDays);
+    const startMealIndex = mealIndexForDate(startDate, items.length);
+
     res.json({
       success: true,
       items,
-      pricing: { weeklyPrice: 1150, daysPerWeek: 5, perDay: 230 },
+      schedule,
+      rotation: {
+        planDays,
+        cycleLength: items.length,
+        startDate,
+        startMealIndex,
+        note: 'Menu advances one admin plate per calendar day, looping after the full set. Everyone shares the same plate on a given day.',
+      },
+      pricing: { weeklyPrice: 1150, daysPerWeek: planDays, perDay: 230 },
       earliestStart: startDate,
       timeSlots: VALID_SLOTS,
     });
@@ -326,7 +385,20 @@ export const admin2GetMenu = async (req, res) => {
   try {
     await ensureDefaultMenu();
     const items = await BreakfastMenuItem.find().sort({ sortOrder: 1, createdAt: 1 });
-    res.json({ success: true, items });
+    const available = items.filter((i) => i.available);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = startDateInTwoDays();
+    res.json({
+      success: true,
+      items,
+      rotationPreview: {
+        todayIndex: mealIndexForDate(today, available.length),
+        startDate,
+        startIndex: mealIndexForDate(startDate, available.length),
+        schedule: buildRotationSchedule(available, startDate, 5),
+      },
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

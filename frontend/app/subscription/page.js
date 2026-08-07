@@ -100,6 +100,44 @@ function formatStartDate(date) {
   });
 }
 
+function formatDayLabel(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+function formatWeekdayShort(date) {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString('en-IN', { weekday: 'short' });
+}
+
+function mealIndexForDate(date, count) {
+  if (!count || count < 1) return 0;
+  const dayOfMonth = new Date(date).getDate();
+  return ((dayOfMonth - 1) % count + count) % count;
+}
+
+function buildLocalSchedule(items, startDate, days = 5) {
+  const list = items || [];
+  const schedule = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(startDate);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + i);
+    const idx = mealIndexForDate(d, list.length);
+    schedule.push({
+      date: d,
+      dayOffset: i,
+      itemIndex: idx,
+      item: list[idx] || null,
+    });
+  }
+  return schedule;
+}
+
 function formatSlotLabel(slot) {
   if (!slot) return '';
   const [start, end] = slot.split('-');
@@ -126,6 +164,7 @@ export default function SubscriptionPage() {
 
   const [phase, setPhase] = useState('splash'); // splash | details
   const [items, setItems] = useState(FALLBACK_ITEMS);
+  const [schedule, setSchedule] = useState([]);
   const [slots, setSlots] = useState(FALLBACK_SLOTS);
   const [startDate, setStartDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState('');
@@ -139,13 +178,25 @@ export default function SubscriptionPage() {
   const phoneRef = useRef(null);
 
   useEffect(() => {
-    setStartDate(startDatePlusTwo());
+    const start = startDatePlusTwo();
+    setStartDate(start);
+    setSchedule(buildLocalSchedule(FALLBACK_ITEMS, start, 5));
     const t = setTimeout(() => setSplashReady(true), 80);
     breakfastSubscription.getMenu()
       .then((r) => {
-        if (r.data?.items?.length) setItems(r.data.items);
+        const nextItems = r.data?.items?.length ? r.data.items : FALLBACK_ITEMS;
+        const nextStart = r.data?.earliestStart ? new Date(r.data.earliestStart) : start;
+        setItems(nextItems);
+        setStartDate(nextStart);
         if (r.data?.timeSlots?.length) setSlots(r.data.timeSlots);
-        if (r.data?.earliestStart) setStartDate(new Date(r.data.earliestStart));
+        if (r.data?.schedule?.length) {
+          setSchedule(r.data.schedule.map((row) => ({
+            ...row,
+            date: new Date(row.date),
+          })));
+        } else {
+          setSchedule(buildLocalSchedule(nextItems, nextStart, 5));
+        }
       })
       .catch(() => {});
     return () => clearTimeout(t);
@@ -212,6 +263,12 @@ export default function SubscriptionPage() {
   }, [phone, selectedSlot, login]);
 
   const startLabel = useMemo(() => formatStartDate(startDate), [startDate]);
+  const displaySchedule = useMemo(() => {
+    if (schedule.length) return schedule;
+    if (startDate && items.length) return buildLocalSchedule(items, startDate, 5);
+    return [];
+  }, [schedule, startDate, items]);
+  const firstPlate = displaySchedule[0]?.item;
 
   /* ── Splash ─────────────────────────────────────────────────────────────── */
   if (phase === 'splash') {
@@ -365,7 +422,7 @@ export default function SubscriptionPage() {
               >
                 5 breakfasts
                 <br />
-                Mon to Fri
+                rotating daily
               </p>
             </div>
 
@@ -447,91 +504,126 @@ export default function SubscriptionPage() {
             <span style={{ fontStyle: 'italic', color: pink[600] }}>One membership.</span>
           </h2>
           <p className="mt-2 text-[13px] leading-relaxed" style={{ color: pink.muted }}>
-            This week&apos;s set menu is fixed so quality stays exact. You choose the window. We handle the rest.
+            One shared plate each morning, rotated by calendar day from our kitchen. Join mid-cycle and you pick up on that day&apos;s plate, like everyone else.
           </p>
         </section>
 
-        {/* items — one per row */}
+        {/* rotating schedule for first 5 deliveries */}
         <section className="px-5 pt-5 space-y-3">
-          <p
-            className="text-[10px] uppercase tracking-[0.16em] font-medium"
-            style={{ color: pink[600] }}
-          >
-            This week&apos;s plates
-          </p>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p
+                className="text-[10px] uppercase tracking-[0.16em] font-medium"
+                style={{ color: pink[600] }}
+              >
+                Your first five mornings
+              </p>
+              {firstPlate && (
+                <p className="text-[12px] mt-1" style={{ color: pink.muted }}>
+                  Starts on {startLabel} with {firstPlate.name}
+                </p>
+              )}
+            </div>
+          </div>
 
-          {items.map((item, idx) => (
-            <article
-              key={item._id || idx}
-              className="rounded-2xl border overflow-hidden flex"
-              style={{
-                background: '#fff',
-                borderColor: pink[200],
-                boxShadow: '0 2px 12px rgba(122,58,72,0.04)',
-              }}
-            >
-              <div
-                className="w-[88px] flex-shrink-0 flex flex-col items-center justify-center relative"
+          {displaySchedule.map((row, idx) => {
+            const item = row.item;
+            if (!item) return null;
+            const img = item.image;
+            return (
+              <article
+                key={`${row.date}-${item._id || idx}`}
+                className="rounded-2xl border overflow-hidden flex"
                 style={{
-                  background: `linear-gradient(160deg, ${pink[100]} 0%, ${pink[200]} 100%)`,
+                  background: '#fff',
+                  borderColor: pink[200],
+                  boxShadow: '0 2px 12px rgba(122,58,72,0.04)',
                 }}
               >
-                <span
-                  className="text-[22px] font-medium leading-none"
+                <div
+                  className="w-[92px] flex-shrink-0 relative overflow-hidden"
                   style={{
-                    fontFamily: "'Cormorant Garamond', serif",
-                    color: pink[600],
+                    background: img
+                      ? pink[100]
+                      : `linear-gradient(160deg, ${pink[100]} 0%, ${pink[200]} 100%)`,
                   }}
                 >
-                  {String(idx + 1).padStart(2, '0')}
-                </span>
-                {item.tag && (
-                  <span
-                    className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-wide uppercase whitespace-nowrap px-1.5 py-0.5 rounded-full"
-                    style={{ background: 'rgba(255,255,255,0.85)', color: pink[700] }}
-                  >
-                    {item.tag}
-                  </span>
-                )}
-              </div>
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={item.name}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span
+                        className="text-[20px] font-medium leading-none"
+                        style={{
+                          fontFamily: "'Cormorant Garamond', serif",
+                          color: pink[600],
+                        }}
+                      >
+                        {String((row.itemIndex ?? idx) + 1).padStart(2, '0')}
+                      </span>
+                    </div>
+                  )}
+                  {idx === 0 && (
+                    <span
+                      className="absolute top-1.5 left-1.5 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                      style={{ background: pink[600], color: '#fff' }}
+                    >
+                      First
+                    </span>
+                  )}
+                </div>
 
-              <div className="flex-1 min-w-0 px-3.5 py-3">
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0 px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p
+                      className="text-[10px] font-semibold uppercase tracking-wide"
+                      style={{ color: pink[600] }}
+                    >
+                      {formatWeekdayShort(row.date)} · {formatDayLabel(row.date)}
+                    </p>
+                    <div
+                      className="w-4 h-4 rounded-[3px] border-2 flex items-center justify-center flex-shrink-0"
+                      style={{ borderColor: item.isVeg !== false ? '#16a34a' : '#dc2626' }}
+                    >
+                      <div
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: item.isVeg !== false ? '#16a34a' : '#dc2626' }}
+                      />
+                    </div>
+                  </div>
                   <h3
-                    className="text-[14px] font-semibold leading-snug"
+                    className="text-[14px] font-semibold leading-snug mt-0.5"
                     style={{ color: pink.ink }}
                   >
                     {item.name}
                   </h3>
-                  <div
-                    className="w-4 h-4 rounded-[3px] border-2 flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ borderColor: item.isVeg !== false ? '#16a34a' : '#dc2626' }}
-                    title={item.isVeg !== false ? 'Vegetarian' : 'Non-vegetarian'}
+                  <p
+                    className="text-[11.5px] mt-1 leading-relaxed line-clamp-2"
+                    style={{ color: pink.muted }}
                   >
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ background: item.isVeg !== false ? '#16a34a' : '#dc2626' }}
-                    />
+                    {item.description}
+                  </p>
+                  <div className="flex items-center gap-2.5 mt-2 text-[10px] font-medium" style={{ color: pink[600] }}>
+                    <span>{item.calories || 0} kcal</span>
+                    <span style={{ opacity: 0.35 }}>|</span>
+                    <span>P {item.protein || 0}g</span>
+                    <span style={{ opacity: 0.35 }}>|</span>
+                    <span>C {item.carbs || 0}g</span>
+                    <span style={{ opacity: 0.35 }}>|</span>
+                    <span>F {item.fats || 0}g</span>
                   </div>
                 </div>
-                <p
-                  className="text-[11.5px] mt-1 leading-relaxed line-clamp-2"
-                  style={{ color: pink.muted }}
-                >
-                  {item.description}
-                </p>
-                <div className="flex items-center gap-2.5 mt-2 text-[10px] font-medium" style={{ color: pink[600] }}>
-                  <span>{item.calories || 0} kcal</span>
-                  <span style={{ opacity: 0.35 }}>|</span>
-                  <span>P {item.protein || 0}g</span>
-                  <span style={{ opacity: 0.35 }}>|</span>
-                  <span>C {item.carbs || 0}g</span>
-                  <span style={{ opacity: 0.35 }}>|</span>
-                  <span>F {item.fats || 0}g</span>
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
+
+          <p className="text-[11px] leading-relaxed px-0.5" style={{ color: pink.muted }}>
+            Plates follow the admin menu order by date of the month. Day 1 is plate 1, day 2 is plate 2, and after the full set the cycle starts again. On any given morning, every member receives the same plate.
+          </p>
         </section>
 
         {/* pricing */}
@@ -568,7 +660,7 @@ export default function SubscriptionPage() {
               className="px-5 py-3 flex items-center justify-between text-[12px]"
               style={{ background: 'rgba(0,0,0,0.12)' }}
             >
-              <span className="text-white/80">Mon to Fri breakfast</span>
+              <span className="text-white/80">5-day rotating plan</span>
               <span className="text-white font-medium">Pause anytime</span>
             </div>
           </div>

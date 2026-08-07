@@ -487,6 +487,7 @@ const EMPTY_ITEM = {
   name: '',
   description: '',
   tag: '',
+  image: '',
   calories: '',
   protein: '',
   carbs: '',
@@ -530,6 +531,7 @@ function MenuSection() {
       name: item.name || '',
       description: item.description || '',
       tag: item.tag || '',
+      image: item.image || '',
       calories: item.calories ?? '',
       protein: item.protein ?? '',
       carbs: item.carbs ?? '',
@@ -591,7 +593,9 @@ function MenuSection() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-stone-900">Breakfast menu</h2>
-          <p className="text-sm text-stone-500">Five weekly plates shown on /subscription</p>
+          <p className="text-sm text-stone-500">
+            Sorted plates rotate by calendar day (item 1 on day 1 of the cycle, then 2, 3… then back to 1). Everyone gets the same plate on a given day.
+          </p>
         </div>
         <button
           onClick={openNew}
@@ -613,11 +617,20 @@ function MenuSection() {
               key={item._id}
               className="bg-white rounded-2xl border border-stone-100 p-4 flex items-start gap-4 shadow-sm"
             >
-              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                {String(i + 1).padStart(2, '0')}
-              </div>
+              {item.image ? (
+                <img
+                  src={item.image}
+                  alt={item.name}
+                  className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-stone-100"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  {String(i + 1).padStart(2, '0')}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-rose-500">#{i + 1}</span>
                   <h3 className="text-sm font-bold text-stone-900">{item.name}</h3>
                   {item.tag && (
                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-stone-100 text-stone-500">
@@ -633,6 +646,7 @@ function MenuSection() {
                 <p className="text-xs text-stone-500 mt-1 line-clamp-2">{item.description}</p>
                 <p className="text-[11px] text-stone-400 mt-1.5">
                   {item.calories} kcal · P {item.protein}g · C {item.carbs}g · F {item.fats}g
+                  {item.image ? ' · image set' : ' · no image'}
                 </p>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -684,6 +698,7 @@ function MenuSection() {
                 { key: 'name', label: 'Name', type: 'text' },
                 { key: 'description', label: 'Description', type: 'textarea' },
                 { key: 'tag', label: 'Tag', type: 'text' },
+                { key: 'image', label: 'Image URL', type: 'text', placeholder: 'https://example.com/photo.jpg' },
               ].map((f) => (
                 <div key={f.key}>
                   <label className="text-xs font-semibold text-stone-500 block mb-1">{f.label}</label>
@@ -698,9 +713,21 @@ function MenuSection() {
                     <input
                       value={form[f.key]}
                       onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      placeholder={f.placeholder || ''}
                       className="w-full h-10 px-3 rounded-xl border border-stone-200 text-sm outline-none focus:border-rose-300"
                     />
                   )}
+                  {f.key === 'image' && form.image ? (
+                    <div className="mt-2 flex items-center gap-3">
+                      <img
+                        src={form.image}
+                        alt="Preview"
+                        className="w-16 h-16 rounded-xl object-cover bg-stone-100 border border-stone-100"
+                        onError={(e) => { e.currentTarget.style.opacity = '0.3'; }}
+                      />
+                      <p className="text-[11px] text-stone-400">Preview · paste a direct image link</p>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div className="grid grid-cols-4 gap-2">
