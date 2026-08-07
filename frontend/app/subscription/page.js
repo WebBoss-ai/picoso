@@ -23,6 +23,205 @@ const pink = {
   muted: '#8A6F76',
 };
 
+function VegDot({ isVeg = true, size = 16 }) {
+  const on = isVeg !== false;
+  const border = on ? '#16a34a' : '#dc2626';
+  const fill = on ? '#16a34a' : '#dc2626';
+  const s = size;
+  const inner = Math.max(4, Math.round(size * 0.35));
+  return (
+    <div
+      className="rounded-[3px] border-2 flex items-center justify-center flex-shrink-0 bg-white"
+      style={{ width: s, height: s, borderColor: border }}
+      title={on ? 'Vegetarian' : 'Non-vegetarian'}
+    >
+      <div className="rounded-full" style={{ width: inner, height: inner, background: fill }} />
+    </div>
+  );
+}
+
+function SquareFoodImage({ src, alt, className = '', size }) {
+  const dim = size ? { width: size, height: size } : undefined;
+  return (
+    <div
+      className={`relative overflow-hidden flex-shrink-0 ${className}`}
+      style={{
+        ...dim,
+        aspectRatio: '1 / 1',
+        background: `linear-gradient(145deg, ${pink[100]} 0%, ${pink[200]} 100%)`,
+      }}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={alt || ''}
+          className="absolute inset-0 w-full h-full object-cover object-center"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Leaf size={size ? size * 0.28 : 22} style={{ color: pink[400] }} strokeWidth={1.5} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MacroChips({ item, large = false }) {
+  const chips = [
+    { k: 'Energy', v: `${item.calories || 0} kcal` },
+    { k: 'Protein', v: `${item.protein || 0}g` },
+    { k: 'Carbs', v: `${item.carbs || 0}g` },
+    { k: 'Fats', v: `${item.fats || 0}g` },
+  ];
+  return (
+    <div className={`grid grid-cols-4 ${large ? 'gap-2' : 'gap-1.5'}`}>
+      {chips.map((c) => (
+        <div
+          key={c.k}
+          className="rounded-xl text-center border"
+          style={{
+            background: pink[50],
+            borderColor: pink[200],
+            padding: large ? '10px 4px' : '6px 2px',
+          }}
+        >
+          <p
+            className="font-semibold leading-none"
+            style={{
+              color: pink.ink,
+              fontSize: large ? 13 : 11,
+              fontFamily: large ? "'Cormorant Garamond', serif" : 'inherit',
+            }}
+          >
+            {c.v}
+          </p>
+          <p
+            className="mt-1 uppercase tracking-wide"
+            style={{ color: pink.muted, fontSize: large ? 9 : 8 }}
+          >
+            {c.k}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Premium expanded plate detail */
+function PlateDetailSheet({ detail, onClose }) {
+  if (!detail) return null;
+  const { item, row, idx } = detail;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center">
+      <div
+        className="absolute inset-0 bg-[#2C1E22]/45 backdrop-blur-[3px] animate-fade-in"
+        onClick={onClose}
+      />
+      <div
+        className="relative w-full sm:max-w-md max-h-[92dvh] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] border shadow-modal animate-slide-up"
+        style={{
+          background: pink[50],
+          borderColor: pink[200],
+        }}
+      >
+        <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${pink[300]}, ${pink[500]})` }} />
+
+        {/* square hero image */}
+        <div className="px-5 pt-5">
+          <div className="relative mx-auto w-full max-w-[280px]">
+            <div
+              className="rounded-[22px] overflow-hidden border shadow-sm"
+              style={{
+                borderColor: pink[200],
+                boxShadow: `0 16px 40px -16px ${pink[500]}55`,
+              }}
+            >
+              <SquareFoodImage src={item.image} alt={item.name} className="w-full" />
+            </div>
+            {idx === 0 && (
+              <span
+                className="absolute top-3 left-3 text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                style={{ background: pink[600], color: '#fff' }}
+              >
+                First day
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute -top-1 -right-1 w-9 h-9 rounded-full flex items-center justify-center border shadow-sm"
+              style={{ background: '#fff', borderColor: pink[200], color: pink[700] }}
+              aria-label="Close"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-5 pt-5 pb-8">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {row?.date && (
+                <p
+                  className="text-[10px] font-semibold uppercase tracking-[0.16em]"
+                  style={{ color: pink[600] }}
+                >
+                  {formatWeekdayShort(row.date)} · {formatDayLabel(row.date)}
+                </p>
+              )}
+              <h3
+                className="text-[1.55rem] font-semibold leading-tight mt-1"
+                style={{ fontFamily: "'Cormorant Garamond', serif", color: pink.ink }}
+              >
+                {item.name}
+              </h3>
+            </div>
+            <VegDot isVeg={item.isVeg} size={18} />
+          </div>
+
+          {item.tag && (
+            <span
+              className="inline-flex mt-3 text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full"
+              style={{ background: pink[100], color: pink[700] }}
+            >
+              {item.tag}
+            </span>
+          )}
+
+          <p className="mt-3.5 text-[13.5px] leading-relaxed" style={{ color: pink.muted }}>
+            {item.description}
+          </p>
+
+          <div className="mt-5">
+            <p
+              className="text-[10px] uppercase tracking-[0.16em] font-medium mb-2.5"
+              style={{ color: pink[600] }}
+            >
+              Nutrition
+            </p>
+            <MacroChips item={item} large />
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-6 w-full h-[50px] rounded-2xl text-[14px] font-semibold text-white active:scale-[0.99] transition-transform"
+            style={{
+              background: `linear-gradient(135deg, ${pink[500]} 0%, ${pink[600]} 100%)`,
+              boxShadow: `0 12px 28px -10px ${pink[400]}aa`,
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const FALLBACK_ITEMS = [
   {
     _id: 'ps_001',
@@ -187,6 +386,7 @@ export default function SubscriptionPage() {
   const [splashReady, setSplashReady] = useState(false);
   const [location, setLocation] = useState(null); // { lat, lng, accuracy }
   const [locStatus, setLocStatus] = useState('idle'); // idle | loading | ready | denied | error | unsupported
+  const [detail, setDetail] = useState(null); // { item, row, idx } | null
   const phoneRef = useRef(null);
   const locWatchRef = useRef(null);
   const locPollRef = useRef(null);
@@ -398,6 +598,13 @@ export default function SubscriptionPage() {
   }, [schedule, startDate, items]);
 
   const locationReady = locStatus === 'ready' && !!location?.lat && !!location?.lng;
+
+  useEffect(() => {
+    if (!detail) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [detail]);
 
   /* ── Splash ─────────────────────────────────────────────────────────────── */
   if (phase === 'splash') {
@@ -649,47 +856,35 @@ export default function SubscriptionPage() {
           {displaySchedule.map((row, idx) => {
             const item = row.item;
             if (!item) return null;
-            const img = item.image;
             return (
-              <article
+              <button
                 key={`${row.date}-${item._id || idx}`}
-                className="rounded-2xl border overflow-hidden flex"
+                type="button"
+                onClick={() => setDetail({ item, row, idx })}
+                className="w-full text-left rounded-[18px] border p-2.5 flex gap-3 items-center active:scale-[0.99] transition-all"
                 style={{
                   background: '#fff',
                   borderColor: pink[200],
-                  boxShadow: '0 2px 12px rgba(122,58,72,0.04)',
+                  boxShadow: '0 2px 14px rgba(122,58,72,0.05)',
                 }}
               >
-                <div
-                  className="w-[92px] flex-shrink-0 relative overflow-hidden"
-                  style={{
-                    background: img
-                      ? pink[100]
-                      : `linear-gradient(160deg, ${pink[100]} 0%, ${pink[200]} 100%)`,
-                  }}
-                >
-                  {img ? (
-                    <img
-                      src={img}
+                <div className="relative flex-shrink-0">
+                  <div
+                    className="rounded-[14px] overflow-hidden border"
+                    style={{
+                      borderColor: pink[100],
+                      boxShadow: `0 6px 16px -8px ${pink[500]}66`,
+                    }}
+                  >
+                    <SquareFoodImage
+                      src={item.image}
                       alt={item.name}
-                      className="absolute inset-0 w-full h-full object-cover"
+                      size={88}
                     />
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span
-                        className="text-[20px] font-medium leading-none"
-                        style={{
-                          fontFamily: "'Cormorant Garamond', serif",
-                          color: pink[600],
-                        }}
-                      >
-                        {String(idx + 1).padStart(2, '0')}
-                      </span>
-                    </div>
-                  )}
+                  </div>
                   {idx === 0 && (
                     <span
-                      className="absolute top-1.5 left-1.5 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                      className="absolute -top-1.5 -left-1.5 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
                       style={{ background: pink[600], color: '#fff' }}
                     >
                       First
@@ -697,7 +892,7 @@ export default function SubscriptionPage() {
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0 px-3.5 py-3">
+                <div className="flex-1 min-w-0 py-0.5">
                   <div className="flex items-center justify-between gap-2">
                     <p
                       className="text-[10px] font-semibold uppercase tracking-wide"
@@ -705,39 +900,33 @@ export default function SubscriptionPage() {
                     >
                       {formatWeekdayShort(row.date)} · {formatDayLabel(row.date)}
                     </p>
-                    <div
-                      className="w-4 h-4 rounded-[3px] border-2 flex items-center justify-center flex-shrink-0"
-                      style={{ borderColor: item.isVeg !== false ? '#16a34a' : '#dc2626' }}
-                    >
-                      <div
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: item.isVeg !== false ? '#16a34a' : '#dc2626' }}
-                      />
-                    </div>
+                    <VegDot isVeg={item.isVeg} size={14} />
                   </div>
                   <h3
-                    className="text-[14px] font-semibold leading-snug mt-0.5"
+                    className="text-[13.5px] font-semibold leading-snug mt-0.5 line-clamp-2"
                     style={{ color: pink.ink }}
                   >
                     {item.name}
                   </h3>
-                  <p
-                    className="text-[11.5px] mt-1 leading-relaxed line-clamp-2"
-                    style={{ color: pink.muted }}
+                  {item.tag && (
+                    <p className="text-[10px] mt-1 font-medium" style={{ color: pink[500] }}>
+                      {item.tag}
+                    </p>
+                  )}
+                  <div
+                    className="flex items-center gap-2 mt-1.5 text-[10px] font-medium"
+                    style={{ color: pink[600] }}
                   >
-                    {item.description}
-                  </p>
-                  <div className="flex items-center gap-2.5 mt-2 text-[10px] font-medium" style={{ color: pink[600] }}>
                     <span>{item.calories || 0} kcal</span>
-                    <span style={{ opacity: 0.35 }}>|</span>
+                    <span style={{ opacity: 0.3 }}>·</span>
                     <span>P {item.protein || 0}g</span>
-                    <span style={{ opacity: 0.35 }}>|</span>
-                    <span>C {item.carbs || 0}g</span>
-                    <span style={{ opacity: 0.35 }}>|</span>
-                    <span>F {item.fats || 0}g</span>
+                    <span style={{ opacity: 0.3 }}>·</span>
+                    <span className="font-semibold" style={{ color: pink[500] }}>
+                      View
+                    </span>
                   </div>
                 </div>
-              </article>
+              </button>
             );
           })}
         </section>
@@ -1189,6 +1378,8 @@ export default function SubscriptionPage() {
           </div>
         </div>
       )}
+
+      <PlateDetailSheet detail={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
