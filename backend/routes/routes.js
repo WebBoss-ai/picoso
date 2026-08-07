@@ -1,9 +1,11 @@
 import express from 'express';
 import * as controller from '../controllers/controller.js';
 import * as agentController from '../controllers/agentController.js';
+import * as breakfast from '../controllers/breakfastController.js';
 import { authenticate, isAdmin, authenticateDelivery } from '../middleware/auth.js';
 import { authenticateAgent } from '../middleware/agentAuth.js';
 import { requireMarketingPin } from '../middleware/marketingAuth.js';
+import { requireAdmin2Pin } from '../middleware/admin2Auth.js';
 import * as marketing from '../controllers/marketingController.js';
 import { uploadToS3 } from '../utils/s3.js';
 
@@ -165,6 +167,21 @@ router.put('/admin/referrals/requests/:id/approve', authenticate, isAdmin, contr
 router.put('/admin/referrals/requests/:id/reject',  authenticate, isAdmin, controller.adminRejectReferralRequest);
 router.get('/admin/referrals/settings', authenticate, isAdmin,        controller.adminGetReferralSettings);
 router.put('/admin/referrals/settings', authenticate, isAdmin,        controller.adminUpdateReferralSettings);
+
+// ── Breakfast subscription (public) ─────────────────────────────────────────
+router.get('/subscription/breakfast/menu', breakfast.getBreakfastMenu);
+router.post('/subscription/breakfast/interest', breakfast.expressBreakfastInterest);
+
+// ── Admin2: Breakfast subscription console (PIN 0095) ───────────────────────
+router.post('/admin2/verify-pin', requireAdmin2Pin, breakfast.verifyAdmin2Pin);
+router.get('/admin2/subscription/stats', requireAdmin2Pin, breakfast.admin2GetStats);
+router.get('/admin2/subscription/leads', requireAdmin2Pin, breakfast.admin2GetLeads);
+router.put('/admin2/subscription/leads/:id', requireAdmin2Pin, breakfast.admin2UpdateLead);
+router.delete('/admin2/subscription/leads/:id', requireAdmin2Pin, breakfast.admin2DeleteLead);
+router.get('/admin2/subscription/menu', requireAdmin2Pin, breakfast.admin2GetMenu);
+router.post('/admin2/subscription/menu', requireAdmin2Pin, breakfast.admin2CreateMenuItem);
+router.put('/admin2/subscription/menu/:id', requireAdmin2Pin, breakfast.admin2UpdateMenuItem);
+router.delete('/admin2/subscription/menu/:id', requireAdmin2Pin, breakfast.admin2DeleteMenuItem);
 
 // ── Marketing / WhatsApp Automation (6-digit PIN protected) ──────────────────
 router.post('/marketing/verify-pin',        requireMarketingPin, marketing.verifyPin);

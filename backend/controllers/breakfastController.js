@@ -1,0 +1,390 @@
+import jwt from 'jsonwebtoken';
+import {
+  User,
+  PlatinumCard,
+  BreakfastMenuItem,
+  BreakfastSubscription,
+} from '../models/Model.js';
+import { ADMIN2_PIN } from '../middleware/admin2Auth.js';
+
+const DEFAULT_ITEMS = [
+  {
+    name: 'Garden Herb Omelette',
+    description: 'Three free-range eggs, garden herbs, and a side of slow-roasted tomatoes.',
+    tag: 'High protein',
+    calories: 340,
+    protein: 24,
+    carbs: 8,
+    fats: 22,
+    isVeg: true,
+    sortOrder: 1,
+  },
+  {
+    name: 'Honey Millet Porridge',
+    description: 'Warm millet porridge finished with a thread of honey and toasted almonds.',
+    tag: 'Slow energy',
+    calories: 310,
+    protein: 11,
+    carbs: 48,
+    fats: 9,
+    isVeg: true,
+    sortOrder: 2,
+  },
+  {
+    name: 'Avocado Multigrain Toast',
+    description: 'Ripe avocado on multigrain toast with chilli flakes and cold-pressed oil.',
+    tag: 'Light start',
+    calories: 380,
+    protein: 12,
+    carbs: 36,
+    fats: 20,
+    isVeg: true,
+    sortOrder: 3,
+  },
+  {
+    name: 'Spinach Paneer Parfait',
+    description: 'Soft paneer, wilted spinach, and spiced yoghurt in a balanced morning bowl.',
+    tag: 'Savoury',
+    calories: 360,
+    protein: 22,
+    carbs: 18,
+    fats: 18,
+    isVeg: true,
+    sortOrder: 4,
+  },
+  {
+    name: 'Berry Yoghurt Bowl',
+    description: 'Set yoghurt, seasonal berries, and a measured sprinkle of seeds.',
+    tag: 'Fresh',
+    calories: 290,
+    protein: 14,
+    carbs: 32,
+    fats: 10,
+    isVeg: true,
+    sortOrder: 5,
+  },
+];
+
+async function ensureDefaultMenu() {
+  const count = await BreakfastMenuItem.countDocuments();
+  if (count === 0) {
+    await BreakfastMenuItem.insertMany(DEFAULT_ITEMS);
+  }
+}
+
+function cleanPhone(raw) {
+  return String(raw || '').replace(/\D/g, '').slice(-10);
+}
+
+function startDateInTwoDays() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 2);
+  return d;
+}
+
+const VALID_SLOTS = [
+  '08:00-08:30',
+  '08:30-09:00',
+  '09:00-09:30',
+  '09:30-10:00',
+  '10:00-10:30',
+  '10:30-11:00',
+];
+
+// ── Public ───────────────────────────────────────────────────────────────────
+
+export const verifyAdmin2Pin = async (req, res) => {
+  res.json({ success: true });
+};
+
+export const getBreakfastMenu = async (req, res) => {
+  try {
+    await ensureDefaultMenu();
+    const items = await BreakfastMenuItem.find({ available: true }).sort({ sortOrder: 1, createdAt: 1 });
+    const startDate = startDateInTwoDays();
+    res.json({
+      success: true,
+      items,
+      pricing: { weeklyPrice: 1150, daysPerWeek: 5, perDay: 230 },
+      earliestStart: startDate,
+      timeSlots: VALID_SLOTS,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+/**
+ * Capture breakfast membership interest, create/login user, return token.
+ */
+export const expressBreakfastInterest = async (req, res) => {
+  try {
+    const { phone, timeSlot, name = '' } = req.body;
+    const clean = cleanPhone(phone);
+
+    if (!clean || clean.length !== 10) {
+      return res.status(400).json({ error: 'Enter a valid 10-digit mobile number' });
+    }
+    if (!timeSlot || !VALID_SLOTS.includes(timeSlot)) {
+      return res.status(400).json({ error: 'Please select a valid delivery window' });
+    }
+
+    const dummyEmail = `${clean}@picoso.in`;
+    let user = await User.findOne({ phone: clean });
+
+    if (!user) {
+      user = await User.create({
+        phone: clean,
+        name: name || '',
+        email: dummyEmail,
+        lastLoginAt: new Date(),
+        lastActiveAt: new Date(),
+      });
+    } else {
+      const updates = { lastLoginAt: new Date(), lastActiveAt: new Date() };
+      if (name && !user.name) updates.name = name;
+      if (!user.email) updates.email = dummyEmail;
+      await User.findByIdAndUpdate(user._id, updates);
+      user = await User.findById(user._id);
+    }
+
+    const startDate = startDateInTwoDays();
+
+    const subscription = await BreakfastSubscription.create({
+      userId: user._id,
+      phone: clean,
+      name: name || user.name || '',
+      timeSlot,
+      startDate,
+      weeklyPrice: 1150,
+      daysPerWeek: 5,
+      status: 'interested',
+    });
+
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    const platinum = await PlatinumCard.findOne({ userId: user._id, active: true });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        phone: user.phone,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isPlatinum: !!platinum,
+      },
+      subscription: {
+        id: subscription._id,
+        timeSlot: subscription.timeSlot,
+        startDate: subscription.startDate,
+        weeklyPrice: subscription.weeklyPrice,
+        status: subscription.status,
+      },
+      message: "We've noted your interest and we'll get to you very soon!",
+    });
+  } catch (e) {
+    console.error('expressBreakfastInterest ERROR:', e);
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ── Admin2 ───────────────────────────────────────────────────────────────────
+
+export const admin2GetStats = async (req, res) => {
+  try {
+    const [total, interested, contacted, active, paused, cancelled, rejected, menuCount] =
+      await Promise.all([
+        BreakfastSubscription.countDocuments(),
+        BreakfastSubscription.countDocuments({ status: 'interested' }),
+        BreakfastSubscription.countDocuments({ status: 'contacted' }),
+        BreakfastSubscription.countDocuments({ status: 'active' }),
+        BreakfastSubscription.countDocuments({ status: 'paused' }),
+        BreakfastSubscription.countDocuments({ status: 'cancelled' }),
+        BreakfastSubscription.countDocuments({ status: 'rejected' }),
+        BreakfastMenuItem.countDocuments(),
+      ]);
+
+    const since = new Date();
+    since.setDate(since.getDate() - 13);
+    since.setHours(0, 0, 0, 0);
+
+    const recent = await BreakfastSubscription.find({ createdAt: { $gte: since } })
+      .select('createdAt status weeklyPrice')
+      .lean();
+
+    const dayMap = {};
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(since);
+      d.setDate(since.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      dayMap[key] = { date: key, leads: 0, revenuePotential: 0 };
+    }
+    for (const row of recent) {
+      const key = new Date(row.createdAt).toISOString().slice(0, 10);
+      if (dayMap[key]) {
+        dayMap[key].leads += 1;
+        dayMap[key].revenuePotential += row.weeklyPrice || 1150;
+      }
+    }
+
+    const slotAgg = await BreakfastSubscription.aggregate([
+      { $group: { _id: '$timeSlot', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    const potentialWeeklyRevenue = active * 1150;
+
+    res.json({
+      success: true,
+      stats: {
+        total,
+        interested,
+        contacted,
+        active,
+        paused,
+        cancelled,
+        rejected,
+        menuCount,
+        potentialWeeklyRevenue,
+        conversionRate: total ? Math.round((active / total) * 100) : 0,
+      },
+      timeline: Object.values(dayMap),
+      slotDistribution: slotAgg.map((s) => ({ slot: s._id, count: s.count })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2GetLeads = async (req, res) => {
+  try {
+    const { status, q } = req.query;
+    const filter = {};
+    if (status && status !== 'all') filter.status = status;
+    if (q) {
+      filter.$or = [
+        { phone: { $regex: q, $options: 'i' } },
+        { name: { $regex: q, $options: 'i' } },
+      ];
+    }
+    const leads = await BreakfastSubscription.find(filter)
+      .populate('userId', 'phone name email createdAt')
+      .sort({ createdAt: -1 })
+      .limit(500);
+    res.json({ success: true, leads });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2UpdateLead = async (req, res) => {
+  try {
+    const { status, notes, name, timeSlot } = req.body;
+    const update = { updatedAt: new Date() };
+    if (status) {
+      update.status = status;
+      if (status === 'contacted') update.contactedAt = new Date();
+      if (status === 'active') update.activatedAt = new Date();
+    }
+    if (notes !== undefined) update.notes = notes;
+    if (name !== undefined) update.name = name;
+    if (timeSlot !== undefined) {
+      if (!VALID_SLOTS.includes(timeSlot)) {
+        return res.status(400).json({ error: 'Invalid time slot' });
+      }
+      update.timeSlot = timeSlot;
+    }
+
+    const lead = await BreakfastSubscription.findByIdAndUpdate(req.params.id, update, { new: true })
+      .populate('userId', 'phone name email');
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    res.json({ success: true, lead });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2DeleteLead = async (req, res) => {
+  try {
+    const lead = await BreakfastSubscription.findByIdAndDelete(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2GetMenu = async (req, res) => {
+  try {
+    await ensureDefaultMenu();
+    const items = await BreakfastMenuItem.find().sort({ sortOrder: 1, createdAt: 1 });
+    res.json({ success: true, items });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2CreateMenuItem = async (req, res) => {
+  try {
+    const {
+      name, description, tag, calories, protein, carbs, fats,
+      isVeg, image, available, sortOrder,
+    } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+
+    const item = await BreakfastMenuItem.create({
+      name: name.trim(),
+      description: description || '',
+      tag: tag || '',
+      calories: Number(calories) || 0,
+      protein: Number(protein) || 0,
+      carbs: Number(carbs) || 0,
+      fats: Number(fats) || 0,
+      isVeg: isVeg !== false,
+      image: image || '',
+      available: available !== false,
+      sortOrder: Number(sortOrder) || 0,
+    });
+    res.json({ success: true, item });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2UpdateMenuItem = async (req, res) => {
+  try {
+    const allowed = [
+      'name', 'description', 'tag', 'calories', 'protein', 'carbs', 'fats',
+      'isVeg', 'image', 'available', 'sortOrder',
+    ];
+    const update = { updatedAt: new Date() };
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) update[key] = req.body[key];
+    }
+    const item = await BreakfastMenuItem.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    res.json({ success: true, item });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export const admin2DeleteMenuItem = async (req, res) => {
+  try {
+    const item = await BreakfastMenuItem.findByIdAndDelete(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+export { VALID_SLOTS, ADMIN2_PIN };

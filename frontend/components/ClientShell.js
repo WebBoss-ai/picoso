@@ -16,7 +16,7 @@ export default function ClientShell({ children }) {
   const pathname = usePathname();
 
   // Full-screen standalone pages that must render WITHOUT the global header/footer
-  const STANDALONE_PREFIXES = ['/admin', '/friendship', '/redeem', '/ref', '/agent', '/delivery-partner', '/marketing'];
+  const STANDALONE_PREFIXES = ['/admin', '/admin2', '/subscription', '/friendship', '/redeem', '/ref', '/agent', '/delivery-partner', '/marketing'];
   const isAdminPage = STANDALONE_PREFIXES.some(p => pathname?.startsWith(p));
 
   const handleAuthRequired = (intent) => {
@@ -51,8 +51,12 @@ export default function ClientShell({ children }) {
 
       {!isAdminPage && <Footer />}
 
-      <CartDrawer onAuthRequired={handleAuthRequired} />
-      <CartBar onAuthRequired={handleAuthRequired} />
+      {!isAdminPage && (
+        <>
+          <CartDrawer onAuthRequired={handleAuthRequired} />
+          <CartBar onAuthRequired={handleAuthRequired} />
+        </>
+      )}
 
       {showAuth && (
         <AuthModal

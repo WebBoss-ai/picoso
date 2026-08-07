@@ -489,3 +489,45 @@ waMessageLogSchema.index({ type: 1, createdAt: -1 });
 export const WelcomeConfig = mongoose.model('WelcomeConfig', welcomeConfigSchema);
 export const WaCampaign    = mongoose.model('WaCampaign',    waCampaignSchema);
 export const WaMessageLog  = mongoose.model('WaMessageLog',  waMessageLogSchema);
+
+// ── Breakfast subscription (morning membership) ─────────────────────────────
+const breakfastMenuItemSchema = new mongoose.Schema({
+  name:        { type: String, required: true },
+  description: { type: String, default: '' },
+  tag:         { type: String, default: '' },
+  calories:    { type: Number, default: 0 },
+  protein:     { type: Number, default: 0 },
+  carbs:       { type: Number, default: 0 },
+  fats:        { type: Number, default: 0 },
+  isVeg:       { type: Boolean, default: true },
+  image:       { type: String, default: '' },
+  available:   { type: Boolean, default: true },
+  sortOrder:   { type: Number, default: 0 },
+  createdAt:   { type: Date, default: Date.now },
+  updatedAt:   { type: Date, default: Date.now },
+});
+
+const breakfastSubscriptionSchema = new mongoose.Schema({
+  userId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  phone:       { type: String, required: true },
+  name:        { type: String, default: '' },
+  timeSlot:    { type: String, required: true },
+  startDate:   { type: Date, required: true },
+  weeklyPrice: { type: Number, default: 1150 },
+  daysPerWeek: { type: Number, default: 5 },
+  status: {
+    type: String,
+    enum: ['interested', 'contacted', 'active', 'paused', 'cancelled', 'rejected'],
+    default: 'interested',
+  },
+  notes:       { type: String, default: '' },
+  contactedAt: { type: Date, default: null },
+  activatedAt: { type: Date, default: null },
+  createdAt:   { type: Date, default: Date.now },
+  updatedAt:   { type: Date, default: Date.now },
+});
+breakfastSubscriptionSchema.index({ phone: 1, createdAt: -1 });
+breakfastSubscriptionSchema.index({ status: 1, createdAt: -1 });
+
+export const BreakfastMenuItem    = mongoose.model('BreakfastMenuItem', breakfastMenuItemSchema);
+export const BreakfastSubscription = mongoose.model('BreakfastSubscription', breakfastSubscriptionSchema);

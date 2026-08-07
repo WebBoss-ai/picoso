@@ -55,6 +55,35 @@ export const healthySubscription = {
   cancel:    ()     => api.put('/subscription/healthy/cancel'),
 };
 
+export const breakfastSubscription = {
+  getMenu:          ()     => api.get('/subscription/breakfast/menu'),
+  expressInterest:  (data) => api.post('/subscription/breakfast/interest', data),
+};
+
+// Admin2 console (breakfast subscription) — PIN via header
+const admin2Api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+});
+admin2Api.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const pin = sessionStorage.getItem('picoso_admin2_pin');
+    if (pin) config.headers['x-admin2-pin'] = pin;
+  }
+  return config;
+});
+
+export const admin2 = {
+  verifyPin:    (pin)  => admin2Api.post('/admin2/verify-pin', {}, { headers: { 'x-admin2-pin': pin } }),
+  getStats:     ()     => admin2Api.get('/admin2/subscription/stats'),
+  getLeads:     (params) => admin2Api.get('/admin2/subscription/leads', { params }),
+  updateLead:   (id, d) => admin2Api.put(`/admin2/subscription/leads/${id}`, d),
+  deleteLead:   (id)   => admin2Api.delete(`/admin2/subscription/leads/${id}`),
+  getMenu:      ()     => admin2Api.get('/admin2/subscription/menu'),
+  createItem:   (data) => admin2Api.post('/admin2/subscription/menu', data),
+  updateItem:   (id, d) => admin2Api.put(`/admin2/subscription/menu/${id}`, d),
+  deleteItem:   (id)   => admin2Api.delete(`/admin2/subscription/menu/${id}`),
+};
+
 export const storeStatus = {
   get:              ()     => api.get('/store/status'),
   notifyMe:         (data) => api.post('/store/notify', data),
