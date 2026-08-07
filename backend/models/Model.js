@@ -515,6 +515,12 @@ const breakfastSubscriptionSchema = new mongoose.Schema({
   startDate:   { type: Date, required: true },
   weeklyPrice: { type: Number, default: 1150 },
   daysPerWeek: { type: Number, default: 5 },
+  location: {
+    lat:      { type: Number, default: null },
+    lng:      { type: Number, default: null },
+    accuracy: { type: Number, default: null },
+  },
+  distanceFromStoreKm: { type: Number, default: null },
   status: {
     type: String,
     enum: ['interested', 'contacted', 'active', 'paused', 'cancelled', 'rejected'],

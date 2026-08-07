@@ -5,10 +5,14 @@ import {
   Lock, LayoutDashboard, Users, UtensilsCrossed, LogOut, Menu, X,
   RefreshCw, Loader2, Search, Plus, Trash2, Save, Phone,
   UserPlus, Activity, IndianRupee, CheckCircle2, ChevronRight,
+  MapPin, ExternalLink, Navigation,
 } from 'lucide-react';
 import { admin2 } from '@/lib/api';
 
 const PIN_KEY = 'picoso_admin2_pin';
+const STORE_LAT = 28.437099;
+const STORE_LNG = 77.072771;
+
 const STATUS_OPTS = ['interested', 'contacted', 'active', 'paused', 'cancelled', 'rejected'];
 const STATUS_STYLE = {
   interested: 'bg-rose-50 text-rose-700 border-rose-100',
@@ -23,6 +27,42 @@ const SLOTS = [
   '08:00-08:30', '08:30-09:00', '09:00-09:30',
   '09:30-10:00', '10:00-10:30', '10:30-11:00',
 ];
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(km) {
+  if (km == null || !Number.isFinite(Number(km))) return null;
+  const v = Number(km);
+  if (v < 0.05) return '0 m from store';
+  if (v < 1) return `${Math.round(v * 1000)} m from store`;
+  return `${v.toFixed(2)} km from store`;
+}
+
+function leadDistanceKm(lead) {
+  if (lead?.distanceFromStoreKm != null && Number.isFinite(Number(lead.distanceFromStoreKm))) {
+    return Number(lead.distanceFromStoreKm);
+  }
+  const lat = lead?.location?.lat;
+  const lng = lead?.location?.lng;
+  if (lat == null || lng == null) return null;
+  return haversineKm(STORE_LAT, STORE_LNG, Number(lat), Number(lng));
+}
+
+function mapsPinUrl(lat, lng) {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+function mapsRouteUrl(lat, lng) {
+  return `https://www.google.com/maps/dir/${STORE_LAT},${STORE_LNG}/${lat},${lng}`;
+}
 
 function formatSlot(slot) {
   if (!slot) return '-';
@@ -365,7 +405,7 @@ function LeadsSection() {
                   }`}
                 >
                   <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center flex-shrink-0">
-                    <Phone size={14} />
+                    {lead.location?.lat != null ? <MapPin size={14} /> : <Phone size={14} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -375,11 +415,22 @@ function LeadsSection() {
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border capitalize ${STATUS_STYLE[lead.status] || ''}`}>
                         {lead.status}
                       </span>
+                      {lead.location?.lat != null && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100">
+                          PIN
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-stone-500 mt-0.5 flex items-center gap-2">
+                    <p className="text-xs text-stone-500 mt-0.5 flex items-center gap-2 flex-wrap">
                       <span>{lead.phone}</span>
                       <span className="opacity-30">·</span>
                       <span>{formatSlot(lead.timeSlot)}</span>
+                      {leadDistanceKm(lead) != null && (
+                        <>
+                          <span className="opacity-30">·</span>
+                          <span className="text-rose-600 font-medium">{formatDistance(leadDistanceKm(lead))}</span>
+                        </>
+                      )}
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -432,6 +483,65 @@ function LeadsSection() {
                   <p className="text-stone-400 mb-0.5">Submitted</p>
                   <p className="font-semibold text-stone-800">{formatDateTime(selected.createdAt)}</p>
                 </div>
+              </div>
+
+              {/* Location: pin + distance from store (admin only) */}
+              <div className="rounded-xl border border-rose-100 bg-rose-50/50 p-3 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                    <MapPin size={13} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Customer pin</p>
+                    <p className="text-sm font-semibold text-stone-900">
+                      {selected.location?.lat != null
+                        ? `${Number(selected.location.lat).toFixed(5)}, ${Number(selected.location.lng).toFixed(5)}`
+                        : 'No pin captured'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-white border border-stone-100 px-2.5 py-2">
+                    <p className="text-[10px] text-stone-400 font-medium">Distance from store</p>
+                    <p className="text-sm font-bold text-stone-900 mt-0.5">
+                      {formatDistance(leadDistanceKm(selected)) || 'N/A'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-white border border-stone-100 px-2.5 py-2">
+                    <p className="text-[10px] text-stone-400 font-medium">Accuracy</p>
+                    <p className="text-sm font-bold text-stone-900 mt-0.5">
+                      {selected.location?.accuracy != null
+                        ? `±${Math.round(selected.location.accuracy)} m`
+                        : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {selected.location?.lat != null && selected.location?.lng != null ? (
+                  <div className="flex gap-2">
+                    <a
+                      href={mapsPinUrl(selected.location.lat, selected.location.lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 h-9 rounded-lg bg-white border border-stone-200 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-stone-50"
+                    >
+                      <ExternalLink size={12} />
+                      Open pin
+                    </a>
+                    <a
+                      href={mapsRouteUrl(selected.location.lat, selected.location.lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 h-9 rounded-lg bg-stone-900 text-white text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-stone-800"
+                    >
+                      <Navigation size={12} />
+                      Route from store
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-500">Member did not share a location pin.</p>
+                )}
               </div>
 
               <div>

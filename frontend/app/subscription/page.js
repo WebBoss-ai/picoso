@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight, Clock, Scale, Flame, Leaf, Check,
-  ChevronLeft, X, Loader2,
+  ChevronLeft, X, Loader2, MapPin,
 } from 'lucide-react';
 import { breakfastSubscription } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -175,7 +175,117 @@ export default function SubscriptionPage() {
   const [success, setSuccess] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [splashReady, setSplashReady] = useState(false);
+  const [location, setLocation] = useState(null); // { lat, lng, accuracy }
+  const [locStatus, setLocStatus] = useState('idle'); // idle | loading | ready | denied | error | unsupported
   const phoneRef = useRef(null);
+  const locWatchRef = useRef(null);
+  const locPollRef = useRef(null);
+
+  const stopLocationLoops = useCallback(() => {
+    if (locWatchRef.current != null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      try { navigator.geolocation.clearWatch(locWatchRef.current); } catch {}
+      locWatchRef.current = null;
+    }
+    if (locPollRef.current != null) {
+      clearInterval(locPollRef.current);
+      locPollRef.current = null;
+    }
+  }, []);
+
+  const applyPosition = useCallback((pos) => {
+    setLocation({
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy: pos.coords.accuracy,
+    });
+    setLocStatus('ready');
+    setError('');
+    stopLocationLoops();
+  }, [stopLocationLoops]);
+
+  const requestLocation = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocStatus('unsupported');
+      return;
+    }
+
+    setLocStatus((s) => (s === 'unsupported' ? s : 'loading'));
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => applyPosition(pos),
+      (err) => {
+        setLocation((prev) => {
+          if (prev?.lat != null && prev?.lng != null) {
+            // keep existing pin if refresh fails
+            setTimeout(() => setLocStatus('ready'), 0);
+            return prev;
+          }
+          setTimeout(() => setLocStatus(err?.code === 1 ? 'denied' : 'error'), 0);
+          return null;
+        });
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+  }, [applyPosition]);
+
+  // Keep checking until location permission is granted and pin is set
+  useEffect(() => {
+    // Only loop after the member has started location capture (not on first idle)
+    const waiting =
+      showModal &&
+      !success &&
+      locStatus !== 'ready' &&
+      locStatus !== 'unsupported' &&
+      locStatus !== 'idle';
+
+    if (!waiting) {
+      if (!showModal || success || locStatus === 'ready') stopLocationLoops();
+      return undefined;
+    }
+
+    let permStatus = null;
+    const onPermChange = () => {
+      if (permStatus?.state === 'granted') requestLocation();
+      if (permStatus?.state === 'denied') setLocStatus('denied');
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((status) => {
+          permStatus = status;
+          status.addEventListener?.('change', onPermChange);
+          if (status.state === 'granted') requestLocation();
+          if (status.state === 'denied') setLocStatus('denied');
+        })
+        .catch(() => {});
+    }
+
+    if (!locPollRef.current) {
+      locPollRef.current = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        requestLocation();
+      }, 3000);
+    }
+
+    if (!locWatchRef.current && typeof navigator !== 'undefined' && navigator.geolocation) {
+      try {
+        locWatchRef.current = navigator.geolocation.watchPosition(
+          (pos) => applyPosition(pos),
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 }
+        );
+      } catch {}
+    }
+
+    return () => {
+      if (permStatus?.removeEventListener) {
+        try { permStatus.removeEventListener('change', onPermChange); } catch {}
+      }
+    };
+  }, [showModal, success, locStatus, requestLocation, applyPosition, stopLocationLoops]);
+
+  useEffect(() => () => stopLocationLoops(), [stopLocationLoops]);
 
   useEffect(() => {
     const start = startDatePlusTwo();
@@ -244,12 +354,20 @@ export default function SubscriptionPage() {
       setError('Choose a delivery window first');
       return;
     }
+    if (!location?.lat || !location?.lng) {
+      setError('Tap Get my current location and allow access to continue');
+      requestLocation();
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
       const { data } = await breakfastSubscription.expressInterest({
         phone,
         timeSlot: selectedSlot,
+        lat: location.lat,
+        lng: location.lng,
+        accuracy: location.accuracy,
       });
       if (data?.token && data?.user) {
         login(data.token, data.user);
@@ -260,7 +378,7 @@ export default function SubscriptionPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [phone, selectedSlot, login]);
+  }, [phone, selectedSlot, location, login, requestLocation]);
 
   const startLabel = useMemo(() => formatStartDate(startDate), [startDate]);
   const displaySchedule = useMemo(() => {
@@ -268,7 +386,8 @@ export default function SubscriptionPage() {
     if (startDate && items.length) return buildLocalSchedule(items, startDate, 5);
     return [];
   }, [schedule, startDate, items]);
-  const firstPlate = displaySchedule[0]?.item;
+
+  const locationReady = locStatus === 'ready' && !!location?.lat && !!location?.lng;
 
   /* ── Splash ─────────────────────────────────────────────────────────────── */
   if (phase === 'splash') {
@@ -422,7 +541,7 @@ export default function SubscriptionPage() {
               >
                 5 breakfasts
                 <br />
-                rotating daily
+                each week
               </p>
             </div>
 
@@ -504,27 +623,18 @@ export default function SubscriptionPage() {
             <span style={{ fontStyle: 'italic', color: pink[600] }}>One membership.</span>
           </h2>
           <p className="mt-2 text-[13px] leading-relaxed" style={{ color: pink.muted }}>
-            One shared plate each morning, rotated by calendar day from our kitchen. Join mid-cycle and you pick up on that day&apos;s plate, like everyone else.
+            Five carefully prepared mornings, delivered to you. You choose the window. We handle the rest.
           </p>
         </section>
 
-        {/* rotating schedule for first 5 deliveries */}
+        {/* first five plate days */}
         <section className="px-5 pt-5 space-y-3">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <p
-                className="text-[10px] uppercase tracking-[0.16em] font-medium"
-                style={{ color: pink[600] }}
-              >
-                Your first five mornings
-              </p>
-              {firstPlate && (
-                <p className="text-[12px] mt-1" style={{ color: pink.muted }}>
-                  Starts on {startLabel} with {firstPlate.name}
-                </p>
-              )}
-            </div>
-          </div>
+          <p
+            className="text-[10px] uppercase tracking-[0.16em] font-medium"
+            style={{ color: pink[600] }}
+          >
+            Your first five mornings
+          </p>
 
           {displaySchedule.map((row, idx) => {
             const item = row.item;
@@ -563,7 +673,7 @@ export default function SubscriptionPage() {
                           color: pink[600],
                         }}
                       >
-                        {String((row.itemIndex ?? idx) + 1).padStart(2, '0')}
+                        {String(idx + 1).padStart(2, '0')}
                       </span>
                     </div>
                   )}
@@ -620,10 +730,6 @@ export default function SubscriptionPage() {
               </article>
             );
           })}
-
-          <p className="text-[11px] leading-relaxed px-0.5" style={{ color: pink.muted }}>
-            Plates follow the admin menu order by date of the month. Day 1 is plate 1, day 2 is plate 2, and after the full set the cycle starts again. On any given morning, every member receives the same plate.
-          </p>
         </section>
 
         {/* pricing */}
@@ -660,7 +766,7 @@ export default function SubscriptionPage() {
               className="px-5 py-3 flex items-center justify-between text-[12px]"
               style={{ background: 'rgba(0,0,0,0.12)' }}
             >
-              <span className="text-white/80">5-day rotating plan</span>
+              <span className="text-white/80">Five mornings a week</span>
               <span className="text-white font-medium">Pause anytime</span>
             </div>
           </div>
@@ -895,7 +1001,7 @@ export default function SubscriptionPage() {
                 </label>
                 <div
                   className="flex items-center rounded-2xl border overflow-hidden bg-white"
-                  style={{ borderColor: error ? '#fca5a5' : pink[200] }}
+                  style={{ borderColor: error && phone.length !== 10 ? '#fca5a5' : pink[200] }}
                 >
                   <span
                     className="pl-4 pr-2 text-[14px] font-medium border-r py-3.5"
@@ -922,6 +1028,118 @@ export default function SubscriptionPage() {
                   />
                 </div>
 
+                <label className="block text-[11px] font-medium mb-1.5 mt-4" style={{ color: pink.muted }}>
+                  Current location
+                </label>
+                <div
+                  className="rounded-[18px] border overflow-hidden"
+                  style={{
+                    borderColor: locationReady
+                      ? pink[300]
+                      : locStatus === 'denied' || locStatus === 'error'
+                        ? '#fca5a5'
+                        : pink[200],
+                    background: locationReady ? '#fff' : pink[50],
+                    boxShadow: locationReady ? `0 8px 24px -10px ${pink[400]}55` : 'none',
+                  }}
+                >
+                  {locationReady ? (
+                    <div className="px-4 py-4 flex items-start gap-3">
+                      <div
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+                        style={{
+                          background: `linear-gradient(145deg, ${pink[500]}, ${pink[600]})`,
+                          boxShadow: `0 8px 18px -6px ${pink[500]}99`,
+                        }}
+                      >
+                        <Check size={18} color="#fff" strokeWidth={2.5} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold" style={{ color: pink.ink }}>
+                          Location saved
+                        </p>
+                        <p className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: pink.muted }}>
+                          Your delivery pin is set. You can continue.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={requestLocation}
+                          className="mt-2 text-[11px] font-semibold"
+                          style={{ color: pink[600] }}
+                        >
+                          Update pin
+                        </button>
+                      </div>
+                      <MapPin size={16} className="flex-shrink-0 mt-1" style={{ color: pink[500] }} />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={requestLocation}
+                      disabled={locStatus === 'loading' || locStatus === 'unsupported'}
+                      className="w-full text-left px-4 py-4 flex items-center gap-3 active:scale-[0.99] transition-transform disabled:opacity-80"
+                    >
+                      <div
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 relative"
+                        style={{
+                          background: locStatus === 'loading'
+                            ? pink[100]
+                            : `linear-gradient(145deg, ${pink[500]}, ${pink[600]})`,
+                          boxShadow: locStatus === 'loading' ? 'none' : `0 8px 18px -6px ${pink[500]}99`,
+                        }}
+                      >
+                        {locStatus === 'loading' ? (
+                          <Loader2 size={18} className="animate-spin" style={{ color: pink[600] }} />
+                        ) : (
+                          <MapPin size={18} color="#fff" strokeWidth={2} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13.5px] font-semibold" style={{ color: pink.ink }}>
+                          {locStatus === 'loading'
+                            ? 'Getting your location...'
+                            : 'Get my current location'}
+                        </p>
+                        <p className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: pink.muted }}>
+                          {locStatus === 'denied' &&
+                            'Permission needed. Allow location in the browser prompt, then tap again.'}
+                          {locStatus === 'error' &&
+                            'Could not fetch your pin. Please check GPS and try again.'}
+                          {locStatus === 'unsupported' &&
+                            'Location is not available on this device.'}
+                          {(locStatus === 'idle' || locStatus === 'loading') &&
+                            'Required to plan your delivery. We only save your pin.'}
+                        </p>
+                      </div>
+                      {locStatus !== 'loading' && locStatus !== 'unsupported' && (
+                        <ArrowRight size={16} className="flex-shrink-0" style={{ color: pink[500] }} />
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {(locStatus === 'denied' || locStatus === 'error') && !locationReady && (
+                  <div
+                    className="mt-2.5 rounded-xl px-3.5 py-3 border"
+                    style={{ background: '#fff5f5', borderColor: '#fecaca' }}
+                  >
+                    <p className="text-[12px] font-medium" style={{ color: '#991b1b' }}>
+                      Waiting for location permission
+                    </p>
+                    <p className="text-[11px] mt-1 leading-relaxed" style={{ color: '#b91c1c' }}>
+                      Please allow location access when your browser asks. We keep checking until it is granted.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={requestLocation}
+                      className="mt-2.5 h-9 px-3.5 rounded-lg text-[12px] font-semibold text-white"
+                      style={{ background: pink[600] }}
+                    >
+                      Allow location & try again
+                    </button>
+                  </div>
+                )}
+
                 {error && (
                   <p className="mt-2 text-[12px] font-medium" style={{ color: '#b91c1c' }}>
                     {error}
@@ -930,12 +1148,14 @@ export default function SubscriptionPage() {
 
                 <button
                   type="button"
-                  disabled={submitting || phone.length !== 10}
+                  disabled={submitting || phone.length !== 10 || !locationReady}
                   onClick={handleSubmit}
                   className="mt-5 w-full h-[52px] rounded-2xl flex items-center justify-center gap-2 text-[14px] font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-50"
                   style={{
-                    background: `linear-gradient(135deg, ${pink[500]} 0%, ${pink[600]} 100%)`,
-                    boxShadow: `0 10px 24px -8px ${pink[400]}aa`,
+                    background: locationReady
+                      ? `linear-gradient(135deg, ${pink[500]} 0%, ${pink[600]} 100%)`
+                      : pink[300],
+                    boxShadow: locationReady ? `0 10px 24px -8px ${pink[400]}aa` : 'none',
                   }}
                 >
                   {submitting ? (

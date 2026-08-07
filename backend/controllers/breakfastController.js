@@ -139,6 +139,41 @@ const VALID_SLOTS = [
   '10:30-11:00',
 ];
 
+// Picoso kitchen pin (same as rest of app)
+const STORE_LAT = 28.437099;
+const STORE_LNG = 77.072771;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function parseLocation(body) {
+  const lat = Number(body?.lat ?? body?.location?.lat);
+  const lng = Number(body?.lng ?? body?.location?.lng);
+  const accuracy = body?.accuracy != null
+    ? Number(body.accuracy)
+    : (body?.location?.accuracy != null ? Number(body.location.accuracy) : null);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+  const distanceFromStoreKm = haversineKm(STORE_LAT, STORE_LNG, lat, lng);
+  return {
+    location: {
+      lat,
+      lng,
+      accuracy: Number.isFinite(accuracy) ? accuracy : null,
+    },
+    distanceFromStoreKm: Math.round(distanceFromStoreKm * 1000) / 1000,
+  };
+}
+
 // ── Public ───────────────────────────────────────────────────────────────────
 
 export const verifyAdmin2Pin = async (req, res) => {
@@ -152,19 +187,11 @@ export const getBreakfastMenu = async (req, res) => {
     const startDate = startDateInTwoDays();
     const planDays = 5;
     const schedule = buildRotationSchedule(items, startDate, planDays);
-    const startMealIndex = mealIndexForDate(startDate, items.length);
 
     res.json({
       success: true,
       items,
       schedule,
-      rotation: {
-        planDays,
-        cycleLength: items.length,
-        startDate,
-        startMealIndex,
-        note: 'Menu advances one admin plate per calendar day, looping after the full set. Everyone shares the same plate on a given day.',
-      },
       pricing: { weeklyPrice: 1150, daysPerWeek: planDays, perDay: 230 },
       earliestStart: startDate,
       timeSlots: VALID_SLOTS,
@@ -189,6 +216,11 @@ export const expressBreakfastInterest = async (req, res) => {
       return res.status(400).json({ error: 'Please select a valid delivery window' });
     }
 
+    const parsedLocation = parseLocation(req.body);
+    if (!parsedLocation) {
+      return res.status(400).json({ error: 'Location is required to continue' });
+    }
+
     const dummyEmail = `${clean}@picoso.in`;
     let user = await User.findOne({ phone: clean });
 
@@ -199,9 +231,25 @@ export const expressBreakfastInterest = async (req, res) => {
         email: dummyEmail,
         lastLoginAt: new Date(),
         lastActiveAt: new Date(),
+        location: {
+          coordinates: {
+            lat: parsedLocation.location.lat,
+            lng: parsedLocation.location.lng,
+          },
+        },
       });
     } else {
-      const updates = { lastLoginAt: new Date(), lastActiveAt: new Date() };
+      const updates = {
+        lastLoginAt: new Date(),
+        lastActiveAt: new Date(),
+        location: {
+          ...(user.location?.toObject?.() || user.location || {}),
+          coordinates: {
+            lat: parsedLocation.location.lat,
+            lng: parsedLocation.location.lng,
+          },
+        },
+      };
       if (name && !user.name) updates.name = name;
       if (!user.email) updates.email = dummyEmail;
       await User.findByIdAndUpdate(user._id, updates);
@@ -218,6 +266,8 @@ export const expressBreakfastInterest = async (req, res) => {
       startDate,
       weeklyPrice: 1150,
       daysPerWeek: 5,
+      location: parsedLocation.location,
+      distanceFromStoreKm: parsedLocation.distanceFromStoreKm,
       status: 'interested',
     });
 
