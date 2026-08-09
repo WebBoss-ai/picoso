@@ -56,7 +56,7 @@ function AddButton({ quantity, onAdd, onInc, onDec, compact }) {
   );
 }
 
-export default function BowlCard({ bowl, horizontal = false, featured = false }) {
+export default function BowlCard({ bowl, horizontal = false, featured = false, deliveryEta = null }) {
   const router = useRouter();
   const { addItem, getItemQuantity, updateQuantity, items } = useCart();
   const scale = useSharedValue(1);
@@ -196,17 +196,21 @@ export default function BowlCard({ bowl, horizontal = false, featured = false })
           contentFit="cover"
           transition={300}
         />
-        {bowl.isBestseller && (
+        {deliveryEta ? (
+          <View style={styles.etaBadge}>
+            <Ionicons name="time-outline" size={10} color="#14532d" />
+            <Text style={styles.etaText}>{deliveryEta}</Text>
+          </View>
+        ) : bowl.isBestseller ? (
           <View style={styles.bestsellerBadge}>
             <Ionicons name="star" size={9} color="#fff" />
             <Text style={styles.bestsellerText}>Bestseller</Text>
           </View>
-        )}
-        {!bowl.isBestseller && bowl.isNew && (
+        ) : bowl.isNew ? (
           <View style={[styles.bestsellerBadge, styles.newBadge]}>
             <Text style={styles.bestsellerText}>New</Text>
           </View>
-        )}
+        ) : null}
         <View style={styles.imageBottom}>
           <VegBadge isVeg={bowl.isVeg} />
           <AddButton
@@ -325,6 +329,27 @@ const styles = StyleSheet.create({
   },
   newBadge: {
     backgroundColor: '#3b82f6',
+  },
+  etaBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#ecfccb',
+    borderRadius: Radius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#bef264',
+    maxWidth: '90%',
+  },
+  etaText: {
+    color: '#14532d',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.1,
   },
   bestsellerText: {
     color: Colors.white,

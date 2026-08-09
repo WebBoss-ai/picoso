@@ -231,7 +231,7 @@ function ProductModal({ product, onClose }) {
 }
 
 // ─── Product Card — luxury horizontal on mobile, vertical on desktop ──────────
-export default function ProductCard({ product, variant = 'list' }) {
+export default function ProductCard({ product, variant = 'list', deliveryEta = null }) {
   const { items, addItem, updateQty, registerCapp } = useCart();
   const { isPlatinum } = useAuth();
   const [imageError, setImageError] = useState(false);
@@ -258,6 +258,13 @@ export default function ProductCard({ product, variant = 'list' }) {
   const handleIncrease = (e) => { e.stopPropagation(); updateQty(product._id, qty + 1); };
   const handleDecrease = (e) => { e.stopPropagation(); updateQty(product._id, qty - 1); };
 
+  const etaBadge = deliveryEta && !isUnavailable ? (
+    <span className="inline-flex items-center gap-1 bg-[#f0fdf4] text-emerald-800 text-[10px] font-extrabold px-2 py-1 rounded-full border border-emerald-200 shadow-sm">
+      <Clock size={10} strokeWidth={2.5} className="text-emerald-600" />
+      {deliveryEta}
+    </span>
+  ) : null;
+
   // ── PREMIUM variant — sleek, borderless, one thin image per row (bowls) ──
   if (variant === 'premium') {
     return (
@@ -280,14 +287,17 @@ export default function ProductCard({ product, variant = 'list' }) {
                 </div>
               )}
 
-              {/* Badge — subtle white pill */}
-              {!isUnavailable && (product.isBestseller || product.isChefSpecial) && (
-                <div className="absolute top-3 left-3">
-                  <span className="inline-flex items-center gap-1 bg-white/95 backdrop-blur-sm text-emerald-600 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
-                    {product.isBestseller
-                      ? <><Star size={9} fill="currentColor" /> Bestseller</>
-                      : <><ChefHat size={9} /> Chef&apos;s Special</>}
-                  </span>
+              {/* Badge — subtle white pill or delivery ETA */}
+              {!isUnavailable && (deliveryEta || product.isBestseller || product.isChefSpecial) && (
+                <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+                  {etaBadge}
+                  {!deliveryEta && (product.isBestseller || product.isChefSpecial) && (
+                    <span className="inline-flex items-center gap-1 bg-white/95 backdrop-blur-sm text-emerald-600 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm w-fit">
+                      {product.isBestseller
+                        ? <><Star size={9} fill="currentColor" /> Bestseller</>
+                        : <><ChefHat size={9} /> Chef&apos;s Special</>}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -389,12 +399,13 @@ export default function ProductCard({ product, variant = 'list' }) {
 
             {/* Badges */}
             <div className="absolute top-3 left-3 flex flex-col gap-1.5">
-              {product.isBestseller && !isUnavailable && (
+              {etaBadge}
+              {product.isBestseller && !isUnavailable && !deliveryEta && (
                 <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                   <Star size={9} fill="currentColor" /> Bestseller
                 </span>
               )}
-              {product.isChefSpecial && !isUnavailable && (
+              {product.isChefSpecial && !isUnavailable && !deliveryEta && (
                 <span className="flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                   <ChefHat size={9} /> Chef&apos;s Pick
                 </span>
@@ -525,14 +536,16 @@ export default function ProductCard({ product, variant = 'list' }) {
             )}
 
             {/* Badge top-left */}
-            {!isUnavailable && (product.isBestseller || product.isChefSpecial) && (
-              <div className="absolute top-2 left-2">
-                {product.isBestseller ? (
-                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[9px] font-extrabold px-2 py-1 rounded-full shadow-sm">
+            {!isUnavailable && (deliveryEta || product.isBestseller || product.isChefSpecial) && (
+              <div className="absolute top-2 left-2 flex flex-col gap-1">
+                {etaBadge}
+                {!deliveryEta && product.isBestseller && (
+                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[9px] font-extrabold px-2 py-1 rounded-full shadow-sm w-fit">
                     <Star size={8} fill="currentColor" /> Bestseller
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[9px] font-extrabold px-2 py-1 rounded-full shadow-sm">
+                )}
+                {!deliveryEta && !product.isBestseller && product.isChefSpecial && (
+                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[9px] font-extrabold px-2 py-1 rounded-full shadow-sm w-fit">
                     <ChefHat size={8} /> Chef&apos;s Pick
                   </span>
                 )}
@@ -662,14 +675,16 @@ export default function ProductCard({ product, variant = 'list' }) {
             )}
 
             {/* Badge top-left */}
-            {!isUnavailable && (product.isBestseller || product.isChefSpecial) && (
-              <div className="absolute top-2.5 left-2.5">
-                {product.isBestseller ? (
-                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[10px] font-extrabold px-2 py-1 rounded-full shadow-sm">
+            {!isUnavailable && (deliveryEta || product.isBestseller || product.isChefSpecial) && (
+              <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+                {etaBadge}
+                {!deliveryEta && product.isBestseller && (
+                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[10px] font-extrabold px-2 py-1 rounded-full shadow-sm w-fit">
                     <Star size={9} fill="currentColor" /> Bestseller
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[10px] font-extrabold px-2 py-1 rounded-full shadow-sm">
+                )}
+                {!deliveryEta && !product.isBestseller && product.isChefSpecial && (
+                  <span className="inline-flex items-center gap-1 bg-white text-emerald-600 text-[10px] font-extrabold px-2 py-1 rounded-full shadow-sm w-fit">
                     <ChefHat size={9} /> Chef&apos;s Pick
                   </span>
                 )}

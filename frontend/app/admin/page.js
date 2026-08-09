@@ -1198,7 +1198,8 @@ function PlatinumSection() {
 const EMPTY_FORM = {
   name: '', description: '', price: '', calories: '', protein: '',
   carbs: '', fats: '', fiber: '', pfCategory: 'pf-meals', isVeg: true,
-  isBestseller: false, isChefSpecial: false, available: true, image: '',
+  isBestseller: false, isChefSpecial: false, isFoodInMinutes: false,
+  available: true, image: '',
   availableFrom: '', availableTo: '', sortOrder: '0', tags: '',
 };
 
@@ -1335,7 +1336,7 @@ function ProductsSection() {
             <div className="sm:col-span-2">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Flags</label>
               <div className="flex flex-wrap gap-4">
-                {[['isVeg', 'Vegetarian'], ['isBestseller', 'Bestseller'], ['isChefSpecial', "Chef's Special"], ['available', 'Available on menu']].map(([key, lbl]) => (
+                {[['isVeg', 'Vegetarian'], ['isBestseller', 'Bestseller'], ['isChefSpecial', "Chef's Special"], ['isFoodInMinutes', 'Food in minutes'], ['available', 'Available on menu']].map(([key, lbl]) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" checked={!!form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} className="w-4 h-4 accent-brand-500" />
                     <span className="text-sm text-gray-700">{lbl}</span>
@@ -1391,6 +1392,7 @@ function ProductsSection() {
                   </span>
                   {p.isBestseller && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Bestseller</span>}
                   {p.isChefSpecial && <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-medium">Chef's Special</span>}
+                  {p.isFoodInMinutes && <span className="text-[10px] bg-lime-100 text-lime-800 px-1.5 py-0.5 rounded-full font-medium">Food in minutes</span>}
                   {!p.available && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">Hidden</span>}
                 </div>
                 <p className="text-xs text-gray-400 line-clamp-1 mb-1">{p.description}</p>

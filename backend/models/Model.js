@@ -62,6 +62,7 @@ const bowlSchema = new mongoose.Schema({
   isVeg: { type: Boolean, default: true },
   isBestseller: { type: Boolean, default: false },
   isChefSpecial: { type: Boolean, default: false },
+  isFoodInMinutes: { type: Boolean, default: false },
   tags: [{ type: String }],
   availableFrom: { type: String, default: '' },  // "09:00" IST
   availableTo:   { type: String, default: '' },  // "21:00" IST — empty = always available

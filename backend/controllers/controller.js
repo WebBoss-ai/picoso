@@ -816,6 +816,10 @@ export const createBowl = async (req, res) => {
     if (typeof bowlData.ingredients === 'string') {
       bowlData.ingredients = bowlData.ingredients.split(',').map(s => s.trim());
     }
+    // Multipart FormData sends booleans as "true"/"false" strings
+    for (const key of ['isVeg', 'isBestseller', 'isChefSpecial', 'isFoodInMinutes', 'available']) {
+      if (bowlData[key] !== undefined) bowlData[key] = bowlData[key] === true || bowlData[key] === 'true';
+    }
     const bowl = await Bowl.create(bowlData);
     res.json({ success: true, bowl });
   } catch (error) {
@@ -829,6 +833,9 @@ export const updateBowl = async (req, res) => {
     if (req.file) updateData.image = req.file.location;
     if (typeof updateData.ingredients === 'string') {
       updateData.ingredients = updateData.ingredients.split(',').map(s => s.trim());
+    }
+    for (const key of ['isVeg', 'isBestseller', 'isChefSpecial', 'isFoodInMinutes', 'available']) {
+      if (updateData[key] !== undefined) updateData[key] = updateData[key] === true || updateData[key] === 'true';
     }
     const bowl = await Bowl.findByIdAndUpdate(req.params.id, updateData, { new: true });
     res.json({ success: true, bowl });

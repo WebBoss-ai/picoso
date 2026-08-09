@@ -121,7 +121,7 @@ export default function MenuScreen() {
       groups[cat].push(b);
     });
 
-    return Object.entries(groups)
+    const catSections = Object.entries(groups)
       .map(([cat, items]) => {
         const meta = MENU_CATEGORIES.find((c) => c.id === cat);
         const rows = [];
@@ -137,6 +137,26 @@ export default function MenuScreen() {
         };
       })
       .filter((s) => s.count > 0);
+
+    // Food in minutes at the top (before Bowls)
+    const express = filtered.filter((b) => b.isFoodInMinutes);
+    if (express.length > 0) {
+      const rows = [];
+      for (let i = 0; i < express.length; i += 2) {
+        rows.push({ key: `row-fim-${i}`, items: express.slice(i, i + 2) });
+      }
+      catSections.unshift({
+        title: 'Food in minutes',
+        id: 'food-in-minutes',
+        count: express.length,
+        data: rows,
+        sampleImage: express[0]?.image,
+        isFoodInMinutes: true,
+        deliveryEta: '12 to 16 minutes',
+      });
+    }
+
+    return catSections;
   }, [filtered, activeCategory, specialFilter, search]);
 
   const categoryCounts = useMemo(() => {
@@ -163,26 +183,39 @@ export default function MenuScreen() {
   const cartThumb = items[0]?.image;
 
   const renderSectionHeader = ({ section }) => (
-    <View style={styles.sectionHeader}>
-      {section.sampleImage && (
+    <View style={[styles.sectionHeader, section.isFoodInMinutes && styles.expressHeader]}>
+      {section.isFoodInMinutes ? (
+        <View style={styles.expressIcon}>
+          <Ionicons name="flash" size={18} color="#3f6212" />
+        </View>
+      ) : section.sampleImage ? (
         <Image
           source={{ uri: section.sampleImage }}
           style={styles.sectionThumb}
           contentFit="cover"
         />
-      )}
-      <View>
-        <Text style={styles.sectionTitle}>{section.title}</Text>
-        <Text style={styles.sectionCount}>{section.count} items</Text>
+      ) : null}
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.sectionTitle, section.isFoodInMinutes && styles.expressTitle]}>
+          {section.title}
+        </Text>
+        <Text style={[styles.sectionCount, section.isFoodInMinutes && styles.expressCount]}>
+          {section.isFoodInMinutes
+            ? `${section.deliveryEta || '12 to 16 minutes'} · quick delivery`
+            : `${section.count} items`}
+        </Text>
       </View>
     </View>
   );
 
-  const renderRow = ({ item }) => (
+  const renderRow = ({ item, section }) => (
     <View style={styles.gridRow}>
       {item.items.map((bowl) => (
         <View key={bowl._id} style={styles.gridItem}>
-          <BowlCard bowl={bowl} />
+          <BowlCard
+            bowl={bowl}
+            deliveryEta={section?.isFoodInMinutes ? (section.deliveryEta || '12 to 16 minutes') : null}
+          />
         </View>
       ))}
       {item.items.length === 1 && <View style={styles.gridItem} />}
@@ -539,6 +572,30 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontWeight: '500',
     marginTop: 1,
+  },
+  expressHeader: {
+    backgroundColor: '#ecfccb',
+    marginHorizontal: Spacing.sm,
+    marginTop: Spacing.md,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: '#bef264',
+    paddingTop: Spacing.md,
+  },
+  expressIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.full,
+    backgroundColor: '#d9f99d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expressTitle: {
+    color: '#14532d',
+  },
+  expressCount: {
+    color: '#3f6212',
+    fontWeight: '600',
   },
 
   listContent: {

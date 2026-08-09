@@ -5,13 +5,38 @@ import {
   Search, X, Leaf, Star, ChefHat, Clock,
   ArrowRight, ChevronRight,
   LayoutGrid, List, Heart, Loader2, CheckCircle2,
-  Utensils, BookOpen, ChevronUp,
+  Utensils, BookOpen, ChevronUp, Zap,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
 import { useCart } from '@/context/CartContext';
+
+const STORE_LAT = 28.437099;
+const STORE_LNG = 77.072771;
+const FOOD_IN_MINUTES_ID = 'food-in-minutes';
+const DEFAULT_DELIVERY_ETA = '12 to 16 minutes';
+const PIN_CACHE_KEY = 'picoso_pin';
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** 5 min prep + 3 × km, ceil, then ±2 range label */
+function deliveryEtaFromDistanceKm(distanceKm) {
+  if (distanceKm == null || Number.isNaN(distanceKm)) return DEFAULT_DELIVERY_ETA;
+  const minutes = Math.ceil(5 + 3 * distanceKm);
+  const low = Math.max(1, minutes - 2);
+  const high = minutes + 2;
+  return `${low} to ${high} minutes`;
+}
 
 /* ── Promo banners (commented out — replaced by referral billboard) ───────────
 const BANNERS = [
@@ -323,6 +348,112 @@ function ExploreMenuHeader({ itemCount, catCount }) {
   );
 }
 
+// ── Food in minutes — attention-first express section ────────────────────────
+function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
+  if (!items?.length) return null;
+
+  return (
+    <section
+      ref={sectionRef}
+      className="relative mb-10 overflow-hidden rounded-[28px]"
+      style={{
+        background: 'linear-gradient(135deg, #052e16 0%, #14532d 42%, #166534 72%, #3f6212 100%)',
+        boxShadow: '0 18px 48px rgba(20, 83, 45, 0.28), 0 2px 0 rgba(255,255,255,0.08) inset',
+      }}
+    >
+      {/* atmosphere */}
+      <div className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(90% 70% at 12% 0%, rgba(163,230,53,0.28) 0%, transparent 55%),' +
+            'radial-gradient(70% 60% at 100% 100%, rgba(250,204,21,0.14) 0%, transparent 50%)',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 w-48 h-48 rounded-full opacity-20"
+        style={{
+          background: 'conic-gradient(from 180deg, transparent, #a3e635, transparent)',
+          animation: 'fimSpin 14s linear infinite',
+        }}
+      />
+
+      <div className="relative px-4 sm:px-6 pt-5 pb-5">
+        {/* header */}
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-full bg-lime-300/15 border border-lime-300/30">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-lime-300 opacity-70" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-lime-300" />
+              </span>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-lime-200">
+                Express lane
+              </span>
+            </div>
+            <h2 className="text-[26px] sm:text-[30px] font-black tracking-tight text-white leading-none">
+              Food in minutes
+            </h2>
+            <p className="mt-2 text-[13px] text-emerald-100/80 font-medium leading-snug max-w-md">
+              Prepared in 5 min · delivered at kitchen speed · estimated to your pin
+            </p>
+          </div>
+
+          <div
+            className="flex-shrink-0 flex flex-col items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl border border-lime-300/30"
+            style={{ background: 'linear-gradient(160deg, rgba(190,242,100,0.22), rgba(255,255,255,0.06))' }}
+          >
+            <Zap size={18} className="text-lime-300 mb-0.5" fill="currentColor" />
+            <span className="text-[9px] font-bold uppercase tracking-wider text-lime-200/90">ETA</span>
+            <span className="text-[11px] font-black text-white leading-tight text-center px-1">
+              {deliveryEta.replace(' minutes', '').replace(' to ', '–')}
+            </span>
+          </div>
+        </div>
+
+        {/* delivery strip */}
+        <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-2xl bg-black/20 border border-white/10 backdrop-blur-sm">
+          <div className="w-8 h-8 rounded-xl bg-lime-300/20 flex items-center justify-center flex-shrink-0">
+            <Clock size={15} className="text-lime-300" strokeWidth={2.5} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[13px] font-extrabold text-white leading-none">
+              {deliveryEta}
+            </p>
+            <p className="text-[11px] text-emerald-100/65 font-medium mt-0.5 truncate">
+              to your location · kitchen to door
+            </p>
+          </div>
+        </div>
+
+        {/* items — horizontal snap on mobile, grid on desktop */}
+        <div
+          className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0"
+          style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
+        >
+          {items.map((product) => (
+            <div
+              key={product._id}
+              className="flex-shrink-0 w-[72vw] max-w-[280px] sm:w-auto sm:max-w-none sm:flex-shrink"
+              style={{ scrollSnapAlign: 'start' }}
+            >
+              <div className="rounded-[22px] bg-white/95 backdrop-blur-sm p-2.5 shadow-lg shadow-black/10">
+                <ProductCard product={product} variant="list" deliveryEta={deliveryEta} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes fimSpin {
+          from { transform: translateY(-50%) rotate(0deg); }
+          to   { transform: translateY(-50%) rotate(360deg); }
+        }
+      `}</style>
+    </section>
+  );
+}
+
 // ── Floating "Menu" pill button ──────────────────────────────────────────────
 function FloatingMenuButton({ onClick, cartActive }) {
   return (
@@ -351,8 +482,11 @@ function BackToTop({ onClick }) {
 }
 
 // ── Category menu overlay (list of categories with counts) ───────────────────
-function CategoryMenuOverlay({ cats, categorizedItems, activeCategory, allSelected, onPick, onClose, onBackToTop }) {
-  const countFor = (id) => categorizedItems.find(c => c.id === id)?.items.length ?? 0;
+function CategoryMenuOverlay({ cats, categorizedItems, activeCategory, allSelected, onPick, onClose, onBackToTop, foodInMinutesCount = 0 }) {
+  const countFor = (id) => {
+    if (id === FOOD_IN_MINUTES_ID) return foodInMinutesCount;
+    return categorizedItems.find(c => c.id === id)?.items.length ?? 0;
+  };
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6"
       style={{ background: 'rgba(17,24,39,0.35)', backdropFilter: 'blur(2px)' }}
@@ -369,16 +503,25 @@ function CategoryMenuOverlay({ cats, categorizedItems, activeCategory, allSelect
         <div className="max-h-[58vh] overflow-y-auto py-1.5">
           {cats.map(cat => {
             const isActive = !allSelected && activeCategory === cat.id;
+            const isExpress = cat.id === FOOD_IN_MINUTES_ID;
             return (
               <button key={cat.id} onClick={() => onPick(cat.id)}
                 className="w-full flex items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-gray-50">
-                <span className={`w-2.5 flex-shrink-0 ${isActive ? 'text-emerald-500' : 'text-transparent'}`}>
+                <span className={`w-2.5 flex-shrink-0 ${isActive ? (isExpress ? 'text-lime-600' : 'text-emerald-500') : 'text-transparent'}`}>
                   <ChevronRight size={13} strokeWidth={3} />
                 </span>
-                <span className={`flex-1 text-[15px] ${isActive ? 'font-extrabold text-emerald-600' : 'font-semibold text-gray-800'}`}>
-                  {cat.label}
+                <span className={`flex-1 text-[15px] ${
+                  isActive
+                    ? (isExpress ? 'font-extrabold text-lime-700' : 'font-extrabold text-emerald-600')
+                    : isExpress ? 'font-bold text-lime-800' : 'font-semibold text-gray-800'
+                }`}>
+                  {isExpress ? '⚡ ' : ''}{cat.label}
                 </span>
-                <span className={`text-[14px] tabular-nums ${isActive ? 'font-extrabold text-emerald-600' : 'font-semibold text-gray-400'}`}>
+                <span className={`text-[14px] tabular-nums ${
+                  isActive
+                    ? (isExpress ? 'font-extrabold text-lime-700' : 'font-extrabold text-emerald-600')
+                    : 'font-semibold text-gray-400'
+                }`}>
                   {countFor(cat.id)}
                 </span>
               </button>
@@ -420,10 +563,36 @@ export default function MenuPage() {
   const [catMenuOpen, setCatMenuOpen] = useState(false);
   const [showBackTop, setShowBackTop] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'large'
+  const [userPin, setUserPin] = useState(null); // { lat, lng } | null
   const searchRef  = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef    = useRef(null);
   const { cartCount } = useCart();
+
+  // Resolve delivery pin: cached coords first, else browser geolocation
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(PIN_CACHE_KEY);
+      if (cached) {
+        const pin = JSON.parse(cached);
+        if (pin?.lat != null && pin?.lng != null) {
+          setUserPin(pin);
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const pin = { lat: coords.latitude, lng: coords.longitude };
+        setUserPin(pin);
+        try { sessionStorage.setItem(PIN_CACHE_KEY, JSON.stringify(pin)); } catch { /* ignore */ }
+      },
+      () => {},
+      { timeout: 8000, maximumAge: 300_000 }
+    );
+  }, []);
 
   // Load categories
   useEffect(() => {
@@ -446,13 +615,54 @@ export default function MenuPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const deliveryEta = useMemo(() => {
+    if (!userPin) return DEFAULT_DELIVERY_ETA;
+    const km = haversineKm(STORE_LAT, STORE_LNG, userPin.lat, userPin.lng);
+    return deliveryEtaFromDistanceKm(km);
+  }, [userPin]);
+
+  // Global filter + sort
+  const filtered = useMemo(() => {
+    let list = [...products];
+    if (activeFilter === 'veg')        list = list.filter(p => p.isVeg);
+    if (activeFilter === 'bestseller') list = list.filter(p => p.isBestseller);
+    if (activeFilter === 'chef')       list = list.filter(p => p.isChefSpecial);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(p => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
+    }
+    return list.sort((a, b) => {
+      if (a.isAvailableNow === b.isAvailableNow) return 0;
+      return a.isAvailableNow === false ? 1 : -1;
+    });
+  }, [products, activeFilter, search]);
+
+  const foodInMinutesItems = useMemo(
+    () => filtered.filter(p => p.isFoodInMinutes),
+    [filtered]
+  );
+
+  // Group by category
+  const categorizedItems = useMemo(() => {
+    return cats.map(cat => ({
+      ...cat,
+      items: filtered.filter(p => p.pfCategory === cat.id),
+    }));
+  }, [cats, filtered]);
+
+  // Nav includes Food in minutes first when present
+  const navCats = useMemo(() => {
+    if (!foodInMinutesItems.length) return cats;
+    return [{ id: FOOD_IN_MINUTES_ID, label: 'Food in minutes' }, ...cats];
+  }, [cats, foodInMinutesItems.length]);
+
   // Scroll tracker — update active tab as user scrolls + toggle back-to-top
   useEffect(() => {
-    if (!cats.length) return;
+    if (!navCats.length) return;
     const handleScroll = () => {
       const OFFSET = 155;
-      let current = cats[0]?.id;
-      for (const cat of cats) {
+      let current = navCats[0]?.id;
+      for (const cat of navCats) {
         const el = sectionRefs.current[cat.id];
         if (el && el.offsetTop <= window.scrollY + OFFSET) current = cat.id;
       }
@@ -462,7 +672,7 @@ export default function MenuPage() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [cats]);
+  }, [navCats]);
 
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
 
@@ -484,30 +694,6 @@ export default function MenuPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setCatMenuOpen(false);
   };
-
-  // Global filter + sort
-  const filtered = useMemo(() => {
-    let list = [...products];
-    if (activeFilter === 'veg')        list = list.filter(p => p.isVeg);
-    if (activeFilter === 'bestseller') list = list.filter(p => p.isBestseller);
-    if (activeFilter === 'chef')       list = list.filter(p => p.isChefSpecial);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(p => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
-    }
-    return list.sort((a, b) => {
-      if (a.isAvailableNow === b.isAvailableNow) return 0;
-      return a.isAvailableNow === false ? 1 : -1;
-    });
-  }, [products, activeFilter, search]);
-
-  // Group by category
-  const categorizedItems = useMemo(() => {
-    return cats.map(cat => ({
-      ...cat,
-      items: filtered.filter(p => p.pfCategory === cat.id),
-    }));
-  }, [cats, filtered]);
 
   const totalFiltered = filtered.length;
 
@@ -607,6 +793,15 @@ export default function MenuPage() {
 
         {/* Explore menu header */}
         <ExploreMenuHeader itemCount={loading ? '—' : totalFiltered} catCount={cats.length} />
+
+        {/* Food in minutes — first category, before Bowls */}
+        {!loading && foodInMinutesItems.length > 0 && (
+          <FoodInMinutesSection
+            items={foodInMinutesItems}
+            deliveryEta={deliveryEta}
+            sectionRef={el => { sectionRefs.current[FOOD_IN_MINUTES_ID] = el; }}
+          />
+        )}
 
         {/* ── Category sections ─────────────────────────────────── */}
         {loading ? (
@@ -717,7 +912,7 @@ export default function MenuPage() {
             })}
 
             {/* No results */}
-            {!loading && categorizedItems.every(c => c.items.length === 0) && (activeFilter !== 'all' || search) && (
+            {!loading && categorizedItems.every(c => c.items.length === 0) && foodInMinutesItems.length === 0 && (activeFilter !== 'all' || search) && (
               <div className="flex flex-col items-center py-16 gap-3">
                 <Search size={28} className="text-gray-300" />
                 <p className="font-bold text-gray-600">No items found</p>
@@ -763,13 +958,14 @@ export default function MenuPage() {
       {/* Category overlay */}
       {catMenuOpen && (
         <CategoryMenuOverlay
-          cats={cats}
+          cats={navCats}
           categorizedItems={categorizedItems}
           activeCategory={activeCategory}
           allSelected={allSelected}
           onPick={scrollToSection}
           onClose={() => setCatMenuOpen(false)}
           onBackToTop={scrollToTop}
+          foodInMinutesCount={foodInMinutesItems.length}
         />
       )}
     </div>
