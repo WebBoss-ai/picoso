@@ -358,7 +358,16 @@ function ExploreMenuHeader({ itemCount, catCount }) {
   );
 }
 
-// ── Food in minutes — soft mint, compact cards, full modal ───────────────────
+// ── Food in minutes — premium square carousel, purple accents ────────────────
+const FIM = {
+  violet: '#6d28d9',
+  violetSoft: '#f5f3ff',
+  violetMid: '#a78bfa',
+  violetDeep: '#4c1d95',
+  ink: '#1c1917',
+  muted: '#78716c',
+};
+
 function FoodInMinutesModal({ product, deliveryEta, onClose }) {
   const { items, addItem, updateQty } = useCart();
   const { isPlatinum } = useAuth();
@@ -373,10 +382,10 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
   const isBev = product.pfCategory === 'pf-beverages';
 
   const macros = !isBev ? [
-    { label: 'Cal',     value: product.calories, unit: 'kcal', icon: Flame,    accent: '#ea580c', soft: '#fff7ed', ring: '#fed7aa' },
-    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      accent: '#047857', soft: '#d1fae5', ring: '#6ee7b7', spotlight: true },
-    { label: 'Carbs',   value: product.carbs,    unit: 'g',    icon: Wheat,    accent: '#b45309', soft: '#fffbeb', ring: '#fde68a' },
-    { label: 'Fats',    value: product.fats,     unit: 'g',    icon: Droplets, accent: '#2563eb', soft: '#eff6ff', ring: '#bfdbfe' },
+    { label: 'Cal',     value: product.calories, unit: 'kcal', icon: Flame,    accent: '#c2410c', soft: '#fff7ed' },
+    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      accent: FIM.violet, soft: FIM.violetSoft, spotlight: true },
+    { label: 'Carbs',   value: product.carbs,    unit: 'g',    icon: Wheat,    accent: '#a16207', soft: '#fffbeb' },
+    { label: 'Fats',    value: product.fats,     unit: 'g',    icon: Droplets, accent: '#2563eb', soft: '#eff6ff' },
   ].filter(m => m.value > 0) : [];
 
   useEffect(() => {
@@ -394,20 +403,19 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
   return (
     <div
       className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: 'rgba(6, 40, 28, 0.42)', backdropFilter: 'blur(14px)' }}
+      style={{ background: 'rgba(24, 16, 40, 0.45)', backdropFilter: 'blur(16px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-[440px] rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden shadow-2xl max-h-[94vh] flex flex-col"
+        className="w-full sm:max-w-[440px] bg-white rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden max-h-[94vh] flex flex-col"
         style={{
-          background: 'linear-gradient(180deg, #f0fdf6 0%, #ffffff 28%, #ffffff 100%)',
           animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)',
-          boxShadow: '0 24px 64px rgba(16, 85, 58, 0.18)',
+          boxShadow: '0 28px 80px rgba(76, 29, 149, 0.18)',
         }}
         onClick={e => e.stopPropagation()}
       >
         {/* Image */}
-        <div className="relative w-full flex-shrink-0 bg-emerald-50" style={{ aspectRatio: '16 / 10' }}>
+        <div className="relative w-full flex-shrink-0 bg-stone-100" style={{ aspectRatio: '1 / 1' }}>
           {!imageError && product.image ? (
             <Image
               src={product.image}
@@ -419,48 +427,43 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
               priority
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
-              <Utensils size={40} className="text-emerald-300" strokeWidth={1.25} />
+            <div className="w-full h-full bg-stone-100 flex items-center justify-center">
+              <Utensils size={40} className="text-stone-300" strokeWidth={1.25} />
             </div>
           )}
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(6,40,28,0.55) 0%, transparent 50%)' }} />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(28,25,23,0.5) 0%, transparent 48%)' }} />
 
           <button
             onClick={onClose}
-            className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95"
-            style={{ background: 'rgba(255,255,255,0.95)', boxShadow: '0 2px 12px rgba(0,0,0,0.1)' }}
+            className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform bg-white/95"
+            style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
             aria-label="Close"
           >
-            <X size={16} className="text-emerald-900" strokeWidth={2} />
+            <X size={16} className="text-stone-800" strokeWidth={2} />
           </button>
 
           <div className="absolute top-3.5 left-3.5 flex flex-col gap-1.5">
-            {/* Delivery time — highlighted */}
             <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold"
-              style={{
-                background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                color: '#92400e',
-                boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
-              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-semibold text-white"
+              style={{ background: FIM.violet, boxShadow: '0 4px 14px rgba(109, 40, 217, 0.35)' }}
             >
               <Clock size={12} strokeWidth={2.5} />
-              Delivery {etaShort}
+              {etaShort}
             </span>
             {product.isBestseller && (
-              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
-                <Star size={9} fill="currentColor" /> Bestseller
+              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-stone-800 text-[10px] font-bold px-2 py-1 rounded-full">
+                <Star size={9} fill="currentColor" className="text-amber-500" /> Bestseller
               </span>
             )}
             {product.isChefSpecial && (
-              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-stone-700 text-[10px] font-bold px-2 py-1 rounded-full">
                 <ChefHat size={9} /> Chef&apos;s Pick
               </span>
             )}
           </div>
 
-          <div className="absolute bottom-3.5 left-4 flex items-center gap-2">
-            <div className={`w-[18px] h-[18px] rounded-[4px] flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+          <div className="absolute bottom-4 left-5 flex items-center gap-2">
+            <div className={`w-[18px] h-[18px] rounded-[4px] flex items-center justify-center border-2 bg-white ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
               <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
             </div>
             <span className="text-white text-xs font-semibold drop-shadow">
@@ -470,105 +473,108 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <h2 className="text-[21px] font-extrabold text-emerald-950 tracking-tight leading-tight flex-1">
+        <div className="flex-1 overflow-y-auto px-5 pt-5 pb-3">
+          <div className="flex items-start justify-between gap-3 mb-1.5">
+            <h2 className="text-[21px] font-semibold text-stone-900 tracking-tight leading-tight flex-1">
               {product.name}
             </h2>
             <div className="text-right flex-shrink-0">
-              <p className="text-[21px] font-extrabold text-emerald-950 tracking-tight leading-none">₹{displayPrice}</p>
+              <p className="text-[21px] font-semibold text-stone-900 tracking-tight leading-none">₹{displayPrice}</p>
               {isPlatinum && originalPrice !== displayPrice && (
-                <p className="text-xs text-emerald-800/40 line-through mt-0.5">₹{originalPrice}</p>
+                <p className="text-xs text-stone-400 line-through mt-0.5">₹{originalPrice}</p>
               )}
             </div>
           </div>
 
           {!isPlatinum && (
             <div className="flex items-center gap-1.5 mb-3">
-              <Crown size={11} className="text-amber-500" />
-              <span className="text-xs text-amber-600 font-semibold">
+              <Crown size={11} className="text-violet-500" />
+              <span className="text-xs font-medium" style={{ color: FIM.violet }}>
                 ₹{platinumPrice} with Platinum — save ₹{originalPrice - platinumPrice}
               </span>
             </div>
           )}
 
-          {/* Highlighted delivery strip */}
+          {/* Delivery — purple highlight, no border */}
           <div
-            className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-2xl"
-            style={{
-              background: 'linear-gradient(135deg, #fef9c3 0%, #fef3c7 55%, #ecfdf5 100%)',
-              border: '1px solid #fde68a',
-            }}
+            className="flex items-center gap-3 mb-4 px-3.5 py-3 rounded-2xl"
+            style={{ background: FIM.violetSoft }}
           >
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-100">
-              <Clock size={15} className="text-amber-700" strokeWidth={2.5} />
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(109, 40, 217, 0.12)' }}
+            >
+              <Clock size={16} style={{ color: FIM.violet }} strokeWidth={2.25} />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700/70">Delivery time</p>
-              <p className="text-[14px] font-extrabold text-amber-900 leading-tight">{deliveryEta}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: FIM.violetMid }}>
+                Delivery
+              </p>
+              <p className="text-[15px] font-semibold text-stone-900 leading-tight">{deliveryEta}</p>
             </div>
           </div>
 
           {product.description && (
-            <p className="text-[14px] text-emerald-900/55 leading-relaxed mb-4">
+            <p className="text-[14px] text-stone-500 leading-relaxed mb-4">
               {product.description}
             </p>
           )}
 
-          {/* Nutrition */}
           {macros.length > 0 && (
             <div className="mb-4">
-              <p className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest mb-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-2.5">
                 Nutrition per serving
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {macros.map(m => (
                   <div
                     key={m.label}
-                    className="rounded-2xl p-2.5 text-center border"
+                    className="rounded-2xl p-2.5 text-center"
                     style={{
                       background: m.soft,
-                      borderColor: m.ring,
-                      boxShadow: m.spotlight ? '0 4px 14px rgba(4, 120, 87, 0.12)' : undefined,
-                      transform: m.spotlight ? 'scale(1.02)' : undefined,
+                      boxShadow: m.spotlight ? '0 6px 18px rgba(109, 40, 217, 0.12)' : undefined,
                     }}
                   >
                     <m.icon size={14} style={{ color: m.accent }} className="mx-auto mb-1" />
-                    <p className="text-sm font-extrabold" style={{ color: m.accent }}>{m.value}</p>
-                    <p className="text-[9px] text-emerald-900/40 font-medium leading-tight">{m.unit}</p>
-                    <p className={`text-[9px] leading-tight font-semibold ${m.spotlight ? 'text-emerald-700' : 'text-emerald-900/40'}`}>
+                    <p className="text-sm font-bold" style={{ color: m.accent }}>{m.value}</p>
+                    <p className="text-[9px] text-stone-400 font-medium leading-tight">{m.unit}</p>
+                    <p
+                      className="text-[9px] leading-tight font-semibold"
+                      style={{ color: m.spotlight ? FIM.violet : '#a8a29e' }}
+                    >
                       {m.label}
                     </p>
                   </div>
                 ))}
               </div>
               {product.fiber > 0 && (
-                <p className="text-xs text-emerald-800/50 mt-2.5 flex items-center gap-1">
-                  <Leaf size={11} className="text-emerald-500" /> {product.fiber}g fiber
+                <p className="text-xs text-stone-400 mt-2.5 flex items-center gap-1">
+                  <Leaf size={11} style={{ color: FIM.violetMid }} /> {product.fiber}g fiber
                 </p>
               )}
             </div>
           )}
 
           {product.howItsMade && (
-            <div className="mb-4 p-3.5 rounded-2xl bg-white border border-emerald-100">
-              <p className="text-[10px] font-bold text-emerald-700/60 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                <ChefHat size={12} className="text-emerald-500" /> How it&apos;s made
+            <div className="mb-4 p-3.5 rounded-2xl" style={{ background: '#fafaf9' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-1.5 flex items-center gap-1.5">
+                <ChefHat size={12} style={{ color: FIM.violet }} /> How it&apos;s made
               </p>
-              <p className="text-[13px] text-emerald-950/70 leading-relaxed">{product.howItsMade}</p>
+              <p className="text-[13px] text-stone-600 leading-relaxed">{product.howItsMade}</p>
             </div>
           )}
 
           {product.ingredients?.length > 0 && (
             <div className="mb-3">
-              <p className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-2 flex items-center gap-1.5">
                 <Info size={11} /> Ingredients
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {product.ingredients.map((ing, i) => (
                   <span
                     key={i}
-                    className="text-xs text-emerald-900/70 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full font-medium"
+                    className="text-xs text-stone-600 font-medium px-2.5 py-1 rounded-full"
+                    style={{ background: '#f5f5f4' }}
                   >
                     {ing}
                   </span>
@@ -578,34 +584,33 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
           )}
 
           {Array.isArray(product.tags) && product.tags.length > 0 && (
-            <div className="mb-1">
-              <div className="flex flex-wrap gap-1.5">
-                {product.tags.map((tag, i) => (
-                  <span key={i} className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
-                    #{tag}
-                  </span>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {product.tags.map((tag, i) => (
+                <span
+                  key={i}
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: FIM.violetSoft, color: FIM.violet }}
+                >
+                  #{tag}
+                </span>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Footer CTA */}
-        <div
-          className="px-5 py-4 flex-shrink-0"
-          style={{ borderTop: '1px solid rgba(16, 185, 129, 0.12)', background: 'rgba(240, 253, 246, 0.65)' }}
-        >
+        {/* Footer */}
+        <div className="px-5 py-4 flex-shrink-0 bg-white" style={{ boxShadow: '0 -8px 24px rgba(0,0,0,0.04)' }}>
           {isUnavailable ? (
-            <div className="flex items-center justify-center gap-2 py-3.5 text-emerald-800/40 text-sm font-medium">
+            <div className="flex items-center justify-center gap-2 py-3.5 text-stone-400 text-sm font-medium">
               <Clock size={14} /> Available from {product.availableFrom}
             </div>
           ) : qty === 0 ? (
             <button
               onClick={() => addItem(product)}
-              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-bold tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2"
               style={{
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                boxShadow: '0 8px 24px rgba(16, 185, 129, 0.35)',
+                background: `linear-gradient(135deg, ${FIM.violet} 0%, ${FIM.violetDeep} 100%)`,
+                boxShadow: '0 10px 28px rgba(109, 40, 217, 0.32)',
               }}
             >
               <Plus size={16} strokeWidth={2.75} />
@@ -615,19 +620,19 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
             <div className="flex items-center gap-4">
               <div
                 className="flex items-center gap-4 px-4 py-3 rounded-2xl"
-                style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+                style={{ background: FIM.violet }}
               >
-                <button onClick={() => updateQty(product._id, qty - 1)} className="text-white active:scale-90 transition-transform p-0.5">
+                <button onClick={() => updateQty(product._id, qty - 1)} className="text-white active:scale-90 p-0.5">
                   <Minus size={16} strokeWidth={2.5} />
                 </button>
-                <span className="text-white font-bold text-[15px] min-w-[18px] text-center tabular-nums">{qty}</span>
-                <button onClick={() => updateQty(product._id, qty + 1)} className="text-white active:scale-90 transition-transform p-0.5">
+                <span className="text-white font-semibold text-[15px] min-w-[18px] text-center tabular-nums">{qty}</span>
+                <button onClick={() => updateQty(product._id, qty + 1)} className="text-white active:scale-90 p-0.5">
                   <Plus size={16} strokeWidth={2.5} />
                 </button>
               </div>
               <div className="flex-1 text-right">
-                <p className="text-[11px] text-emerald-800/45 font-medium">In cart</p>
-                <p className="text-[18px] font-extrabold text-emerald-950 tracking-tight">₹{displayPrice * qty}</p>
+                <p className="text-[11px] text-stone-400 font-medium">In cart</p>
+                <p className="text-[18px] font-semibold text-stone-900 tracking-tight">₹{displayPrice * qty}</p>
               </div>
             </div>
           )}
@@ -662,87 +667,85 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
   return (
     <article
       onClick={() => onOpen(product)}
-      className="group cursor-pointer w-full max-w-2xl mx-auto"
+      className="group cursor-pointer flex-shrink-0 w-[148px] sm:w-[168px]"
+      style={{ scrollSnapAlign: 'start' }}
     >
-      {/* Image — same proportions as bowls (2:1) */}
       <div className="relative">
         <div
-          className="relative w-full overflow-hidden rounded-[18px] bg-emerald-50/80"
-          style={{ aspectRatio: '2 / 1' }}
+          className="relative w-full overflow-hidden rounded-2xl bg-stone-100"
+          style={{ aspectRatio: '1 / 1' }}
         >
           {!imageError && product.image ? (
             <Image
               src={product.image}
               alt={product.name}
               fill
-              className={`object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
+              className={`object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
               onError={() => setImageError(true)}
-              sizes="(max-width: 768px) 100vw, 640px"
+              sizes="168px"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100">
-              <Utensils size={28} className="text-emerald-300" strokeWidth={1.25} />
+            <div className="w-full h-full flex items-center justify-center bg-stone-100">
+              <Utensils size={24} className="text-stone-300" strokeWidth={1.25} />
             </div>
           )}
 
           {isUnavailable && (
-            <div className="absolute inset-0 bg-white/55 flex items-center justify-center">
-              <span className="text-[11px] font-semibold text-emerald-900/50 bg-white/95 px-3 py-1.5 rounded-full">
-                From {product.availableFrom}
+            <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
+              <span className="text-[10px] font-medium text-stone-500 bg-white px-2.5 py-1 rounded-full">
+                Soon
               </span>
             </div>
           )}
 
-          {/* Delivery time — highlighted */}
+          {/* Delivery — purple */}
           {!isUnavailable && (
-            <div className="absolute top-2.5 left-2.5">
+            <div className="absolute top-2 left-2">
               <span
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold text-white"
                 style={{
-                  background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                  color: '#92400e',
-                  boxShadow: '0 2px 8px rgba(245, 158, 11, 0.28)',
+                  background: FIM.violet,
+                  boxShadow: '0 4px 12px rgba(109, 40, 217, 0.35)',
                 }}
               >
-                <Clock size={10} strokeWidth={2.5} />
+                <Clock size={9} strokeWidth={2.5} />
                 {etaShort}
               </span>
             </div>
           )}
 
-          {/* veg */}
-          <div className="absolute bottom-2.5 left-2.5">
-            <div className={`w-[16px] h-[16px] rounded-[4px] flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
-              <div className={`w-[7px] h-[7px] rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+          <div className="absolute bottom-2 left-2">
+            <div className={`w-[14px] h-[14px] rounded-[3px] flex items-center justify-center border-[1.5px] bg-white ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+              <div className={`w-[6px] h-[6px] rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
             </div>
           </div>
         </div>
 
-        {/* Add control */}
+        {/* Add — floats under image corner */}
         {!isUnavailable && (
-          <div className="absolute right-2.5 -bottom-3.5" onClick={e => e.stopPropagation()}>
+          <div className="absolute right-2 -bottom-3" onClick={e => e.stopPropagation()}>
             {qty === 0 ? (
               <button
                 onClick={() => addItem(product)}
-                className="h-8 px-3.5 rounded-lg text-[12px] font-bold text-emerald-700 bg-white border border-emerald-200 active:scale-95 transition-transform"
-                style={{ boxShadow: '0 2px 10px rgba(16, 185, 129, 0.15)' }}
+                className="h-7 px-3 rounded-full text-[11px] font-semibold text-violet-700 bg-white active:scale-95 transition-transform"
+                style={{ boxShadow: '0 4px 14px rgba(109, 40, 217, 0.18)' }}
               >
                 Add
               </button>
             ) : (
               <div
-                className="h-8 px-3 flex items-center gap-2.5 rounded-lg text-white"
+                className="h-7 px-2 flex items-center gap-2 rounded-full text-white"
                 style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.28)',
+                  background: FIM.violet,
+                  boxShadow: '0 4px 14px rgba(109, 40, 217, 0.3)',
                 }}
               >
-                <button onClick={() => updateQty(product._id, qty - 1)} className="active:scale-90">
-                  <Minus size={12} strokeWidth={2.75} />
+                <button onClick={() => updateQty(product._id, qty - 1)} className="active:scale-90 p-0.5">
+                  <Minus size={11} strokeWidth={2.75} />
                 </button>
-                <span className="text-[12px] font-bold min-w-[12px] text-center tabular-nums">{qty}</span>
-                <button onClick={() => updateQty(product._id, qty + 1)} className="active:scale-90">
-                  <Plus size={12} strokeWidth={2.75} />
+                <span className="text-[11px] font-semibold min-w-[10px] text-center tabular-nums">{qty}</span>
+                <button onClick={() => updateQty(product._id, qty + 1)} className="active:scale-90 p-0.5">
+                  <Plus size={11} strokeWidth={2.75} />
                 </button>
               </div>
             )}
@@ -751,34 +754,15 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
       </div>
 
       <div className="pt-4 px-0.5">
-        {/* Protein highlight */}
         {showProtein && (
-          <span
-            className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide mb-1 px-2 py-0.5 rounded-md"
-            style={{
-              background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)',
-              color: '#047857',
-              border: '1px solid #6ee7b7',
-            }}
-          >
-            <Zap size={9} strokeWidth={2.5} fill="currentColor" />
+          <p className="text-[10px] font-semibold mb-0.5" style={{ color: FIM.violet }}>
             {product.protein}g protein
-          </span>
-        )}
-        <h3 className="text-[15px] font-semibold text-emerald-950 tracking-tight leading-snug line-clamp-1">
-          {product.name}
-        </h3>
-        {product.description && (
-          <p className="text-[12px] text-emerald-900/40 leading-snug mt-0.5 line-clamp-1">
-            {product.description}
           </p>
         )}
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-[14px] font-bold text-emerald-950">₹{product.price}</span>
-          {isUnavailable && (
-            <span className="text-[11px] text-emerald-800/35 font-medium">Unavailable</span>
-          )}
-        </div>
+        <h3 className="text-[13px] font-semibold text-stone-900 tracking-tight leading-snug line-clamp-2 min-h-[2.2em]">
+          {product.name}
+        </h3>
+        <p className="text-[13px] font-semibold text-stone-800 mt-1">₹{product.price}</p>
       </div>
     </article>
   );
@@ -791,46 +775,36 @@ function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
   const etaShort = formatEtaShort(deliveryEta);
 
   return (
-    <section
-      ref={sectionRef}
-      className="mb-10 relative overflow-hidden rounded-[22px] px-4 sm:px-5 py-5"
-      style={{
-        background: 'linear-gradient(165deg, #ecfdf5 0%, #f0fdf4 40%, #f7fef9 100%)',
-        border: '1px solid rgba(167, 243, 208, 0.55)',
-        boxShadow: '0 4px 24px rgba(16, 185, 129, 0.06)',
-      }}
-    >
-      {/* soft atmosphere */}
-      <div
-        className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full opacity-40"
-        style={{ background: 'radial-gradient(circle, #a7f3d0 0%, transparent 70%)' }}
-      />
-
-      {/* Header */}
-      <div className="relative flex items-end justify-between gap-3 mb-4">
+    <section ref={sectionRef} className="mb-9">
+      {/* Header — clean, no border box */}
+      <div className="flex items-end justify-between gap-3 mb-4 px-0.5">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600/70 mb-1">
-            Fast delivery
-          </p>
-          <h2 className="text-[20px] sm:text-[22px] font-extrabold text-emerald-950 tracking-tight leading-none">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-1"
+            style={{ color: FIM.violetMid }}
+          >
             Food in minutes
+          </p>
+          <h2 className="text-[20px] sm:text-[22px] font-semibold text-stone-900 tracking-tight leading-none">
+            Ready fast
           </h2>
         </div>
-        {/* Delivery time — highlighted pill */}
         <div
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full flex-shrink-0"
-          style={{
-            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.2)',
-          }}
+          style={{ background: FIM.violetSoft }}
         >
-          <Clock size={12} strokeWidth={2.5} className="text-amber-700" />
-          <span className="text-[11px] font-bold text-amber-900 tabular-nums">{etaShort}</span>
+          <Clock size={12} strokeWidth={2.25} style={{ color: FIM.violet }} />
+          <span className="text-[11px] font-semibold tabular-nums" style={{ color: FIM.violetDeep }}>
+            {etaShort}
+          </span>
         </div>
       </div>
 
-      {/* Cards — vertical stack, same width feel as bowls */}
-      <div className="relative flex flex-col gap-6 sm:gap-7 max-w-2xl mx-auto">
+      {/* Horizontal scroll — square cards */}
+      <div
+        className="flex gap-3.5 overflow-x-auto pb-2 -mx-1 px-1"
+        style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
+      >
         {items.map(product => (
           <FoodInMinutesCard
             key={product._id}
