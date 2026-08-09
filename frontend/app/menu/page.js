@@ -6,12 +6,14 @@ import {
   ArrowRight, ChevronRight,
   LayoutGrid, List, Heart, Loader2, CheckCircle2,
   Utensils, BookOpen, ChevronUp, Plus, Minus,
+  Flame, Zap, Wheat, Droplets, Info, Crown,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import { CATEGORY_ILLUSTRATIONS, CATEGORY_THEMES } from '@/components/CategoryIllustrations';
 import HealthySubscriptionModal from '@/components/HealthySubscriptionModal';
 import { useCart } from '@/context/CartContext';
+import { useAuth } from '@/context/AuthContext';
 
 const STORE_LAT = 28.437099;
 const STORE_LNG = 77.072771;
@@ -19,6 +21,7 @@ const FOOD_IN_MINUTES_ID = 'food-in-minutes';
 const DEFAULT_ETA_MID = 14; // → "12 to 16 minutes"
 const DEFAULT_DELIVERY_ETA = '12 to 16 minutes';
 const PIN_CACHE_KEY = 'picoso_pin';
+const FIM_PLATINUM = 0.20;
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -355,15 +358,26 @@ function ExploreMenuHeader({ itemCount, catCount }) {
   );
 }
 
-// ── Food in minutes — refined express section ────────────────────────────────
+// ── Food in minutes — soft mint, compact cards, full modal ───────────────────
 function FoodInMinutesModal({ product, deliveryEta, onClose }) {
   const { items, addItem, updateQty } = useCart();
+  const { isPlatinum } = useAuth();
   const [imageError, setImageError] = useState(false);
   const cartItem = items.find(i => i._id === product._id);
   const qty = cartItem?.quantity || 0;
   const isUnavailable = product.isAvailableNow === false;
   const originalPrice = product.price;
+  const platinumPrice = Math.round(originalPrice * (1 - FIM_PLATINUM));
+  const displayPrice = isPlatinum ? platinumPrice : originalPrice;
   const etaShort = formatEtaShort(deliveryEta);
+  const isBev = product.pfCategory === 'pf-beverages';
+
+  const macros = !isBev ? [
+    { label: 'Cal',     value: product.calories, unit: 'kcal', icon: Flame,    accent: '#ea580c', soft: '#fff7ed', ring: '#fed7aa' },
+    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      accent: '#047857', soft: '#d1fae5', ring: '#6ee7b7', spotlight: true },
+    { label: 'Carbs',   value: product.carbs,    unit: 'g',    icon: Wheat,    accent: '#b45309', soft: '#fffbeb', ring: '#fde68a' },
+    { label: 'Fats',    value: product.fats,     unit: 'g',    icon: Droplets, accent: '#2563eb', soft: '#eff6ff', ring: '#bfdbfe' },
+  ].filter(m => m.value > 0) : [];
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -379,17 +393,21 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
-      style={{ background: 'rgba(15,15,15,0.48)', backdropFilter: 'blur(12px)' }}
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ background: 'rgba(6, 40, 28, 0.42)', backdropFilter: 'blur(14px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-[420px] bg-[#fafaf9] rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden shadow-2xl max-h-[92vh] flex flex-col"
-        style={{ animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)' }}
+        className="w-full sm:max-w-[440px] rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden shadow-2xl max-h-[94vh] flex flex-col"
+        style={{
+          background: 'linear-gradient(180deg, #f0fdf6 0%, #ffffff 28%, #ffffff 100%)',
+          animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)',
+          boxShadow: '0 24px 64px rgba(16, 85, 58, 0.18)',
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Image */}
-        <div className="relative w-full flex-shrink-0 bg-neutral-100" style={{ aspectRatio: '5/4' }}>
+        <div className="relative w-full flex-shrink-0 bg-emerald-50" style={{ aspectRatio: '16 / 10' }}>
           {!imageError && product.image ? (
             <Image
               src={product.image}
@@ -397,113 +415,219 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
               fill
               className="object-cover"
               onError={() => setImageError(true)}
-              sizes="(max-width: 640px) 100vw, 420px"
+              sizes="(max-width: 640px) 100vw, 440px"
               priority
             />
           ) : (
-            <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
-              <Utensils size={40} className="text-neutral-400" strokeWidth={1.25} />
+            <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+              <Utensils size={40} className="text-emerald-300" strokeWidth={1.25} />
             </div>
           )}
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(15,15,15,0.55) 0%, transparent 45%)' }} />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(6,40,28,0.55) 0%, transparent 50%)' }} />
 
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95"
-            style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 12px rgba(0,0,0,0.12)' }}
+            className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95"
+            style={{ background: 'rgba(255,255,255,0.95)', boxShadow: '0 2px 12px rgba(0,0,0,0.1)' }}
             aria-label="Close"
           >
-            <X size={16} className="text-neutral-800" strokeWidth={2} />
+            <X size={16} className="text-emerald-900" strokeWidth={2} />
           </button>
 
-          <div className="absolute bottom-4 left-5 right-5 flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70 mb-1">
-                Food in minutes
-              </p>
-              <h2 className="text-[22px] font-semibold text-white tracking-tight leading-tight line-clamp-2">
-                {product.name}
-              </h2>
-            </div>
-            <div
-              className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-white text-[11px] font-medium"
-              style={{ background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)' }}
+          <div className="absolute top-3.5 left-3.5 flex flex-col gap-1.5">
+            {/* Delivery time — highlighted */}
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold"
+              style={{
+                background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                color: '#92400e',
+                boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
+              }}
             >
-              <Clock size={12} strokeWidth={2} />
-              {etaShort}
+              <Clock size={12} strokeWidth={2.5} />
+              Delivery {etaShort}
+            </span>
+            {product.isBestseller && (
+              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+                <Star size={9} fill="currentColor" /> Bestseller
+              </span>
+            )}
+            {product.isChefSpecial && (
+              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+                <ChefHat size={9} /> Chef&apos;s Pick
+              </span>
+            )}
+          </div>
+
+          <div className="absolute bottom-3.5 left-4 flex items-center gap-2">
+            <div className={`w-[18px] h-[18px] rounded-[4px] flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+              <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
             </div>
+            <span className="text-white text-xs font-semibold drop-shadow">
+              {product.isVeg ? 'Pure Veg' : 'Non-Veg'}
+            </span>
           </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 pt-5 pb-2">
-          <div className="flex items-start justify-between gap-4 mb-3">
-            <div className="flex items-center gap-2">
-              <div className={`w-[15px] h-[15px] rounded-[3px] flex items-center justify-center border-[1.5px] bg-white ${product.isVeg ? 'border-emerald-600' : 'border-red-500'}`}>
-                <div className={`w-[6px] h-[6px] rounded-full ${product.isVeg ? 'bg-emerald-600' : 'bg-red-500'}`} />
-              </div>
-              <span className="text-[12px] text-neutral-500 font-medium">
-                {product.isVeg ? 'Vegetarian' : 'Non-vegetarian'}
+        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <h2 className="text-[21px] font-extrabold text-emerald-950 tracking-tight leading-tight flex-1">
+              {product.name}
+            </h2>
+            <div className="text-right flex-shrink-0">
+              <p className="text-[21px] font-extrabold text-emerald-950 tracking-tight leading-none">₹{displayPrice}</p>
+              {isPlatinum && originalPrice !== displayPrice && (
+                <p className="text-xs text-emerald-800/40 line-through mt-0.5">₹{originalPrice}</p>
+              )}
+            </div>
+          </div>
+
+          {!isPlatinum && (
+            <div className="flex items-center gap-1.5 mb-3">
+              <Crown size={11} className="text-amber-500" />
+              <span className="text-xs text-amber-600 font-semibold">
+                ₹{platinumPrice} with Platinum — save ₹{originalPrice - platinumPrice}
               </span>
             </div>
-            <div className="text-right">
-              <p className="text-[22px] font-semibold text-neutral-900 tracking-tight leading-none">₹{originalPrice}</p>
+          )}
+
+          {/* Highlighted delivery strip */}
+          <div
+            className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-2xl"
+            style={{
+              background: 'linear-gradient(135deg, #fef9c3 0%, #fef3c7 55%, #ecfdf5 100%)',
+              border: '1px solid #fde68a',
+            }}
+          >
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-100">
+              <Clock size={15} className="text-amber-700" strokeWidth={2.5} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700/70">Delivery time</p>
+              <p className="text-[14px] font-extrabold text-amber-900 leading-tight">{deliveryEta}</p>
             </div>
           </div>
 
           {product.description && (
-            <p className="text-[14px] text-neutral-500 leading-relaxed mb-5">
+            <p className="text-[14px] text-emerald-900/55 leading-relaxed mb-4">
               {product.description}
             </p>
           )}
 
-          {(product.protein > 0 || product.calories > 0) && product.pfCategory !== 'pf-beverages' && (
-            <div className="flex gap-2 mb-1">
-              {product.protein > 0 && (
-                <span className="text-[12px] text-neutral-600 bg-white border border-neutral-200/80 px-3 py-1.5 rounded-full font-medium">
-                  {product.protein}g protein
-                </span>
+          {/* Nutrition */}
+          {macros.length > 0 && (
+            <div className="mb-4">
+              <p className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest mb-2.5">
+                Nutrition per serving
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {macros.map(m => (
+                  <div
+                    key={m.label}
+                    className="rounded-2xl p-2.5 text-center border"
+                    style={{
+                      background: m.soft,
+                      borderColor: m.ring,
+                      boxShadow: m.spotlight ? '0 4px 14px rgba(4, 120, 87, 0.12)' : undefined,
+                      transform: m.spotlight ? 'scale(1.02)' : undefined,
+                    }}
+                  >
+                    <m.icon size={14} style={{ color: m.accent }} className="mx-auto mb-1" />
+                    <p className="text-sm font-extrabold" style={{ color: m.accent }}>{m.value}</p>
+                    <p className="text-[9px] text-emerald-900/40 font-medium leading-tight">{m.unit}</p>
+                    <p className={`text-[9px] leading-tight font-semibold ${m.spotlight ? 'text-emerald-700' : 'text-emerald-900/40'}`}>
+                      {m.label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {product.fiber > 0 && (
+                <p className="text-xs text-emerald-800/50 mt-2.5 flex items-center gap-1">
+                  <Leaf size={11} className="text-emerald-500" /> {product.fiber}g fiber
+                </p>
               )}
-              {product.calories > 0 && (
-                <span className="text-[12px] text-neutral-600 bg-white border border-neutral-200/80 px-3 py-1.5 rounded-full font-medium">
-                  {product.calories} kcal
-                </span>
-              )}
+            </div>
+          )}
+
+          {product.howItsMade && (
+            <div className="mb-4 p-3.5 rounded-2xl bg-white border border-emerald-100">
+              <p className="text-[10px] font-bold text-emerald-700/60 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                <ChefHat size={12} className="text-emerald-500" /> How it&apos;s made
+              </p>
+              <p className="text-[13px] text-emerald-950/70 leading-relaxed">{product.howItsMade}</p>
+            </div>
+          )}
+
+          {product.ingredients?.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <Info size={11} /> Ingredients
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {product.ingredients.map((ing, i) => (
+                  <span
+                    key={i}
+                    className="text-xs text-emerald-900/70 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full font-medium"
+                  >
+                    {ing}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(product.tags) && product.tags.length > 0 && (
+            <div className="mb-1">
+              <div className="flex flex-wrap gap-1.5">
+                {product.tags.map((tag, i) => (
+                  <span key={i} className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
         {/* Footer CTA */}
-        <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+        <div
+          className="px-5 py-4 flex-shrink-0"
+          style={{ borderTop: '1px solid rgba(16, 185, 129, 0.12)', background: 'rgba(240, 253, 246, 0.65)' }}
+        >
           {isUnavailable ? (
-            <div className="flex items-center justify-center gap-2 py-3.5 text-neutral-400 text-sm font-medium">
+            <div className="flex items-center justify-center gap-2 py-3.5 text-emerald-800/40 text-sm font-medium">
               <Clock size={14} /> Available from {product.availableFrom}
             </div>
           ) : qty === 0 ? (
             <button
               onClick={() => addItem(product)}
-              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-wide transition-all active:scale-[0.98]"
-              style={{ background: '#171717', boxShadow: '0 8px 24px rgba(23,23,23,0.18)' }}
+              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-bold tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                boxShadow: '0 8px 24px rgba(16, 185, 129, 0.35)',
+              }}
             >
-              Add to bag · ₹{originalPrice}
+              <Plus size={16} strokeWidth={2.75} />
+              Add to cart · ₹{displayPrice}
             </button>
           ) : (
             <div className="flex items-center gap-4">
               <div
                 className="flex items-center gap-4 px-4 py-3 rounded-2xl"
-                style={{ background: '#171717' }}
+                style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
               >
                 <button onClick={() => updateQty(product._id, qty - 1)} className="text-white active:scale-90 transition-transform p-0.5">
                   <Minus size={16} strokeWidth={2.5} />
                 </button>
-                <span className="text-white font-semibold text-[15px] min-w-[18px] text-center tabular-nums">{qty}</span>
+                <span className="text-white font-bold text-[15px] min-w-[18px] text-center tabular-nums">{qty}</span>
                 <button onClick={() => updateQty(product._id, qty + 1)} className="text-white active:scale-90 transition-transform p-0.5">
                   <Plus size={16} strokeWidth={2.5} />
                 </button>
               </div>
               <div className="flex-1 text-right">
-                <p className="text-[11px] text-neutral-400 font-medium">In bag</p>
-                <p className="text-[18px] font-semibold text-neutral-900 tracking-tight">₹{originalPrice * qty}</p>
+                <p className="text-[11px] text-emerald-800/45 font-medium">In cart</p>
+                <p className="text-[18px] font-extrabold text-emerald-950 tracking-tight">₹{displayPrice * qty}</p>
               </div>
             </div>
           )}
@@ -533,72 +657,91 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
   const qty = cartItem?.quantity || 0;
   const isUnavailable = product.isAvailableNow === false;
   const etaShort = formatEtaShort(deliveryEta);
+  const showProtein = product.protein > 0 && product.pfCategory !== 'pf-beverages';
 
   return (
     <article
       onClick={() => onOpen(product)}
-      className="group cursor-pointer flex-shrink-0 w-[min(72vw,260px)] sm:w-full"
-      style={{ scrollSnapAlign: 'start' }}
+      className="group cursor-pointer w-full max-w-2xl mx-auto"
     >
-      <div className="relative overflow-hidden rounded-2xl bg-neutral-100" style={{ aspectRatio: '1 / 1' }}>
-        {!imageError && product.image ? (
-          <Image
-            src={product.image}
-            alt={product.name}
-            fill
-            className={`object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
-            onError={() => setImageError(true)}
-            sizes="(max-width: 640px) 72vw, 240px"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-neutral-200">
-            <Utensils size={28} className="text-neutral-400" strokeWidth={1.25} />
-          </div>
-        )}
+      {/* Image — same proportions as bowls (2:1) */}
+      <div className="relative">
+        <div
+          className="relative w-full overflow-hidden rounded-[18px] bg-emerald-50/80"
+          style={{ aspectRatio: '2 / 1' }}
+        >
+          {!imageError && product.image ? (
+            <Image
+              src={product.image}
+              alt={product.name}
+              fill
+              className={`object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
+              onError={() => setImageError(true)}
+              sizes="(max-width: 768px) 100vw, 640px"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100">
+              <Utensils size={28} className="text-emerald-300" strokeWidth={1.25} />
+            </div>
+          )}
 
-        {/* soft bottom fade */}
-        <div className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
-          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.28), transparent)' }} />
+          {isUnavailable && (
+            <div className="absolute inset-0 bg-white/55 flex items-center justify-center">
+              <span className="text-[11px] font-semibold text-emerald-900/50 bg-white/95 px-3 py-1.5 rounded-full">
+                From {product.availableFrom}
+              </span>
+            </div>
+          )}
 
-        {/* ETA chip */}
-        {!isUnavailable && (
-          <div
-            className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold tracking-wide text-neutral-800"
-            style={{ background: 'rgba(255,255,255,0.94)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
-          >
-            <Clock size={10} strokeWidth={2.25} className="text-neutral-500" />
-            {etaShort}
-          </div>
-        )}
+          {/* Delivery time — highlighted */}
+          {!isUnavailable && (
+            <div className="absolute top-2.5 left-2.5">
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide"
+                style={{
+                  background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                  color: '#92400e',
+                  boxShadow: '0 2px 8px rgba(245, 158, 11, 0.28)',
+                }}
+              >
+                <Clock size={10} strokeWidth={2.5} />
+                {etaShort}
+              </span>
+            </div>
+          )}
 
-        {/* veg */}
-        <div className="absolute bottom-2.5 left-2.5">
-          <div className={`w-[15px] h-[15px] rounded-[3px] flex items-center justify-center border-[1.5px] bg-white shadow-sm ${product.isVeg ? 'border-emerald-600' : 'border-red-500'}`}>
-            <div className={`w-[6px] h-[6px] rounded-full ${product.isVeg ? 'bg-emerald-600' : 'bg-red-500'}`} />
+          {/* veg */}
+          <div className="absolute bottom-2.5 left-2.5">
+            <div className={`w-[16px] h-[16px] rounded-[4px] flex items-center justify-center border-2 bg-white shadow-sm ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+              <div className={`w-[7px] h-[7px] rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+            </div>
           </div>
         </div>
 
-        {/* add control */}
+        {/* Add control */}
         {!isUnavailable && (
-          <div className="absolute bottom-2.5 right-2.5" onClick={e => e.stopPropagation()}>
+          <div className="absolute right-2.5 -bottom-3.5" onClick={e => e.stopPropagation()}>
             {qty === 0 ? (
               <button
                 onClick={() => addItem(product)}
-                className="h-8 px-3 rounded-full text-[11px] font-semibold text-neutral-900 bg-white border border-neutral-200/80 active:scale-95 transition-transform"
-                style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}
+                className="h-8 px-3.5 rounded-lg text-[12px] font-bold text-emerald-700 bg-white border border-emerald-200 active:scale-95 transition-transform"
+                style={{ boxShadow: '0 2px 10px rgba(16, 185, 129, 0.15)' }}
               >
                 Add
               </button>
             ) : (
               <div
-                className="h-8 px-2.5 flex items-center gap-2.5 rounded-full bg-neutral-900 text-white"
-                style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.18)' }}
+                className="h-8 px-3 flex items-center gap-2.5 rounded-lg text-white"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.28)',
+                }}
               >
-                <button onClick={() => updateQty(product._id, qty - 1)} className="p-0.5 active:scale-90">
+                <button onClick={() => updateQty(product._id, qty - 1)} className="active:scale-90">
                   <Minus size={12} strokeWidth={2.75} />
                 </button>
-                <span className="text-[12px] font-semibold min-w-[12px] text-center tabular-nums">{qty}</span>
-                <button onClick={() => updateQty(product._id, qty + 1)} className="p-0.5 active:scale-90">
+                <span className="text-[12px] font-bold min-w-[12px] text-center tabular-nums">{qty}</span>
+                <button onClick={() => updateQty(product._id, qty + 1)} className="active:scale-90">
                   <Plus size={12} strokeWidth={2.75} />
                 </button>
               </div>
@@ -607,14 +750,33 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
         )}
       </div>
 
-      <div className="pt-2.5 px-0.5">
-        <h3 className="text-[14px] font-semibold text-neutral-900 tracking-tight leading-snug line-clamp-1">
+      <div className="pt-4 px-0.5">
+        {/* Protein highlight */}
+        {showProtein && (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide mb-1 px-2 py-0.5 rounded-md"
+            style={{
+              background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)',
+              color: '#047857',
+              border: '1px solid #6ee7b7',
+            }}
+          >
+            <Zap size={9} strokeWidth={2.5} fill="currentColor" />
+            {product.protein}g protein
+          </span>
+        )}
+        <h3 className="text-[15px] font-semibold text-emerald-950 tracking-tight leading-snug line-clamp-1">
           {product.name}
         </h3>
-        <div className="flex items-baseline justify-between gap-2 mt-0.5">
-          <span className="text-[13px] font-semibold text-neutral-800">₹{product.price}</span>
+        {product.description && (
+          <p className="text-[12px] text-emerald-900/40 leading-snug mt-0.5 line-clamp-1">
+            {product.description}
+          </p>
+        )}
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[14px] font-bold text-emerald-950">₹{product.price}</span>
           {isUnavailable && (
-            <span className="text-[11px] text-neutral-400 font-medium">Unavailable</span>
+            <span className="text-[11px] text-emerald-800/35 font-medium">Unavailable</span>
           )}
         </div>
       </div>
@@ -629,31 +791,46 @@ function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
   const etaShort = formatEtaShort(deliveryEta);
 
   return (
-    <section ref={sectionRef} className="mb-10">
-      {/* Header — minimal, editorial */}
-      <div className="flex items-end justify-between gap-4 mb-4">
+    <section
+      ref={sectionRef}
+      className="mb-10 relative overflow-hidden rounded-[22px] px-4 sm:px-5 py-5"
+      style={{
+        background: 'linear-gradient(165deg, #ecfdf5 0%, #f0fdf4 40%, #f7fef9 100%)',
+        border: '1px solid rgba(167, 243, 208, 0.55)',
+        boxShadow: '0 4px 24px rgba(16, 185, 129, 0.06)',
+      }}
+    >
+      {/* soft atmosphere */}
+      <div
+        className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full opacity-40"
+        style={{ background: 'radial-gradient(circle, #a7f3d0 0%, transparent 70%)' }}
+      />
+
+      {/* Header */}
+      <div className="relative flex items-end justify-between gap-3 mb-4">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400 mb-1.5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600/70 mb-1">
             Fast delivery
           </p>
-          <h2 className="text-[22px] sm:text-[24px] font-semibold text-neutral-900 tracking-tight leading-none">
+          <h2 className="text-[20px] sm:text-[22px] font-extrabold text-emerald-950 tracking-tight leading-none">
             Food in minutes
           </h2>
         </div>
-        <div className="flex items-center gap-1.5 pb-0.5 text-neutral-500">
-          <Clock size={13} strokeWidth={2} className="text-neutral-400" />
-          <span className="text-[12px] font-medium tabular-nums">{etaShort}</span>
+        {/* Delivery time — highlighted pill */}
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full flex-shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.2)',
+          }}
+        >
+          <Clock size={12} strokeWidth={2.5} className="text-amber-700" />
+          <span className="text-[11px] font-bold text-amber-900 tabular-nums">{etaShort}</span>
         </div>
       </div>
 
-      {/* Subtle divider accent */}
-      <div className="h-px mb-5" style={{ background: 'linear-gradient(90deg, #d4d4d4 0%, #e5e5e5 40%, transparent 100%)' }} />
-
-      {/* Cards strip */}
-      <div
-        className="flex gap-3.5 overflow-x-auto sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible pb-1 -mx-1 px-1"
-        style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
-      >
+      {/* Cards — vertical stack, same width feel as bowls */}
+      <div className="relative flex flex-col gap-6 sm:gap-7 max-w-2xl mx-auto">
         {items.map(product => (
           <FoodInMinutesCard
             key={product._id}
