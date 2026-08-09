@@ -8,14 +8,16 @@ dns.setServers(['8.8.8.8', '1.1.1.1']);
 dotenv.config({ path: new URL('../.env', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1') });
 
 // Desired meal order for the rice-bowl lineup:
-// 0 Nutty Beast → 2 Paneer Tikka → 3 Do Pyaza → 4 Matar → 5 Kadai → 6 Lababdar → rest
+// 0 Nutty Beast → 1 Paneer Power → 2 Nutty Yogurt → 3 Paneer Tikka → 4 Do Pyaza → 5 Matar → 6 Kadai → 7 Lababdar → rest
 const FIXED_ORDER = {
   'Nutty Beast Protein Bowl': 0,
-  'Paneer Tikka Rice Bowl': 2,
-  'Paneer Do Pyaza Rice Bowl': 3,
-  'Matar Paneer Rice Bowl': 4,
-  'Kadai Paneer Rice Bowl': 5,
-  'Paneer Lababdar Rice Bowl': 6,
+  'Paneer Power Bowl': 1,
+  'Nutty Yogurt Bowl': 2,
+  'Paneer Tikka Rice Bowl': 3,
+  'Paneer Do Pyaza Rice Bowl': 4,
+  'Matar Paneer Rice Bowl': 5,
+  'Kadai Paneer Rice Bowl': 6,
+  'Paneer Lababdar Rice Bowl': 7,
 };
 
 const riceBowls = [
@@ -40,7 +42,7 @@ const riceBowls = [
     tags: ['paneer', 'do pyaza', 'north indian', 'rice bowl', 'protein', 'veg'],
     availableFrom: '',
     availableTo: '',
-    sortOrder: 2,
+    sortOrder: 4,
   },
   {
     name: 'Matar Paneer Rice Bowl',
@@ -63,7 +65,7 @@ const riceBowls = [
     tags: ['paneer', 'matar', 'rice bowl', 'comfort food', 'protein', 'veg'],
     availableFrom: '',
     availableTo: '',
-    sortOrder: 3,
+    sortOrder: 5,
   },
   {
     name: 'Kadai Paneer Rice Bowl',
@@ -86,7 +88,7 @@ const riceBowls = [
     tags: ['paneer', 'kadai', 'north indian', 'rice bowl', 'protein', 'veg'],
     availableFrom: '',
     availableTo: '',
-    sortOrder: 4,
+    sortOrder: 6,
   },
 ];
 
@@ -122,13 +124,13 @@ async function seed() {
       }
     }
 
-    // Re-pack remaining pf-meals after the fixed lineup (starting at 6)
+    // Re-pack remaining pf-meals after the fixed lineup (starting at 8)
     const remaining = await Bowl.find({
       pfCategory: 'pf-meals',
       name: { $nin: Object.keys(FIXED_ORDER) },
     }).sort({ sortOrder: 1, createdAt: 1 });
 
-    let next = 7;
+    let next = 8;
     for (const bowl of remaining) {
       if (bowl.sortOrder !== next) {
         await Bowl.updateOne({ _id: bowl._id }, { $set: { sortOrder: next } });

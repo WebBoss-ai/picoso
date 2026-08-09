@@ -6,7 +6,6 @@ import {
   ArrowRight, ChevronRight,
   LayoutGrid, List, Heart, Loader2, CheckCircle2,
   Utensils, BookOpen, ChevronUp, Plus, Minus,
-  Flame, Zap, Wheat, Droplets, Info, Crown,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
@@ -379,10 +378,10 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
   const isBev = product.pfCategory === 'pf-beverages';
 
   const macros = !isBev ? [
-    { label: 'Cal',     value: product.calories, unit: 'kcal', icon: Flame,    accent: '#c2410c', soft: '#fff7ed' },
-    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      accent: FIM.violet, soft: '#f5f3ff', spotlight: true }, // purple only for protein
-    { label: 'Carbs',   value: product.carbs,    unit: 'g',    icon: Wheat,    accent: '#a16207', soft: '#fffbeb' },
-    { label: 'Fats',    value: product.fats,     unit: 'g',    icon: Droplets, accent: '#2563eb', soft: '#eff6ff' },
+    { label: 'Cal', value: product.calories, unit: 'kcal', protein: false },
+    { label: 'Protein', value: product.protein, unit: 'g', protein: true },
+    { label: 'Carbs', value: product.carbs, unit: 'g', protein: false },
+    { label: 'Fats', value: product.fats, unit: 'g', protein: false },
   ].filter(m => m.value > 0) : [];
 
   useEffect(() => {
@@ -399,16 +398,17 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: 'rgba(28, 25, 23, 0.45)', backdropFilter: 'blur(16px)' }}
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-6"
+      style={{ background: 'rgba(15, 15, 15, 0.4)', backdropFilter: 'blur(8px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-[440px] bg-white rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden max-h-[94vh] flex flex-col"
-        style={{ animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)' }}
+        className="w-full sm:max-w-[380px] bg-white rounded-t-3xl sm:rounded-3xl overflow-hidden max-h-[88vh] flex flex-col"
+        style={{ animation: 'fimModalIn 0.32s cubic-bezier(0.22,1,0.36,1)' }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="relative w-full flex-shrink-0 bg-stone-100" style={{ aspectRatio: '1 / 1' }}>
+        {/* Image — compact 4:3 */}
+        <div className="relative w-full flex-shrink-0 bg-stone-50" style={{ aspectRatio: '4 / 3' }}>
           {!imageError && product.image ? (
             <Image
               src={product.image}
@@ -416,188 +416,145 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
               fill
               className="object-cover"
               onError={() => setImageError(true)}
-              sizes="(max-width: 640px) 100vw, 440px"
+              sizes="(max-width: 640px) 100vw, 380px"
               priority
             />
           ) : (
-            <div className="w-full h-full bg-stone-100 flex items-center justify-center">
-              <Utensils size={40} className="text-stone-300" strokeWidth={1.25} />
+            <div className="w-full h-full flex items-center justify-center">
+              <Utensils size={32} className="text-stone-300" strokeWidth={1.25} />
             </div>
           )}
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(28,25,23,0.5) 0%, transparent 48%)' }} />
 
           <button
             onClick={onClose}
-            className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform bg-white"
+            className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center bg-white/95 active:scale-95"
             aria-label="Close"
           >
-            <X size={16} className="text-stone-800" strokeWidth={2} />
+            <X size={15} className="text-stone-700" strokeWidth={2} />
           </button>
 
-          <div className="absolute top-3.5 left-3.5 flex flex-col gap-1.5">
+          {/* Time — green, minimal */}
+          <div className="absolute top-3 left-3">
             <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold"
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-[11px] font-medium"
               style={{ background: FIM.greenSoft, color: FIM.green }}
             >
-              <Clock size={12} strokeWidth={2.5} />
+              <Clock size={11} strokeWidth={2.25} />
               {etaShort}
-            </span>
-            {product.isBestseller && (
-              <span className="inline-flex items-center gap-1 w-fit bg-white text-stone-800 text-[10px] font-bold px-2 py-1 rounded-full">
-                <Star size={9} fill="currentColor" className="text-amber-500" /> Bestseller
-              </span>
-            )}
-            {product.isChefSpecial && (
-              <span className="inline-flex items-center gap-1 w-fit bg-white text-stone-700 text-[10px] font-bold px-2 py-1 rounded-full">
-                <ChefHat size={9} /> Chef&apos;s Pick
-              </span>
-            )}
-          </div>
-
-          <div className="absolute bottom-4 left-5 flex items-center gap-2">
-            <div className={`w-[18px] h-[18px] rounded-[4px] flex items-center justify-center border-2 bg-white ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
-              <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
-            </div>
-            <span className="text-white text-xs font-semibold">
-              {product.isVeg ? 'Pure Veg' : 'Non-Veg'}
             </span>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 pt-5 pb-3">
-          <div className="flex items-start justify-between gap-3 mb-1.5">
-            <h2 className="text-[21px] font-semibold text-stone-900 tracking-tight leading-tight flex-1">
-              {product.name}
-            </h2>
-            <div className="text-right flex-shrink-0">
-              <p className="text-[21px] font-semibold text-stone-900 tracking-tight leading-none">₹{displayPrice}</p>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
+          {/* Title row */}
+          <div className="flex items-start gap-3 mb-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <div className={`w-3.5 h-3.5 rounded-[3px] flex items-center justify-center border-[1.5px] flex-shrink-0 ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
+                </div>
+                {product.protein > 0 && !isBev && (
+                  <span className="text-[11px] font-medium" style={{ color: FIM.violet }}>
+                    {product.protein}g protein
+                  </span>
+                )}
+              </div>
+              <h2 className="text-[18px] font-semibold text-stone-900 tracking-tight leading-snug">
+                {product.name}
+              </h2>
+            </div>
+            <div className="text-right flex-shrink-0 pt-0.5">
+              <p className="text-[18px] font-semibold text-stone-900 tabular-nums">₹{displayPrice}</p>
               {isPlatinum && originalPrice !== displayPrice && (
-                <p className="text-xs text-stone-400 line-through mt-0.5">₹{originalPrice}</p>
+                <p className="text-[11px] text-stone-400 line-through tabular-nums">₹{originalPrice}</p>
               )}
-            </div>
-          </div>
-
-          {!isPlatinum && (
-            <div className="flex items-center gap-1.5 mb-3">
-              <Crown size={11} className="text-amber-500" />
-              <span className="text-xs font-medium text-amber-600">
-                ₹{platinumPrice} with Platinum — save ₹{originalPrice - platinumPrice}
-              </span>
-            </div>
-          )}
-
-          <div
-            className="flex items-center gap-3 mb-4 px-3.5 py-3 rounded-2xl"
-            style={{ background: FIM.greenSoft }}
-          >
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-white">
-              <Clock size={16} style={{ color: FIM.green }} strokeWidth={2.25} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: FIM.green }}>
-                Delivery
-              </p>
-              <p className="text-[15px] font-semibold text-stone-900 leading-tight">{deliveryEta}</p>
             </div>
           </div>
 
           {product.description && (
-            <p className="text-[14px] text-stone-500 leading-relaxed mb-4">
+            <p className="text-[13px] text-stone-500 leading-relaxed mb-4">
               {product.description}
             </p>
           )}
 
+          {/* Macros — uniform, monochrome grid */}
           {macros.length > 0 && (
-            <div className="mb-4">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-2.5">
-                Nutrition per serving
-              </p>
-              <div className="grid grid-cols-4 gap-2">
-                {macros.map(m => (
-                  <div key={m.label} className="rounded-2xl p-2.5 text-center" style={{ background: m.soft }}>
-                    <m.icon size={14} style={{ color: m.accent }} className="mx-auto mb-1" />
-                    <p className="text-sm font-bold" style={{ color: m.accent }}>{m.value}</p>
-                    <p className="text-[9px] text-stone-400 font-medium leading-tight">{m.unit}</p>
-                    <p
-                      className="text-[9px] leading-tight font-semibold"
-                      style={{ color: m.spotlight ? FIM.violet : '#a8a29e' }}
-                    >
-                      {m.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <div className="grid grid-cols-4 gap-px mb-4 bg-stone-100 rounded-xl overflow-hidden">
+              {macros.map(m => (
+                <div key={m.label} className="bg-white py-2.5 px-1 text-center">
+                  <p
+                    className="text-[13px] font-semibold tabular-nums leading-none"
+                    style={{ color: m.protein ? FIM.violet : '#1c1917' }}
+                  >
+                    {m.value}
+                    <span className="text-[9px] font-medium text-stone-400 ml-0.5">{m.unit}</span>
+                  </p>
+                  <p className="text-[9px] text-stone-400 mt-1 font-medium tracking-wide uppercase">
+                    {m.label}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Meta details — quiet stack */}
+          {(product.fiber > 0 || product.howItsMade || product.ingredients?.length > 0) && (
+            <div className="space-y-3 mb-1">
               {product.fiber > 0 && (
-                <p className="text-xs text-stone-400 mt-2.5 flex items-center gap-1">
-                  <Leaf size={11} className="text-stone-400" /> {product.fiber}g fiber
+                <p className="text-[12px] text-stone-500">
+                  Fiber <span className="text-stone-800 font-medium">{product.fiber}g</span>
                 </p>
               )}
-            </div>
-          )}
-
-          {product.howItsMade && (
-            <div className="mb-4 p-3.5 rounded-2xl bg-stone-50">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-1.5 flex items-center gap-1.5">
-                <ChefHat size={12} className="text-stone-500" /> How it&apos;s made
-              </p>
-              <p className="text-[13px] text-stone-600 leading-relaxed">{product.howItsMade}</p>
-            </div>
-          )}
-
-          {product.ingredients?.length > 0 && (
-            <div className="mb-3">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-2 flex items-center gap-1.5">
-                <Info size={11} /> Ingredients
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {product.ingredients.map((ing, i) => (
-                  <span key={i} className="text-xs text-stone-600 font-medium px-2.5 py-1 rounded-full bg-stone-100">
-                    {ing}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {Array.isArray(product.tags) && product.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-1">
-              {product.tags.map((tag, i) => (
-                <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-full text-stone-500 bg-stone-100">
-                  #{tag}
-                </span>
-              ))}
+              {product.howItsMade && (
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400 mb-1">
+                    How it&apos;s made
+                  </p>
+                  <p className="text-[12px] text-stone-600 leading-relaxed">{product.howItsMade}</p>
+                </div>
+              )}
+              {product.ingredients?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400 mb-1.5">
+                    Ingredients
+                  </p>
+                  <p className="text-[12px] text-stone-600 leading-relaxed">
+                    {product.ingredients.join(' · ')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <div className="px-5 py-4 flex-shrink-0 bg-white" style={{ borderTop: '1px solid #f5f5f4' }}>
+        {/* Footer */}
+        <div className="px-5 py-3.5 flex-shrink-0 bg-white">
           {isUnavailable ? (
-            <div className="flex items-center justify-center gap-2 py-3.5 text-stone-400 text-sm font-medium">
-              <Clock size={14} /> Available from {product.availableFrom}
-            </div>
+            <p className="text-center text-[13px] text-stone-400 font-medium py-2.5">
+              Available from {product.availableFrom}
+            </p>
           ) : qty === 0 ? (
             <button
               onClick={() => addItem(product)}
-              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-stone-900"
+              className="w-full h-12 rounded-xl text-white text-[13px] font-semibold tracking-wide active:scale-[0.98] transition-transform bg-stone-900"
             >
-              <Plus size={16} strokeWidth={2.75} />
               Add to cart · ₹{displayPrice}
             </button>
           ) : (
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-4 px-4 py-3 rounded-2xl bg-stone-900">
+            <div className="flex items-center h-12 gap-3">
+              <div className="flex items-center gap-4 h-full px-4 rounded-xl bg-stone-900">
                 <button onClick={() => updateQty(product._id, qty - 1)} className="text-white active:scale-90 p-0.5">
-                  <Minus size={16} strokeWidth={2.5} />
+                  <Minus size={15} strokeWidth={2.5} />
                 </button>
-                <span className="text-white font-semibold text-[15px] min-w-[18px] text-center tabular-nums">{qty}</span>
+                <span className="text-white font-semibold text-[14px] min-w-[16px] text-center tabular-nums">{qty}</span>
                 <button onClick={() => updateQty(product._id, qty + 1)} className="text-white active:scale-90 p-0.5">
-                  <Plus size={16} strokeWidth={2.5} />
+                  <Plus size={15} strokeWidth={2.5} />
                 </button>
               </div>
-              <div className="flex-1 text-right">
-                <p className="text-[11px] text-stone-400 font-medium">In cart</p>
-                <p className="text-[18px] font-semibold text-stone-900 tracking-tight">₹{displayPrice * qty}</p>
-              </div>
+              <p className="flex-1 text-right text-[15px] font-semibold text-stone-900 tabular-nums">
+                ₹{displayPrice * qty}
+              </p>
             </div>
           )}
         </div>
@@ -605,13 +562,13 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
       <style>{`
         @keyframes fimModalIn {
-          from { opacity: 0; transform: translateY(28px); }
+          from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
         }
         @media (min-width: 640px) {
           @keyframes fimModalIn {
-            from { opacity: 0; transform: scale(0.97) translateY(10px); }
-            to   { opacity: 1; transform: scale(1) translateY(0); }
+            from { opacity: 0; transform: scale(0.98); }
+            to   { opacity: 1; transform: scale(1); }
           }
         }
       `}</style>
