@@ -5,7 +5,7 @@ import {
   Search, X, Leaf, Star, ChefHat, Clock,
   ArrowRight, ChevronRight,
   LayoutGrid, List, Heart, Loader2, CheckCircle2,
-  Utensils, BookOpen, ChevronUp, Zap,
+  Utensils, BookOpen, ChevronUp, Plus, Minus,
 } from 'lucide-react';
 import { bowls, categories, healthySubscription, friendReferral } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
@@ -16,6 +16,7 @@ import { useCart } from '@/context/CartContext';
 const STORE_LAT = 28.437099;
 const STORE_LNG = 77.072771;
 const FOOD_IN_MINUTES_ID = 'food-in-minutes';
+const DEFAULT_ETA_MID = 14; // → "12 to 16 minutes"
 const DEFAULT_DELIVERY_ETA = '12 to 16 minutes';
 const PIN_CACHE_KEY = 'picoso_pin';
 
@@ -29,13 +30,19 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** 5 min prep + 3 × km, ceil, then ±2 range label */
+/**
+ * 5 min prep + 3 × km, ceil, then ±2 range.
+ * Floor mid-point at 14 min so closest / unknown pin always shows 12–16 minutes.
+ */
 function deliveryEtaFromDistanceKm(distanceKm) {
   if (distanceKm == null || Number.isNaN(distanceKm)) return DEFAULT_DELIVERY_ETA;
-  const minutes = Math.ceil(5 + 3 * distanceKm);
-  const low = Math.max(1, minutes - 2);
-  const high = minutes + 2;
-  return `${low} to ${high} minutes`;
+  const minutes = Math.max(DEFAULT_ETA_MID, Math.ceil(5 + 3 * distanceKm));
+  return `${minutes - 2} to ${minutes + 2} minutes`;
+}
+
+function formatEtaShort(label) {
+  // "12 to 16 minutes" → "12–16 min"
+  return label.replace(' minutes', ' min').replace(' to ', '–');
 }
 
 /* ── Promo banners (commented out — replaced by referral billboard) ───────────
@@ -348,108 +355,322 @@ function ExploreMenuHeader({ itemCount, catCount }) {
   );
 }
 
-// ── Food in minutes — attention-first express section ────────────────────────
-function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
-  if (!items?.length) return null;
+// ── Food in minutes — refined express section ────────────────────────────────
+function FoodInMinutesModal({ product, deliveryEta, onClose }) {
+  const { items, addItem, updateQty } = useCart();
+  const [imageError, setImageError] = useState(false);
+  const cartItem = items.find(i => i._id === product._id);
+  const qty = cartItem?.quantity || 0;
+  const isUnavailable = product.isAvailableNow === false;
+  const originalPrice = product.price;
+  const etaShort = formatEtaShort(deliveryEta);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   return (
-    <section
-      ref={sectionRef}
-      className="relative mb-10 overflow-hidden rounded-[28px]"
-      style={{
-        background: 'linear-gradient(135deg, #052e16 0%, #14532d 42%, #166534 72%, #3f6212 100%)',
-        boxShadow: '0 18px 48px rgba(20, 83, 45, 0.28), 0 2px 0 rgba(255,255,255,0.08) inset',
-      }}
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
+      style={{ background: 'rgba(15,15,15,0.48)', backdropFilter: 'blur(12px)' }}
+      onClick={onClose}
     >
-      {/* atmosphere */}
-      <div className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(90% 70% at 12% 0%, rgba(163,230,53,0.28) 0%, transparent 55%),' +
-            'radial-gradient(70% 60% at 100% 100%, rgba(250,204,21,0.14) 0%, transparent 50%)',
-        }}
-      />
       <div
-        className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 w-48 h-48 rounded-full opacity-20"
-        style={{
-          background: 'conic-gradient(from 180deg, transparent, #a3e635, transparent)',
-          animation: 'fimSpin 14s linear infinite',
-        }}
-      />
+        className="w-full sm:max-w-[420px] bg-[#fafaf9] rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden shadow-2xl max-h-[92vh] flex flex-col"
+        style={{ animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Image */}
+        <div className="relative w-full flex-shrink-0 bg-neutral-100" style={{ aspectRatio: '5/4' }}>
+          {!imageError && product.image ? (
+            <Image
+              src={product.image}
+              alt={product.name}
+              fill
+              className="object-cover"
+              onError={() => setImageError(true)}
+              sizes="(max-width: 640px) 100vw, 420px"
+              priority
+            />
+          ) : (
+            <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
+              <Utensils size={40} className="text-neutral-400" strokeWidth={1.25} />
+            </div>
+          )}
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(15,15,15,0.55) 0%, transparent 45%)' }} />
 
-      <div className="relative px-4 sm:px-6 pt-5 pb-5">
-        {/* header */}
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <div className="inline-flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-full bg-lime-300/15 border border-lime-300/30">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-lime-300 opacity-70" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-lime-300" />
-              </span>
-              <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-lime-200">
-                Express lane
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95"
+            style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 12px rgba(0,0,0,0.12)' }}
+            aria-label="Close"
+          >
+            <X size={16} className="text-neutral-800" strokeWidth={2} />
+          </button>
+
+          <div className="absolute bottom-4 left-5 right-5 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70 mb-1">
+                Food in minutes
+              </p>
+              <h2 className="text-[22px] font-semibold text-white tracking-tight leading-tight line-clamp-2">
+                {product.name}
+              </h2>
+            </div>
+            <div
+              className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-white text-[11px] font-medium"
+              style={{ background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)' }}
+            >
+              <Clock size={12} strokeWidth={2} />
+              {etaShort}
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 pt-5 pb-2">
+          <div className="flex items-start justify-between gap-4 mb-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-[15px] h-[15px] rounded-[3px] flex items-center justify-center border-[1.5px] bg-white ${product.isVeg ? 'border-emerald-600' : 'border-red-500'}`}>
+                <div className={`w-[6px] h-[6px] rounded-full ${product.isVeg ? 'bg-emerald-600' : 'bg-red-500'}`} />
+              </div>
+              <span className="text-[12px] text-neutral-500 font-medium">
+                {product.isVeg ? 'Vegetarian' : 'Non-vegetarian'}
               </span>
             </div>
-            <h2 className="text-[26px] sm:text-[30px] font-black tracking-tight text-white leading-none">
-              Food in minutes
-            </h2>
-            <p className="mt-2 text-[13px] text-emerald-100/80 font-medium leading-snug max-w-md">
-              Prepared in 5 min · delivered at kitchen speed · estimated to your pin
-            </p>
+            <div className="text-right">
+              <p className="text-[22px] font-semibold text-neutral-900 tracking-tight leading-none">₹{originalPrice}</p>
+            </div>
           </div>
 
-          <div
-            className="flex-shrink-0 flex flex-col items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl border border-lime-300/30"
-            style={{ background: 'linear-gradient(160deg, rgba(190,242,100,0.22), rgba(255,255,255,0.06))' }}
-          >
-            <Zap size={18} className="text-lime-300 mb-0.5" fill="currentColor" />
-            <span className="text-[9px] font-bold uppercase tracking-wider text-lime-200/90">ETA</span>
-            <span className="text-[11px] font-black text-white leading-tight text-center px-1">
-              {deliveryEta.replace(' minutes', '').replace(' to ', '–')}
-            </span>
-          </div>
+          {product.description && (
+            <p className="text-[14px] text-neutral-500 leading-relaxed mb-5">
+              {product.description}
+            </p>
+          )}
+
+          {(product.protein > 0 || product.calories > 0) && product.pfCategory !== 'pf-beverages' && (
+            <div className="flex gap-2 mb-1">
+              {product.protein > 0 && (
+                <span className="text-[12px] text-neutral-600 bg-white border border-neutral-200/80 px-3 py-1.5 rounded-full font-medium">
+                  {product.protein}g protein
+                </span>
+              )}
+              {product.calories > 0 && (
+                <span className="text-[12px] text-neutral-600 bg-white border border-neutral-200/80 px-3 py-1.5 rounded-full font-medium">
+                  {product.calories} kcal
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* delivery strip */}
-        <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-2xl bg-black/20 border border-white/10 backdrop-blur-sm">
-          <div className="w-8 h-8 rounded-xl bg-lime-300/20 flex items-center justify-center flex-shrink-0">
-            <Clock size={15} className="text-lime-300" strokeWidth={2.5} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[13px] font-extrabold text-white leading-none">
-              {deliveryEta}
-            </p>
-            <p className="text-[11px] text-emerald-100/65 font-medium mt-0.5 truncate">
-              to your location · kitchen to door
-            </p>
-          </div>
-        </div>
-
-        {/* items — horizontal snap on mobile, grid on desktop */}
-        <div
-          className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0"
-          style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
-        >
-          {items.map((product) => (
-            <div
-              key={product._id}
-              className="flex-shrink-0 w-[72vw] max-w-[280px] sm:w-auto sm:max-w-none sm:flex-shrink"
-              style={{ scrollSnapAlign: 'start' }}
+        {/* Footer CTA */}
+        <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+          {isUnavailable ? (
+            <div className="flex items-center justify-center gap-2 py-3.5 text-neutral-400 text-sm font-medium">
+              <Clock size={14} /> Available from {product.availableFrom}
+            </div>
+          ) : qty === 0 ? (
+            <button
+              onClick={() => addItem(product)}
+              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-wide transition-all active:scale-[0.98]"
+              style={{ background: '#171717', boxShadow: '0 8px 24px rgba(23,23,23,0.18)' }}
             >
-              <div className="rounded-[22px] bg-white/95 backdrop-blur-sm p-2.5 shadow-lg shadow-black/10">
-                <ProductCard product={product} variant="list" deliveryEta={deliveryEta} />
+              Add to bag · ₹{originalPrice}
+            </button>
+          ) : (
+            <div className="flex items-center gap-4">
+              <div
+                className="flex items-center gap-4 px-4 py-3 rounded-2xl"
+                style={{ background: '#171717' }}
+              >
+                <button onClick={() => updateQty(product._id, qty - 1)} className="text-white active:scale-90 transition-transform p-0.5">
+                  <Minus size={16} strokeWidth={2.5} />
+                </button>
+                <span className="text-white font-semibold text-[15px] min-w-[18px] text-center tabular-nums">{qty}</span>
+                <button onClick={() => updateQty(product._id, qty + 1)} className="text-white active:scale-90 transition-transform p-0.5">
+                  <Plus size={16} strokeWidth={2.5} />
+                </button>
+              </div>
+              <div className="flex-1 text-right">
+                <p className="text-[11px] text-neutral-400 font-medium">In bag</p>
+                <p className="text-[18px] font-semibold text-neutral-900 tracking-tight">₹{originalPrice * qty}</p>
               </div>
             </div>
-          ))}
+          )}
         </div>
       </div>
 
       <style>{`
-        @keyframes fimSpin {
-          from { transform: translateY(-50%) rotate(0deg); }
-          to   { transform: translateY(-50%) rotate(360deg); }
+        @keyframes fimModalIn {
+          from { opacity: 0; transform: translateY(28px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @media (min-width: 640px) {
+          @keyframes fimModalIn {
+            from { opacity: 0; transform: scale(0.97) translateY(10px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+          }
         }
       `}</style>
+    </div>
+  );
+}
+
+function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
+  const { items, addItem, updateQty } = useCart();
+  const [imageError, setImageError] = useState(false);
+  const cartItem = items.find(i => i._id === product._id);
+  const qty = cartItem?.quantity || 0;
+  const isUnavailable = product.isAvailableNow === false;
+  const etaShort = formatEtaShort(deliveryEta);
+
+  return (
+    <article
+      onClick={() => onOpen(product)}
+      className="group cursor-pointer flex-shrink-0 w-[min(72vw,260px)] sm:w-full"
+      style={{ scrollSnapAlign: 'start' }}
+    >
+      <div className="relative overflow-hidden rounded-2xl bg-neutral-100" style={{ aspectRatio: '1 / 1' }}>
+        {!imageError && product.image ? (
+          <Image
+            src={product.image}
+            alt={product.name}
+            fill
+            className={`object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
+            onError={() => setImageError(true)}
+            sizes="(max-width: 640px) 72vw, 240px"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-neutral-200">
+            <Utensils size={28} className="text-neutral-400" strokeWidth={1.25} />
+          </div>
+        )}
+
+        {/* soft bottom fade */}
+        <div className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
+          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.28), transparent)' }} />
+
+        {/* ETA chip */}
+        {!isUnavailable && (
+          <div
+            className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold tracking-wide text-neutral-800"
+            style={{ background: 'rgba(255,255,255,0.94)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+          >
+            <Clock size={10} strokeWidth={2.25} className="text-neutral-500" />
+            {etaShort}
+          </div>
+        )}
+
+        {/* veg */}
+        <div className="absolute bottom-2.5 left-2.5">
+          <div className={`w-[15px] h-[15px] rounded-[3px] flex items-center justify-center border-[1.5px] bg-white shadow-sm ${product.isVeg ? 'border-emerald-600' : 'border-red-500'}`}>
+            <div className={`w-[6px] h-[6px] rounded-full ${product.isVeg ? 'bg-emerald-600' : 'bg-red-500'}`} />
+          </div>
+        </div>
+
+        {/* add control */}
+        {!isUnavailable && (
+          <div className="absolute bottom-2.5 right-2.5" onClick={e => e.stopPropagation()}>
+            {qty === 0 ? (
+              <button
+                onClick={() => addItem(product)}
+                className="h-8 px-3 rounded-full text-[11px] font-semibold text-neutral-900 bg-white border border-neutral-200/80 active:scale-95 transition-transform"
+                style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}
+              >
+                Add
+              </button>
+            ) : (
+              <div
+                className="h-8 px-2.5 flex items-center gap-2.5 rounded-full bg-neutral-900 text-white"
+                style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.18)' }}
+              >
+                <button onClick={() => updateQty(product._id, qty - 1)} className="p-0.5 active:scale-90">
+                  <Minus size={12} strokeWidth={2.75} />
+                </button>
+                <span className="text-[12px] font-semibold min-w-[12px] text-center tabular-nums">{qty}</span>
+                <button onClick={() => updateQty(product._id, qty + 1)} className="p-0.5 active:scale-90">
+                  <Plus size={12} strokeWidth={2.75} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="pt-2.5 px-0.5">
+        <h3 className="text-[14px] font-semibold text-neutral-900 tracking-tight leading-snug line-clamp-1">
+          {product.name}
+        </h3>
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <span className="text-[13px] font-semibold text-neutral-800">₹{product.price}</span>
+          {isUnavailable && (
+            <span className="text-[11px] text-neutral-400 font-medium">Unavailable</span>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
+  const [activeProduct, setActiveProduct] = useState(null);
+  if (!items?.length) return null;
+
+  const etaShort = formatEtaShort(deliveryEta);
+
+  return (
+    <section ref={sectionRef} className="mb-10">
+      {/* Header — minimal, editorial */}
+      <div className="flex items-end justify-between gap-4 mb-4">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400 mb-1.5">
+            Fast delivery
+          </p>
+          <h2 className="text-[22px] sm:text-[24px] font-semibold text-neutral-900 tracking-tight leading-none">
+            Food in minutes
+          </h2>
+        </div>
+        <div className="flex items-center gap-1.5 pb-0.5 text-neutral-500">
+          <Clock size={13} strokeWidth={2} className="text-neutral-400" />
+          <span className="text-[12px] font-medium tabular-nums">{etaShort}</span>
+        </div>
+      </div>
+
+      {/* Subtle divider accent */}
+      <div className="h-px mb-5" style={{ background: 'linear-gradient(90deg, #d4d4d4 0%, #e5e5e5 40%, transparent 100%)' }} />
+
+      {/* Cards strip */}
+      <div
+        className="flex gap-3.5 overflow-x-auto sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible pb-1 -mx-1 px-1"
+        style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
+      >
+        {items.map(product => (
+          <FoodInMinutesCard
+            key={product._id}
+            product={product}
+            deliveryEta={deliveryEta}
+            onOpen={setActiveProduct}
+          />
+        ))}
+      </div>
+
+      {activeProduct && (
+        <FoodInMinutesModal
+          product={activeProduct}
+          deliveryEta={deliveryEta}
+          onClose={() => setActiveProduct(null)}
+        />
+      )}
     </section>
   );
 }
@@ -503,24 +724,19 @@ function CategoryMenuOverlay({ cats, categorizedItems, activeCategory, allSelect
         <div className="max-h-[58vh] overflow-y-auto py-1.5">
           {cats.map(cat => {
             const isActive = !allSelected && activeCategory === cat.id;
-            const isExpress = cat.id === FOOD_IN_MINUTES_ID;
             return (
               <button key={cat.id} onClick={() => onPick(cat.id)}
-                className="w-full flex items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-gray-50">
-                <span className={`w-2.5 flex-shrink-0 ${isActive ? (isExpress ? 'text-lime-600' : 'text-emerald-500') : 'text-transparent'}`}>
+                className="w-full flex items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-neutral-50">
+                <span className={`w-2.5 flex-shrink-0 ${isActive ? 'text-neutral-900' : 'text-transparent'}`}>
                   <ChevronRight size={13} strokeWidth={3} />
                 </span>
                 <span className={`flex-1 text-[15px] ${
-                  isActive
-                    ? (isExpress ? 'font-extrabold text-lime-700' : 'font-extrabold text-emerald-600')
-                    : isExpress ? 'font-bold text-lime-800' : 'font-semibold text-gray-800'
+                  isActive ? 'font-semibold text-neutral-900' : 'font-medium text-neutral-600'
                 }`}>
-                  {isExpress ? '⚡ ' : ''}{cat.label}
+                  {cat.label}
                 </span>
-                <span className={`text-[14px] tabular-nums ${
-                  isActive
-                    ? (isExpress ? 'font-extrabold text-lime-700' : 'font-extrabold text-emerald-600')
-                    : 'font-semibold text-gray-400'
+                <span className={`text-[13px] tabular-nums ${
+                  isActive ? 'font-semibold text-neutral-900' : 'font-medium text-neutral-400'
                 }`}>
                   {countFor(cat.id)}
                 </span>
@@ -642,11 +858,11 @@ export default function MenuPage() {
     [filtered]
   );
 
-  // Group by category
+  // Group by category — exclude items shown in Food in minutes
   const categorizedItems = useMemo(() => {
     return cats.map(cat => ({
       ...cat,
-      items: filtered.filter(p => p.pfCategory === cat.id),
+      items: filtered.filter(p => p.pfCategory === cat.id && !p.isFoodInMinutes),
     }));
   }, [cats, filtered]);
 

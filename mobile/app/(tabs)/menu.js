@@ -113,9 +113,10 @@ export default function MenuScreen() {
       return [{ title: label, count: filtered.length, data: rows, sampleImage: filtered[0]?.image }];
     }
 
-    // Group by category
+    // Group by category — exclude food-in-minutes items (shown once above)
     const groups = {};
     filtered.forEach((b) => {
+      if (b.isFoodInMinutes) return;
       const cat = (b.pfCategory || b.category || 'pf-meals').toLowerCase();
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(b);
@@ -138,7 +139,7 @@ export default function MenuScreen() {
       })
       .filter((s) => s.count > 0);
 
-    // Food in minutes at the top (before Bowls)
+    // Food in minutes at the top (before Bowls) — only once
     const express = filtered.filter((b) => b.isFoodInMinutes);
     if (express.length > 0) {
       const rows = [];
@@ -152,7 +153,7 @@ export default function MenuScreen() {
         data: rows,
         sampleImage: express[0]?.image,
         isFoodInMinutes: true,
-        deliveryEta: '12 to 16 minutes',
+        deliveryEta: '12–16 min',
       });
     }
 
@@ -186,7 +187,7 @@ export default function MenuScreen() {
     <View style={[styles.sectionHeader, section.isFoodInMinutes && styles.expressHeader]}>
       {section.isFoodInMinutes ? (
         <View style={styles.expressIcon}>
-          <Ionicons name="flash" size={18} color="#3f6212" />
+          <Ionicons name="time-outline" size={16} color="#525252" />
         </View>
       ) : section.sampleImage ? (
         <Image
@@ -201,7 +202,7 @@ export default function MenuScreen() {
         </Text>
         <Text style={[styles.sectionCount, section.isFoodInMinutes && styles.expressCount]}>
           {section.isFoodInMinutes
-            ? `${section.deliveryEta || '12 to 16 minutes'} · quick delivery`
+            ? section.deliveryEta || '12–16 min'
             : `${section.count} items`}
         </Text>
       </View>
@@ -214,7 +215,7 @@ export default function MenuScreen() {
         <View key={bowl._id} style={styles.gridItem}>
           <BowlCard
             bowl={bowl}
-            deliveryEta={section?.isFoodInMinutes ? (section.deliveryEta || '12 to 16 minutes') : null}
+            deliveryEta={section?.isFoodInMinutes ? (section.deliveryEta || '12–16 min') : null}
           />
         </View>
       ))}
@@ -574,28 +575,25 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   expressHeader: {
-    backgroundColor: '#ecfccb',
-    marginHorizontal: Spacing.sm,
-    marginTop: Spacing.md,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: '#bef264',
-    paddingTop: Spacing.md,
+    backgroundColor: Colors.surface,
+    paddingTop: Spacing.lg,
   },
   expressIcon: {
     width: 36,
     height: 36,
     borderRadius: Radius.full,
-    backgroundColor: '#d9f99d',
+    backgroundColor: '#f5f5f5',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ebebeb',
   },
   expressTitle: {
-    color: '#14532d',
+    color: Colors.textPrimary,
   },
   expressCount: {
-    color: '#3f6212',
-    fontWeight: '600',
+    color: Colors.textMuted,
+    fontWeight: '500',
   },
 
   listContent: {

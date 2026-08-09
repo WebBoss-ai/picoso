@@ -198,7 +198,7 @@ export default function BowlCard({ bowl, horizontal = false, featured = false, d
         />
         {deliveryEta ? (
           <View style={styles.etaBadge}>
-            <Ionicons name="time-outline" size={10} color="#14532d" />
+            <Ionicons name="time-outline" size={10} color="#737373" />
             <Text style={styles.etaText}>{deliveryEta}</Text>
           </View>
         ) : bowl.isBestseller ? (
@@ -334,21 +334,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: 8,
-    backgroundColor: '#ecfccb',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderRadius: Radius.full,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    borderWidth: 1,
-    borderColor: '#bef264',
     maxWidth: '90%',
+    ...Shadow.sm,
   },
   etaText: {
-    color: '#14532d',
+    color: '#262626',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.1,
   },
   bestsellerText: {
