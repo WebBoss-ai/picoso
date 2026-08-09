@@ -358,14 +358,11 @@ function ExploreMenuHeader({ itemCount, catCount }) {
   );
 }
 
-// ── Food in minutes — premium square carousel, purple accents ────────────────
+// ── Food in minutes — square carousel ───────────────────────────────────────
 const FIM = {
   violet: '#6d28d9',
-  violetSoft: '#f5f3ff',
-  violetMid: '#a78bfa',
-  violetDeep: '#4c1d95',
-  ink: '#1c1917',
-  muted: '#78716c',
+  green: '#059669',
+  greenSoft: '#d1fae5',
 };
 
 function FoodInMinutesModal({ product, deliveryEta, onClose }) {
@@ -383,7 +380,7 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
   const macros = !isBev ? [
     { label: 'Cal',     value: product.calories, unit: 'kcal', icon: Flame,    accent: '#c2410c', soft: '#fff7ed' },
-    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      accent: FIM.violet, soft: FIM.violetSoft, spotlight: true },
+    { label: 'Protein', value: product.protein,  unit: 'g',    icon: Zap,      accent: FIM.violet, soft: '#f5f3ff', spotlight: true }, // purple only for protein
     { label: 'Carbs',   value: product.carbs,    unit: 'g',    icon: Wheat,    accent: '#a16207', soft: '#fffbeb' },
     { label: 'Fats',    value: product.fats,     unit: 'g',    icon: Droplets, accent: '#2563eb', soft: '#eff6ff' },
   ].filter(m => m.value > 0) : [];
@@ -403,18 +400,14 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
   return (
     <div
       className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: 'rgba(24, 16, 40, 0.45)', backdropFilter: 'blur(16px)' }}
+      style={{ background: 'rgba(28, 25, 23, 0.45)', backdropFilter: 'blur(16px)' }}
       onClick={onClose}
     >
       <div
         className="w-full sm:max-w-[440px] bg-white rounded-t-[1.75rem] sm:rounded-[1.75rem] overflow-hidden max-h-[94vh] flex flex-col"
-        style={{
-          animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)',
-          boxShadow: '0 28px 80px rgba(76, 29, 149, 0.18)',
-        }}
+        style={{ animation: 'fimModalIn 0.38s cubic-bezier(0.22,1,0.36,1)' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Image */}
         <div className="relative w-full flex-shrink-0 bg-stone-100" style={{ aspectRatio: '1 / 1' }}>
           {!imageError && product.image ? (
             <Image
@@ -435,8 +428,7 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
           <button
             onClick={onClose}
-            className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform bg-white/95"
-            style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
+            className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform bg-white"
             aria-label="Close"
           >
             <X size={16} className="text-stone-800" strokeWidth={2} />
@@ -444,19 +436,19 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
           <div className="absolute top-3.5 left-3.5 flex flex-col gap-1.5">
             <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-semibold text-white"
-              style={{ background: FIM.violet, boxShadow: '0 4px 14px rgba(109, 40, 217, 0.35)' }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold"
+              style={{ background: FIM.greenSoft, color: FIM.green }}
             >
               <Clock size={12} strokeWidth={2.5} />
               {etaShort}
             </span>
             {product.isBestseller && (
-              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-stone-800 text-[10px] font-bold px-2 py-1 rounded-full">
+              <span className="inline-flex items-center gap-1 w-fit bg-white text-stone-800 text-[10px] font-bold px-2 py-1 rounded-full">
                 <Star size={9} fill="currentColor" className="text-amber-500" /> Bestseller
               </span>
             )}
             {product.isChefSpecial && (
-              <span className="inline-flex items-center gap-1 w-fit bg-white/95 text-stone-700 text-[10px] font-bold px-2 py-1 rounded-full">
+              <span className="inline-flex items-center gap-1 w-fit bg-white text-stone-700 text-[10px] font-bold px-2 py-1 rounded-full">
                 <ChefHat size={9} /> Chef&apos;s Pick
               </span>
             )}
@@ -466,13 +458,12 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
             <div className={`w-[18px] h-[18px] rounded-[4px] flex items-center justify-center border-2 bg-white ${product.isVeg ? 'border-green-600' : 'border-red-500'}`}>
               <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-green-600' : 'bg-red-500'}`} />
             </div>
-            <span className="text-white text-xs font-semibold drop-shadow">
+            <span className="text-white text-xs font-semibold">
               {product.isVeg ? 'Pure Veg' : 'Non-Veg'}
             </span>
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 pt-5 pb-3">
           <div className="flex items-start justify-between gap-3 mb-1.5">
             <h2 className="text-[21px] font-semibold text-stone-900 tracking-tight leading-tight flex-1">
@@ -488,26 +479,22 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
 
           {!isPlatinum && (
             <div className="flex items-center gap-1.5 mb-3">
-              <Crown size={11} className="text-violet-500" />
-              <span className="text-xs font-medium" style={{ color: FIM.violet }}>
+              <Crown size={11} className="text-amber-500" />
+              <span className="text-xs font-medium text-amber-600">
                 ₹{platinumPrice} with Platinum — save ₹{originalPrice - platinumPrice}
               </span>
             </div>
           )}
 
-          {/* Delivery — purple highlight, no border */}
           <div
             className="flex items-center gap-3 mb-4 px-3.5 py-3 rounded-2xl"
-            style={{ background: FIM.violetSoft }}
+            style={{ background: FIM.greenSoft }}
           >
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ background: 'rgba(109, 40, 217, 0.12)' }}
-            >
-              <Clock size={16} style={{ color: FIM.violet }} strokeWidth={2.25} />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-white">
+              <Clock size={16} style={{ color: FIM.green }} strokeWidth={2.25} />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: FIM.violetMid }}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: FIM.green }}>
                 Delivery
               </p>
               <p className="text-[15px] font-semibold text-stone-900 leading-tight">{deliveryEta}</p>
@@ -527,14 +514,7 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {macros.map(m => (
-                  <div
-                    key={m.label}
-                    className="rounded-2xl p-2.5 text-center"
-                    style={{
-                      background: m.soft,
-                      boxShadow: m.spotlight ? '0 6px 18px rgba(109, 40, 217, 0.12)' : undefined,
-                    }}
-                  >
+                  <div key={m.label} className="rounded-2xl p-2.5 text-center" style={{ background: m.soft }}>
                     <m.icon size={14} style={{ color: m.accent }} className="mx-auto mb-1" />
                     <p className="text-sm font-bold" style={{ color: m.accent }}>{m.value}</p>
                     <p className="text-[9px] text-stone-400 font-medium leading-tight">{m.unit}</p>
@@ -549,16 +529,16 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
               </div>
               {product.fiber > 0 && (
                 <p className="text-xs text-stone-400 mt-2.5 flex items-center gap-1">
-                  <Leaf size={11} style={{ color: FIM.violetMid }} /> {product.fiber}g fiber
+                  <Leaf size={11} className="text-stone-400" /> {product.fiber}g fiber
                 </p>
               )}
             </div>
           )}
 
           {product.howItsMade && (
-            <div className="mb-4 p-3.5 rounded-2xl" style={{ background: '#fafaf9' }}>
+            <div className="mb-4 p-3.5 rounded-2xl bg-stone-50">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-1.5 flex items-center gap-1.5">
-                <ChefHat size={12} style={{ color: FIM.violet }} /> How it&apos;s made
+                <ChefHat size={12} className="text-stone-500" /> How it&apos;s made
               </p>
               <p className="text-[13px] text-stone-600 leading-relaxed">{product.howItsMade}</p>
             </div>
@@ -571,11 +551,7 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {product.ingredients.map((ing, i) => (
-                  <span
-                    key={i}
-                    className="text-xs text-stone-600 font-medium px-2.5 py-1 rounded-full"
-                    style={{ background: '#f5f5f4' }}
-                  >
+                  <span key={i} className="text-xs text-stone-600 font-medium px-2.5 py-1 rounded-full bg-stone-100">
                     {ing}
                   </span>
                 ))}
@@ -586,11 +562,7 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
           {Array.isArray(product.tags) && product.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-1">
               {product.tags.map((tag, i) => (
-                <span
-                  key={i}
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: FIM.violetSoft, color: FIM.violet }}
-                >
+                <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-full text-stone-500 bg-stone-100">
                   #{tag}
                 </span>
               ))}
@@ -598,8 +570,7 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-4 flex-shrink-0 bg-white" style={{ boxShadow: '0 -8px 24px rgba(0,0,0,0.04)' }}>
+        <div className="px-5 py-4 flex-shrink-0 bg-white" style={{ borderTop: '1px solid #f5f5f4' }}>
           {isUnavailable ? (
             <div className="flex items-center justify-center gap-2 py-3.5 text-stone-400 text-sm font-medium">
               <Clock size={14} /> Available from {product.availableFrom}
@@ -607,21 +578,14 @@ function FoodInMinutesModal({ product, deliveryEta, onClose }) {
           ) : qty === 0 ? (
             <button
               onClick={() => addItem(product)}
-              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-              style={{
-                background: `linear-gradient(135deg, ${FIM.violet} 0%, ${FIM.violetDeep} 100%)`,
-                boxShadow: '0 10px 28px rgba(109, 40, 217, 0.32)',
-              }}
+              className="w-full py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-stone-900"
             >
               <Plus size={16} strokeWidth={2.75} />
               Add to cart · ₹{displayPrice}
             </button>
           ) : (
             <div className="flex items-center gap-4">
-              <div
-                className="flex items-center gap-4 px-4 py-3 rounded-2xl"
-                style={{ background: FIM.violet }}
-              >
+              <div className="flex items-center gap-4 px-4 py-3 rounded-2xl bg-stone-900">
                 <button onClick={() => updateQty(product._id, qty - 1)} className="text-white active:scale-90 p-0.5">
                   <Minus size={16} strokeWidth={2.5} />
                 </button>
@@ -667,7 +631,7 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
   return (
     <article
       onClick={() => onOpen(product)}
-      className="group cursor-pointer flex-shrink-0 w-[148px] sm:w-[168px]"
+      className="group cursor-pointer flex-shrink-0 w-[176px] sm:w-[200px]"
       style={{ scrollSnapAlign: 'start' }}
     >
       <div className="relative">
@@ -680,9 +644,9 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
               src={product.image}
               alt={product.name}
               fill
-              className={`object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
+              className={`object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03] ${isUnavailable ? 'grayscale opacity-70' : ''}`}
               onError={() => setImageError(true)}
-              sizes="168px"
+              sizes="200px"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-stone-100">
@@ -698,15 +662,11 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
             </div>
           )}
 
-          {/* Delivery — purple */}
           {!isUnavailable && (
             <div className="absolute top-2 left-2">
               <span
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold text-white"
-                style={{
-                  background: FIM.violet,
-                  boxShadow: '0 4px 12px rgba(109, 40, 217, 0.35)',
-                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold"
+                style={{ background: FIM.greenSoft, color: FIM.green }}
               >
                 <Clock size={9} strokeWidth={2.5} />
                 {etaShort}
@@ -721,25 +681,17 @@ function FoodInMinutesCard({ product, deliveryEta, onOpen }) {
           </div>
         </div>
 
-        {/* Add — floats under image corner */}
         {!isUnavailable && (
           <div className="absolute right-2 -bottom-3" onClick={e => e.stopPropagation()}>
             {qty === 0 ? (
               <button
                 onClick={() => addItem(product)}
-                className="h-7 px-3 rounded-full text-[11px] font-semibold text-violet-700 bg-white active:scale-95 transition-transform"
-                style={{ boxShadow: '0 4px 14px rgba(109, 40, 217, 0.18)' }}
+                className="h-7 px-3 rounded-full text-[11px] font-semibold text-stone-800 bg-white border border-stone-200 active:scale-95 transition-transform"
               >
                 Add
               </button>
             ) : (
-              <div
-                className="h-7 px-2 flex items-center gap-2 rounded-full text-white"
-                style={{
-                  background: FIM.violet,
-                  boxShadow: '0 4px 14px rgba(109, 40, 217, 0.3)',
-                }}
-              >
+              <div className="h-7 px-2 flex items-center gap-2 rounded-full text-white bg-stone-900">
                 <button onClick={() => updateQty(product._id, qty - 1)} className="active:scale-90 p-0.5">
                   <Minus size={11} strokeWidth={2.75} />
                 </button>
@@ -776,12 +728,11 @@ function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
 
   return (
     <section ref={sectionRef} className="mb-9">
-      {/* Header — clean, no border box */}
       <div className="flex items-end justify-between gap-3 mb-4 px-0.5">
         <div>
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-1"
-            style={{ color: FIM.violetMid }}
+            style={{ color: FIM.violet }}
           >
             Food in minutes
           </p>
@@ -790,17 +741,16 @@ function FoodInMinutesSection({ items, deliveryEta, sectionRef }) {
           </h2>
         </div>
         <div
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full flex-shrink-0"
-          style={{ background: FIM.violetSoft }}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg flex-shrink-0"
+          style={{ background: FIM.greenSoft }}
         >
-          <Clock size={12} strokeWidth={2.25} style={{ color: FIM.violet }} />
-          <span className="text-[11px] font-semibold tabular-nums" style={{ color: FIM.violetDeep }}>
+          <Clock size={12} strokeWidth={2.25} style={{ color: FIM.green }} />
+          <span className="text-[11px] font-semibold tabular-nums" style={{ color: FIM.green }}>
             {etaShort}
           </span>
         </div>
       </div>
 
-      {/* Horizontal scroll — square cards */}
       <div
         className="flex gap-3.5 overflow-x-auto pb-2 -mx-1 px-1"
         style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
