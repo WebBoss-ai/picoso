@@ -4,9 +4,10 @@ import {
   runAgent,
   runDeterministicFallback,
   greetingAnswer,
+  isUsefulAnswer,
 } from './agent/runtime.js';
 import { TOOL_DEFINITIONS } from './tools/registry.js';
-import { isGreeting, matchTemplate, isAnalyticsIntent } from './templates.js';
+import { isGreeting } from './templates.js';
 import {
   getOrCreateConversation,
   appendTurn,
@@ -14,13 +15,12 @@ import {
 
 const router = express.Router();
 
-// Simple in-memory rate limit: 30 requests / min per IP
 const hits = new Map();
 function rateLimit(req, res, next) {
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
   const now = Date.now();
   const windowMs = 60_000;
-  const max = 30;
+  const max = 40;
   let bucket = hits.get(ip);
   if (!bucket || now - bucket.start > windowMs) {
     bucket = { start: now, count: 0 };
@@ -33,19 +33,22 @@ function rateLimit(req, res, next) {
   next();
 }
 
-function isUsefulAnswer(answer) {
-  if (!answer) return false;
-  if (answer.kind === 'greeting') return true;
-  if (answer.clarification?.candidates?.length) return true;
-  if (answer.metrics?.length > 0) return true;
-  if (answer.products?.length > 0) return true;
-  if (answer.primaryMetric) return true;
-  if (answer.error === 'fallback_no_match') return false;
-  const h = (answer.headline || '').toLowerCase();
-  if (h.includes('analysis complete') || h.includes('could not interpret')) return false;
-  if (h.includes('no metrics returned')) return false;
-  // free-form AI reply without numbers can still be useful for chatty questions
-  return Boolean(answer.headline && answer.headline.length > 8);
+async function emitResult(emit, text, conversationId, answer, mode) {
+  try {
+    const conv = await getOrCreateConversation(conversationId);
+    await appendTurn(conv, text, answer.headline || '', answer);
+    emit('result', answer);
+    emit('complete', {
+      conversationId: String(conv._id),
+      mode,
+    });
+  } catch {
+    emit('result', answer);
+    emit('complete', {
+      conversationId: conversationId || null,
+      mode,
+    });
+  }
 }
 
 router.get('/health', (_req, res) => {
@@ -71,15 +74,11 @@ router.get('/tools', requireLlmPin, (_req, res) => {
 });
 
 /**
- * SSE chat endpoint.
- * Body: { message, conversationId? }
- * Headers: x-llm-pin
- *
  * Pipeline:
- *  1. Greetings → fixed help reply
- *  2. Known analytics templates → deterministic tools (source of truth for numbers)
- *  3. Else Cohere agent (if key set), with auto-complete tools if AI only resolves product
- *  4. Fallback to deterministic / friendly error
+ *  1. Greetings
+ *  2. AI brain (Cohere) when key present — plans + tools; code always finishes metrics
+ *  3. Deterministic full analytics path (always has numbers for known patterns)
+ *  4. Soft failure message
  */
 router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
   const { message, conversationId, mode } = req.body || {};
@@ -116,64 +115,29 @@ router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
   try {
     emit('status', { stage: 'received' });
 
-    // ── 1. Greetings ──────────────────────────────────────────────────────
     if (isGreeting(text)) {
-      const answer = greetingAnswer();
-      try {
-        const conv = await getOrCreateConversation(conversationId);
-        await appendTurn(conv, text, answer.headline, answer);
-        emit('result', answer);
-        emit('complete', {
-          conversationId: String(conv._id),
-          mode: 'greeting',
-        });
-      } catch {
-        emit('result', answer);
-        emit('complete', { conversationId: conversationId || null, mode: 'greeting' });
-      }
+      await emitResult(emit, text, conversationId, greetingAnswer(), 'greeting');
       return;
     }
 
-    // ── 2. Deterministic first for known analytics (reliable numbers) ─────
-    const tmpl = matchTemplate(text);
-    const preferTools =
-      mode === 'deterministic' ||
-      (tmpl && mode !== 'force-ai') ||
-      (!process.env.COHERE_API_KEY && isAnalyticsIntent(text));
-
-    if (preferTools && mode !== 'force-ai') {
-      emit('status', { stage: 'deterministic_mode' });
-      const result = await runDeterministicFallback(text, emit);
-      if (isUsefulAnswer(result)) {
-        try {
-          const conv = await getOrCreateConversation(conversationId);
-          await appendTurn(conv, text, result.headline, result);
-          emit('result', result);
-          emit('complete', {
-            conversationId: String(conv._id),
-            mode: 'deterministic',
-          });
-        } catch {
-          emit('result', result);
-          emit('complete', {
-            conversationId: conversationId || null,
-            mode: 'deterministic',
-          });
-        }
-        return;
-      }
-      // fall through to AI if tools couldn’t interpret
-    }
-
-    // ── 3. Cohere agent ───────────────────────────────────────────────────
+    // ── AI first (brain) ──────────────────────────────────────────────────
     if (process.env.COHERE_API_KEY && mode !== 'deterministic') {
       try {
-        await runAgent({
+        emit('status', { stage: 'planning', mode: 'ai' });
+        // runAgent emits result+complete itself when successful
+        const out = await runAgent({
           message: text,
           conversationId: conversationId || undefined,
           emit,
         });
-        return;
+        // If agent returned useless answer, fall through to tools engine
+        if (out?.result && isUsefulAnswer(out.result)) {
+          return;
+        }
+        emit('status', {
+          stage: 'tools_engine',
+          reason: 'ai_incomplete',
+        });
       } catch (err) {
         emit('status', {
           stage: 'fallback',
@@ -182,24 +146,16 @@ router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
       }
     }
 
-    // ── 4. Last-resort deterministic ──────────────────────────────────────
+    // ── Tools engine (deterministic analytics) ────────────────────────────
     emit('status', { stage: 'deterministic_mode' });
     const result = await runDeterministicFallback(text, emit);
-    try {
-      const conv = await getOrCreateConversation(conversationId);
-      await appendTurn(conv, text, result.headline, result);
-      emit('result', result);
-      emit('complete', {
-        conversationId: String(conv._id),
-        mode: 'deterministic_fallback',
-      });
-    } catch {
-      emit('result', result);
-      emit('complete', {
-        conversationId: conversationId || null,
-        mode: 'deterministic_fallback',
-      });
-    }
+    await emitResult(
+      emit,
+      text,
+      conversationId,
+      result,
+      process.env.COHERE_API_KEY ? 'tools_after_ai' : 'deterministic'
+    );
   } catch (err) {
     emit('error', { message: err.message || 'Chat failed' });
     emit('complete', { failed: true });

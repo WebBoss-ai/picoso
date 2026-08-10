@@ -126,9 +126,13 @@ async function find_customers_within_radius(input = {}) {
 }
 
 async function count_unique_product_buyers(input = {}) {
-  const productId = input.product_id || input.productId;
-  if (!productId) {
-    return { type: 'error', error: 'product_id is required — call resolve_product first' };
+  const productId = input.product_id || input.productId || null;
+  const productName = input.product_name || input.productName || null;
+  if (!productId && !productName) {
+    return {
+      type: 'error',
+      error: 'product_id or product_name is required — call resolve_product first',
+    };
   }
   const days = clampDays(input.days ?? 90, 90);
   const radiusKm =
@@ -136,13 +140,19 @@ async function count_unique_product_buyers(input = {}) {
       ? clampRadiusKm(input.radius_km ?? input.radiusKm, 2)
       : null;
   const listLimit = clampLimit(input.limit ?? 15, 15);
+
   const raw = await executeProductBuyers({
     productId,
+    productName,
     days,
     radiusKm,
     listLimit,
   });
-  const totalProductOrders = await executeOrderCountForProduct(productId, days);
+  const totalProductOrders = await executeOrderCountForProduct(
+    productId,
+    days,
+    productName
+  );
 
   return stripPiiDeep({
     type: 'metric_result',
@@ -155,10 +165,13 @@ async function count_unique_product_buyers(input = {}) {
       repeat_customers: raw.repeatCustomers,
       repeat_rate: raw.repeatRate,
       total_product_orders_in_period: totalProductOrders,
+      total_product_buyers_any_distance: raw.totalsWithoutRadius?.uniqueCustomers ?? null,
+      buyers_with_coordinates: raw.totalsWithoutRadius?.customersWithCoordinates ?? null,
     },
     customers: (raw.customers || []).map(sanitizeCustomerRow),
     filters: {
-      productId: String(productId),
+      productId: productId ? String(productId) : null,
+      productName: productName || null,
       days,
       radiusKm,
       center: radiusKm != null ? STORE_LOCATION : undefined,
@@ -168,7 +181,14 @@ async function count_unique_product_buyers(input = {}) {
       customer: GLOSSARY.customer,
       completed_order: GLOSSARY.completed_order,
       repeat_customer: GLOSSARY.repeat_customer,
+      distance_from_store: GLOSSARY.distance_from_store,
     },
+    notes:
+      radiusKm != null &&
+      raw.uniqueCustomers === 0 &&
+      (raw.totalsWithoutRadius?.uniqueCustomers || 0) > 0
+        ? `${raw.totalsWithoutRadius.uniqueCustomers} product buyers overall, but 0 with delivery/profile coords inside ${radiusKm} km.`
+        : null,
   });
 }
 
@@ -402,19 +422,24 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'count_unique_product_buyers',
     description:
-      'Count unique customers who bought a specific product. Supports optional geo radius filter. Returns orders, revenue, repeat stats.',
+      'Count unique customers who bought a product. USE THIS after resolve_product for any "how many customers ordered X" question. Optional radius_km for geo. Always returns unique_customers, orders, revenue, repeat_customers. Pass product_id from resolve_product and product_name as backup.',
     parameters: {
       type: 'object',
       properties: {
         product_id: { type: 'string', description: 'Bowl/product id from resolve_product' },
+        product_name: {
+          type: 'string',
+          description: 'Product name fallback match from resolve_product.match.name',
+        },
         days: { type: 'number', description: 'Lookback days default 90' },
         radius_km: {
           type: 'number',
-          description: 'Optional geo filter: only buyers whose delivery address is within radius_km of store',
+          description:
+            'Optional geo filter in km from store. Pass when user says "2 km", "nearby", "andar".',
         },
         limit: { type: 'number', description: 'Sample customers to return' },
       },
-      required: ['product_id'],
+      required: [],
     },
   },
   {

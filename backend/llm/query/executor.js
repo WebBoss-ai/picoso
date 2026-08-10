@@ -1,4 +1,5 @@
-import { Order } from '../../models/Model.js';
+import mongoose from 'mongoose';
+import { Order, User } from '../../models/Model.js';
 import { withTimeout } from './validator.js';
 import { haversineKm, storeCoords } from '../geo.js';
 import {
@@ -7,9 +8,8 @@ import {
   compileTopProductsPipeline,
 } from './compiler.js';
 import { COMPLETED_ORDER_STATUSES } from '../semantic/picosoModel.js';
-import mongoose from 'mongoose';
 
-const QUERY_TIMEOUT_MS = Number(process.env.LLM_QUERY_TIMEOUT_MS || 20000);
+const QUERY_TIMEOUT_MS = Number(process.env.LLM_QUERY_TIMEOUT_MS || 25000);
 
 export async function runAggregation(pipeline, { timeoutMs = QUERY_TIMEOUT_MS } = {}) {
   return withTimeout(
@@ -20,27 +20,121 @@ export async function runAggregation(pipeline, { timeoutMs = QUERY_TIMEOUT_MS } 
 }
 
 /**
- * Unique product buyers, optional geographic filter post bbox.
- * productId optional — if omitted, all completed order customers.
+ * Resolve lat/lng for a customer: order sample coords, else user profile / addresses.
+ */
+async function enrichUserLocations(customers, center) {
+  const missing = customers.filter((c) => c.lat == null || c.lng == null);
+  if (!missing.length) return customers;
+
+  const ids = missing
+    .map((c) => c.customerId)
+    .filter((id) => id && mongoose.Types.ObjectId.isValid(String(id)));
+
+  if (!ids.length) return customers;
+
+  const users = await User.find({ _id: { $in: ids } })
+    .select('_id name phone location.coordinates savedAddresses')
+    .lean()
+    .catch(() => []);
+
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  return customers.map((cu) => {
+    if (cu.lat != null && cu.lng != null) return cu;
+    const u = byId.get(String(cu.customerId));
+    if (!u) return cu;
+
+    let lat = u.location?.coordinates?.lat;
+    let lng = u.location?.coordinates?.lng;
+    if (lat == null || lng == null) {
+      const addr =
+        (u.savedAddresses || []).find((a) => a.isDefault && a.lat != null) ||
+        (u.savedAddresses || []).find((a) => a.lat != null && a.lng != null);
+      if (addr) {
+        lat = addr.lat;
+        lng = addr.lng;
+      }
+    }
+    if (lat == null || lng == null) return cu;
+
+    const distanceKm = haversineKm(center.lat, center.lng, lat, lng);
+    return {
+      ...cu,
+      lat,
+      lng,
+      name: cu.name || u.name,
+      phone: cu.phone || u.phone,
+      distanceKm:
+        distanceKm != null ? Math.round(distanceKm * 1000) / 1000 : null,
+      locationSource: 'user_profile',
+    };
+  });
+}
+
+/**
+ * Unique product buyers with optional radius.
+ * Always returns a full metrics object (never throws on empty data).
+ * When radius is set, returns both in-radius and total (all geo) stats.
  */
 export async function executeProductBuyers({
   productId = null,
+  productName = null,
   days = 90,
   radiusKm = null,
   center = null,
   listLimit = 0,
 } = {}) {
-  const { pipeline, geoMeta } = compileProductBuyerPipeline({
+  const c = storeCoords(center);
+
+  // 1) All product buyers (no geo gate) — primary factual count
+  const { pipeline } = compileProductBuyerPipeline({
     productId: productId || undefined,
+    productName: productName || undefined,
     days,
-    radiusKm,
-    center,
-    requireGeo: radiusKm != null,
-    limitCustomers: 0,
+    radiusKm: null,
+    requireGeo: false,
   });
 
-  const rows = await runAggregation(pipeline);
-  const c = storeCoords(center || geoMeta?.center);
+  let rows = [];
+  try {
+    rows = await runAggregation(pipeline);
+  } catch (err) {
+    // Fallback: simpler query by name only
+    if (productName || productId) {
+      const simple = [
+        {
+          $match: {
+            status: { $in: COMPLETED_ORDER_STATUSES },
+            createdAt: {
+              $gte: new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000),
+            },
+            ...(productName
+              ? { 'items.name': { $regex: productName, $options: 'i' } }
+              : {}),
+          },
+        },
+        {
+          $group: {
+            _id: '$userId',
+            orderCount: { $sum: 1 },
+            revenue: { $sum: '$totalPrice' },
+            lastOrderAt: { $max: '$createdAt' },
+            sampleLat: { $last: '$deliveryAddress.lat' },
+            sampleLng: { $last: '$deliveryAddress.lng' },
+            sampleName: { $last: '$customerName' },
+            samplePhone: { $last: '$phone' },
+          },
+        },
+      ];
+      try {
+        rows = await runAggregation(simple);
+      } catch (err2) {
+        throw new Error(`Product buyer query failed: ${err2.message || err.message}`);
+      }
+    } else {
+      throw err;
+    }
+  }
 
   let customers = rows.map((r) => {
     const lat = r.sampleLat;
@@ -50,7 +144,7 @@ export async function executeProductBuyers({
     return {
       customerId: r._id,
       orderCount: r.orderCount,
-      revenue: r.revenue,
+      revenue: r.revenue || 0,
       lastOrderAt: r.lastOrderAt,
       lat,
       lng,
@@ -60,22 +154,32 @@ export async function executeProductBuyers({
     };
   });
 
-  if (radiusKm != null) {
-    const max = Number(radiusKm);
-    customers = customers.filter(
-      (cu) => cu.distanceKm != null && cu.distanceKm <= max
+  customers = await enrichUserLocations(customers, c);
+
+  const totalUnique = customers.length;
+  const totalOrders = customers.reduce((s, cu) => s + cu.orderCount, 0);
+  const totalRevenue = customers.reduce((s, cu) => s + (cu.revenue || 0), 0);
+  const totalRepeat = customers.filter((cu) => cu.orderCount >= 2).length;
+
+  let inRadius = customers;
+  let appliedRadius = null;
+  if (radiusKm != null && Number.isFinite(Number(radiusKm))) {
+    appliedRadius = Number(radiusKm);
+    inRadius = customers.filter(
+      (cu) => cu.distanceKm != null && cu.distanceKm <= appliedRadius
     );
   }
 
-  const uniqueCustomers = customers.length;
-  const orders = customers.reduce((s, cu) => s + cu.orderCount, 0);
-  const revenue = customers.reduce((s, cu) => s + (cu.revenue || 0), 0);
-  const repeatCustomers = customers.filter((cu) => cu.orderCount >= 2).length;
+  const uniqueCustomers = inRadius.length;
+  const orders = inRadius.reduce((s, cu) => s + cu.orderCount, 0);
+  const revenue = inRadius.reduce((s, cu) => s + (cu.revenue || 0), 0);
+  const repeatCustomers = inRadius.filter((cu) => cu.orderCount >= 2).length;
   const repeatRate = uniqueCustomers > 0 ? repeatCustomers / uniqueCustomers : 0;
+  const withCoords = customers.filter((cu) => cu.distanceKm != null).length;
 
   const sample =
     listLimit > 0
-      ? customers
+      ? inRadius
           .slice()
           .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
           .slice(0, listLimit)
@@ -88,10 +192,19 @@ export async function executeProductBuyers({
     repeatCustomers,
     repeatRate: Math.round(repeatRate * 10000) / 10000,
     customers: sample,
+    // Always expose totals so "0 in radius" still explains the business
+    totalsWithoutRadius: {
+      uniqueCustomers: totalUnique,
+      orders: totalOrders,
+      revenue: Math.round(totalRevenue * 100) / 100,
+      repeatCustomers: totalRepeat,
+      customersWithCoordinates: withCoords,
+    },
     filters: {
       productId: productId || null,
+      productName: productName || null,
       days,
-      radiusKm: radiusKm != null ? Number(radiusKm) : null,
+      radiusKm: appliedRadius,
       center: c,
     },
     source: { dataset: 'orders', freshness: 'live' },
@@ -144,7 +257,7 @@ export async function executeInactiveCustomers({
       $group: {
         _id: '$userId',
         orderCount: { $sum: 1 },
-        spend: { $sum: '$totalPrice' },
+        spend: { $sum: { $ifNull: ['$totalPrice', 0] } },
         lastOrderAt: { $max: '$createdAt' },
         name: { $last: '$customerName' },
         phone: { $last: '$phone' },
@@ -193,17 +306,27 @@ export async function executeCustomersInRadius({
     orders: result.orders,
     revenue: result.revenue,
     customers: result.customers,
+    totalsWithoutRadius: result.totalsWithoutRadius,
     filters: { radiusKm: max, days, center: result.filters.center },
     source: result.source,
   };
 }
 
-export async function executeOrderCountForProduct(productId, days = 90) {
-  if (!productId) return 0;
-  const count = await Order.countDocuments({
+export async function executeOrderCountForProduct(productId, days = 90, productName = null) {
+  if (!productId && !productName) return 0;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const or = [];
+  if (productId && mongoose.Types.ObjectId.isValid(String(productId))) {
+    or.push({ 'items.bowlId': new mongoose.Types.ObjectId(String(productId)) });
+    or.push({ 'items.bowlId': String(productId) });
+  }
+  if (productName) {
+    or.push({ 'items.name': { $regex: productName, $options: 'i' } });
+  }
+  if (!or.length) return 0;
+  return Order.countDocuments({
     status: { $in: COMPLETED_ORDER_STATUSES },
-    createdAt: { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) },
-    'items.bowlId': new mongoose.Types.ObjectId(String(productId)),
+    createdAt: { $gte: since },
+    $or: or,
   });
-  return count;
 }
