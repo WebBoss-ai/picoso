@@ -8,6 +8,7 @@ import { requireMarketingPin } from '../middleware/marketingAuth.js';
 import { requireAdmin2Pin } from '../middleware/admin2Auth.js';
 import * as marketing from '../controllers/marketingController.js';
 import { uploadToS3 } from '../utils/s3.js';
+import llmRouter from '../llm/routes.js';
 
 const router = express.Router();
 
@@ -205,5 +206,8 @@ router.delete('/marketing/campaigns/:id',   requireMarketingPin, marketing.delet
 // Logs & stats
 router.get('/marketing/logs',               requireMarketingPin, marketing.getLogs);
 router.get('/marketing/stats',              requireMarketingPin, marketing.getStats);
+
+// ── Picoso Intelligence (/llm console) — self-contained module ───────────────
+router.use('/llm', llmRouter);
 
 export default router;
