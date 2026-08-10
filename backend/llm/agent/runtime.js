@@ -10,6 +10,13 @@ import {
 import { validateMetricResult } from '../query/validator.js';
 import { LlmAgentRun, LlmToolExecution } from '../models/llmModels.js';
 import { sanitizeCustomerRow } from '../pii.js';
+import {
+  matchTemplate,
+  extractRadiusKm,
+  extractDays,
+  isGreeting,
+  isAnalyticsIntent,
+} from '../templates.js';
 
 const MAX_LLM_ROUNDS = Number(process.env.LLM_MAX_ROUNDS || 8);
 const MAX_TOOL_CALLS = Number(process.env.LLM_MAX_TOOL_CALLS || 20);
@@ -233,13 +240,65 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
       break;
     }
 
+    // Cohere often stops after resolve_product — finish metrics in code
+    if (!hasMetricResult(collectedToolResults) && isAnalyticsIntent(message)) {
+      emit('status', { stage: 'completing_tools', runId });
+      await setStatus('EXECUTING', { tool: 'auto_complete' });
+      const completed = await completeMissingTools({
+        message,
+        collectedToolResults,
+        productConfidence,
+        emit,
+        runId,
+        steps,
+      });
+      collectedToolResults = completed.toolResults;
+      productConfidence = completed.productConfidence ?? productConfidence;
+
+      if (completed.needsClarification) {
+        const resolveResult = collectedToolResults.find(
+          (t) => t.tool === 'resolve_product'
+        )?.result;
+        const answer = buildClarificationAnswer(
+          {
+            type: 'product',
+            message: resolveResult?.message || 'Which product do you mean?',
+            candidates: resolveResult?.candidates || [],
+          },
+          productConfidence
+        );
+        await setStatus('NEEDS_CLARIFICATION');
+        await appendTurn(conversation, message, answer.headline, answer);
+        finishRun(runDoc, {
+          status: 'NEEDS_CLARIFICATION',
+          result: answer,
+          tokenUsage,
+          steps,
+          started,
+        });
+        emit('result', answer);
+        emit('complete', {
+          conversationId: String(conversation._id),
+          runId,
+          durationMs: Date.now() - started,
+        });
+        return { conversationId: conversation._id, runId, result: answer };
+      }
+    }
+
     await setStatus('VALIDATING');
-    const answer = buildStructuredAnswer({
+    let answer = buildStructuredAnswer({
       text: lastText,
       toolResults: collectedToolResults,
       productConfidence,
       userMessage: message,
     });
+
+    // Still empty metrics for an analytics question → full tool path
+    if (!isUsefulAnswer(answer) && isAnalyticsIntent(message)) {
+      emit('status', { stage: 'deterministic_complete', runId });
+      answer = await runDeterministicFallback(message, emit);
+    }
 
     const validation = validateMetricResult(answer);
     if (!validation.ok) {
@@ -347,6 +406,143 @@ function buildClarificationAnswer(clarification, productConfidence) {
   };
 }
 
+function hasMetricResult(toolResults = []) {
+  return toolResults.some(
+    (t) =>
+      t?.result?.type === 'metric_result' ||
+      t?.result?.type === 'list_result' ||
+      (typeof t?.result?.value === 'number' && t?.result?.metric)
+  );
+}
+
+function isUsefulAnswer(answer) {
+  if (!answer || answer.error === 'fallback_no_match') return false;
+  if (answer.clarification?.candidates?.length) return true;
+  if (answer.metrics?.length > 0) return true;
+  if (answer.products?.length > 0) return true;
+  if (answer.primaryMetric) return true;
+  // Textual narrative from AI (not a stub)
+  const h = (answer.headline || '').toLowerCase();
+  if (
+    h &&
+    !h.includes('analysis complete') &&
+    !h.includes('could not interpret') &&
+    !h.includes('something went wrong') &&
+    answer.error !== 'fallback_no_match'
+  ) {
+    // greetings etc. count as useful
+    if (answer.kind === 'greeting') return true;
+  }
+  return false;
+}
+
+/**
+ * If LLM only resolved product (or ran nothing useful), finish with deterministic tools.
+ */
+async function completeMissingTools({
+  message,
+  collectedToolResults,
+  productConfidence,
+  emit,
+  runId,
+  steps,
+}) {
+  const toolResults = [...(collectedToolResults || [])];
+  let confidence = productConfidence;
+
+  let productId = null;
+  let productName = null;
+  for (const t of toolResults) {
+    if (t.tool === 'resolve_product' && t.result?.match) {
+      productId = t.result.match.productId;
+      productName = t.result.match.name;
+      confidence = t.result.confidence ?? confidence;
+    }
+  }
+
+  const radiusKm = extractRadiusKm(message);
+  const days = extractDays(message);
+  const tmpl = matchTemplate(message);
+
+  // Resolve product if missing
+  if (!productId && (tmpl?.productQuery || tmpl?.id === 'product_buyers')) {
+    const name = tmpl.productQuery;
+    if (name) {
+      emit('status', { stage: 'resolving_product', runId });
+      const resolved = await executeTool('resolve_product', { name });
+      steps.push({
+        tool: 'resolve_product',
+        input: { name },
+        status: resolved.status,
+        durationMs: resolved.durationMs,
+      });
+      toolResults.push({ tool: 'resolve_product', result: resolved.result });
+      if (resolved.result?.needsClarification) {
+        return { toolResults, productConfidence: resolved.result.confidence, needsClarification: true };
+      }
+      if (resolved.result?.match) {
+        productId = resolved.result.match.productId;
+        productName = resolved.result.match.name;
+        confidence = resolved.result.confidence;
+      }
+    }
+  }
+
+  // Run the right metric tool
+  if (productId) {
+    emit('status', {
+      stage: 'executing',
+      tool: 'count_unique_product_buyers',
+      runId,
+    });
+    const buyers = await executeTool('count_unique_product_buyers', {
+      product_id: productId,
+      radius_km: radiusKm ?? tmpl?.args?.radius_km,
+      days: days ?? tmpl?.args?.days ?? 90,
+    });
+    steps.push({
+      tool: 'count_unique_product_buyers',
+      input: { product_id: productId, radius_km: radiusKm, days },
+      status: buyers.status,
+      durationMs: buyers.durationMs,
+    });
+    toolResults.push({ tool: 'count_unique_product_buyers', result: buyers.result });
+    if (productName) {
+      // no-op log
+    }
+    return { toolResults, productConfidence: confidence };
+  }
+
+  if (tmpl?.id && tmpl.id !== 'product_buyers') {
+    const r = await executeTool(tmpl.id, tmpl.args || {});
+    steps.push({
+      tool: tmpl.id,
+      input: tmpl.args,
+      status: r.status,
+      durationMs: r.durationMs,
+    });
+    toolResults.push({ tool: tmpl.id, result: r.result });
+  }
+
+  return { toolResults, productConfidence: confidence };
+}
+
+export function greetingAnswer() {
+  return {
+    kind: 'greeting',
+    headline: 'Hi — ask me about Picoso customers, products, revenue, or geo.',
+    narrative:
+      'Examples:\n• 2 km ke andar Paneer Tikka Rice kitne customers ne order kiya?\n• Last 30 din ka revenue kitna tha?\n• What products sell the most?\n• Inactive customers for 60 days',
+    metrics: [],
+    definitions: [],
+    calculationSteps: [],
+    confidence: { overall: 1 },
+    clarification: null,
+    freshness: 'live',
+    period: null,
+  };
+}
+
 function buildStructuredAnswer({ text, toolResults, productConfidence, userMessage }) {
   const metrics = [];
   const calculationSteps = [];
@@ -354,7 +550,7 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
   let customers = [];
   let products = [];
   let filters = {};
-  let headline = (text || '').trim();
+  const llmText = (text || '').trim();
 
   for (const { tool, result } of toolResults) {
     if (!result) continue;
@@ -400,7 +596,6 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
         definitions.push({ id: result.metric, text: result.definition });
       }
 
-      // Build steps from common patterns
       if (result.filters?.radiusKm != null) {
         calculationSteps.push(`Applied ${result.filters.radiusKm} km radius from store`);
       }
@@ -410,6 +605,11 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
       if (result.metric === 'unique_customers') {
         calculationSteps.push(`Counted ${result.value} unique customers`);
       }
+      if (result.related?.repeat_customers != null) {
+        calculationSteps.push(
+          `Repeat customers (2+ orders): ${result.related.repeat_customers}`
+        );
+      }
     }
 
     if (result.type === 'list_result' && result.products) {
@@ -418,7 +618,6 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     }
   }
 
-  // Deduplicate metrics by id (keep first)
   const seen = new Set();
   const deduped = [];
   for (const m of metrics) {
@@ -435,30 +634,55 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     deduped.find((m) => m.id === 'inactive_customers') ||
     deduped[0];
 
-  if (!headline && primary) {
+  // Numbers from tools always own the headline (LLM text is narrative only)
+  let headline;
+  if (primary) {
     headline = formatHeadline(primary);
-  } else if (headline && primary && !/\d/.test(headline)) {
-    headline = `${formatHeadline(primary)}\n\n${headline}`;
-  } else if (!headline) {
-    headline = 'Analysis complete.';
+  } else if (products.length) {
+    headline = `Top ${products.length} products`;
+  } else if (llmText && !/^analysis complete\.?$/i.test(llmText)) {
+    headline = llmText;
+  } else if (filters.product) {
+    headline = `Resolved “${filters.product}” but no metric query ran. Try again.`;
+  } else {
+    headline = 'No metrics returned for this question.';
   }
 
-  // Ensure repeat_rate as percentage metric if present as fraction
   for (const m of deduped) {
-    if (m.id === 'repeat_rate' && m.value <= 1) {
+    if (m.id === 'repeat_rate' && typeof m.value === 'number' && m.value <= 1) {
       m.display = `${(m.value * 100).toFixed(1)}%`;
     }
   }
 
-  const overall =
-    productConfidence != null
-      ? Math.min(0.99, 0.7 + productConfidence * 0.3)
-      : toolResults.length
-        ? 0.9
-        : 0.5;
+  const hasData = deduped.length > 0 || products.length > 0;
+  const overall = hasData
+    ? productConfidence != null
+      ? Math.min(0.99, 0.75 + productConfidence * 0.24)
+      : 0.92
+    : productConfidence != null
+      ? Math.min(0.5, productConfidence * 0.4)
+      : 0.2;
+
+  // Friendly multi-line headline when we have customers + repeat together
+  if (primary?.id === 'unique_customers' && deduped.some((m) => m.id === 'repeat_customers')) {
+    const rep = deduped.find((m) => m.id === 'repeat_customers');
+    const rate = deduped.find((m) => m.id === 'repeat_rate');
+    const rateText =
+      rate != null
+        ? rate.display ||
+          (rate.value <= 1 ? `${(rate.value * 100).toFixed(1)}%` : String(rate.value))
+        : null;
+    headline = `${formatHeadline(primary)}`;
+    if (rep) {
+      headline += ` · ${rep.value} repeat`;
+      if (rateText) headline += ` (${rateText})`;
+    }
+    if (filters.product) headline += `\n${filters.product}`;
+    if (filters.radiusKm != null) headline += ` · within ${filters.radiusKm} km`;
+  }
 
   return {
-    headline: headline.slice(0, 2000),
+    headline: String(headline).slice(0, 2000),
     metrics: deduped,
     primaryMetric: primary || null,
     definitions,
@@ -474,8 +698,15 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     freshness: 'live',
     period: filters.days
       ? `Last ${filters.days} days`
-      : 'Last 90 days (default)',
-    narrative: text || null,
+      : hasData
+        ? 'Last 90 days (default)'
+        : null,
+    narrative:
+      llmText && primary && !llmText.includes(String(primary.value))
+        ? llmText
+        : llmText && !primary
+          ? llmText
+          : null,
   };
 }
 
@@ -526,7 +757,10 @@ function formatHeadline(metric) {
 export async function runDeterministicFallback(message, emit = () => {}) {
   emit('status', { stage: 'understanding', mode: 'deterministic' });
 
-  const { matchTemplate } = await import('../templates.js');
+  if (isGreeting(message)) {
+    return greetingAnswer();
+  }
+
   const tmpl = matchTemplate(message);
 
   if (tmpl?.id === 'product_buyers' && tmpl.productQuery) {

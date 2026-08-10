@@ -1,7 +1,16 @@
 import express from 'express';
 import { requireLlmPin } from './middleware/llmAuth.js';
-import { runAgent, runDeterministicFallback } from './agent/runtime.js';
+import {
+  runAgent,
+  runDeterministicFallback,
+  greetingAnswer,
+} from './agent/runtime.js';
 import { TOOL_DEFINITIONS } from './tools/registry.js';
+import { isGreeting, matchTemplate, isAnalyticsIntent } from './templates.js';
+import {
+  getOrCreateConversation,
+  appendTurn,
+} from './agent/memory.js';
 
 const router = express.Router();
 
@@ -22,6 +31,21 @@ function rateLimit(req, res, next) {
     return res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
   }
   next();
+}
+
+function isUsefulAnswer(answer) {
+  if (!answer) return false;
+  if (answer.kind === 'greeting') return true;
+  if (answer.clarification?.candidates?.length) return true;
+  if (answer.metrics?.length > 0) return true;
+  if (answer.products?.length > 0) return true;
+  if (answer.primaryMetric) return true;
+  if (answer.error === 'fallback_no_match') return false;
+  const h = (answer.headline || '').toLowerCase();
+  if (h.includes('analysis complete') || h.includes('could not interpret')) return false;
+  if (h.includes('no metrics returned')) return false;
+  // free-form AI reply without numbers can still be useful for chatty questions
+  return Boolean(answer.headline && answer.headline.length > 8);
 }
 
 router.get('/health', (_req, res) => {
@@ -50,6 +74,12 @@ router.get('/tools', requireLlmPin, (_req, res) => {
  * SSE chat endpoint.
  * Body: { message, conversationId? }
  * Headers: x-llm-pin
+ *
+ * Pipeline:
+ *  1. Greetings → fixed help reply
+ *  2. Known analytics templates → deterministic tools (source of truth for numbers)
+ *  3. Else Cohere agent (if key set), with auto-complete tools if AI only resolves product
+ *  4. Fallback to deterministic / friendly error
  */
 router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
   const { message, conversationId, mode } = req.body || {};
@@ -81,41 +111,94 @@ router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
     }
   }, 15000);
 
+  const text = message.trim();
+
   try {
     emit('status', { stage: 'received' });
 
-    const useFallback =
-      mode === 'deterministic' ||
-      (!process.env.COHERE_API_KEY && mode !== 'force-ai');
+    // ── 1. Greetings ──────────────────────────────────────────────────────
+    if (isGreeting(text)) {
+      const answer = greetingAnswer();
+      try {
+        const conv = await getOrCreateConversation(conversationId);
+        await appendTurn(conv, text, answer.headline, answer);
+        emit('result', answer);
+        emit('complete', {
+          conversationId: String(conv._id),
+          mode: 'greeting',
+        });
+      } catch {
+        emit('result', answer);
+        emit('complete', { conversationId: conversationId || null, mode: 'greeting' });
+      }
+      return;
+    }
 
-    if (useFallback) {
+    // ── 2. Deterministic first for known analytics (reliable numbers) ─────
+    const tmpl = matchTemplate(text);
+    const preferTools =
+      mode === 'deterministic' ||
+      (tmpl && mode !== 'force-ai') ||
+      (!process.env.COHERE_API_KEY && isAnalyticsIntent(text));
+
+    if (preferTools && mode !== 'force-ai') {
       emit('status', { stage: 'deterministic_mode' });
-      const result = await runDeterministicFallback(message.trim(), emit);
-      emit('result', result);
-      emit('complete', {
-        conversationId: conversationId || null,
-        mode: 'deterministic',
-      });
-    } else {
+      const result = await runDeterministicFallback(text, emit);
+      if (isUsefulAnswer(result)) {
+        try {
+          const conv = await getOrCreateConversation(conversationId);
+          await appendTurn(conv, text, result.headline, result);
+          emit('result', result);
+          emit('complete', {
+            conversationId: String(conv._id),
+            mode: 'deterministic',
+          });
+        } catch {
+          emit('result', result);
+          emit('complete', {
+            conversationId: conversationId || null,
+            mode: 'deterministic',
+          });
+        }
+        return;
+      }
+      // fall through to AI if tools couldn’t interpret
+    }
+
+    // ── 3. Cohere agent ───────────────────────────────────────────────────
+    if (process.env.COHERE_API_KEY && mode !== 'deterministic') {
       try {
         await runAgent({
-          message: message.trim(),
+          message: text,
           conversationId: conversationId || undefined,
           emit,
         });
+        return;
       } catch (err) {
-        // AI failed mid-flight — try deterministic fallback for resilience
         emit('status', {
           stage: 'fallback',
           reason: err.message || 'AI error',
         });
-        const result = await runDeterministicFallback(message.trim(), emit);
-        emit('result', result);
-        emit('complete', {
-          conversationId: conversationId || null,
-          mode: 'deterministic_fallback',
-        });
       }
+    }
+
+    // ── 4. Last-resort deterministic ──────────────────────────────────────
+    emit('status', { stage: 'deterministic_mode' });
+    const result = await runDeterministicFallback(text, emit);
+    try {
+      const conv = await getOrCreateConversation(conversationId);
+      await appendTurn(conv, text, result.headline, result);
+      emit('result', result);
+      emit('complete', {
+        conversationId: String(conv._id),
+        mode: 'deterministic_fallback',
+      });
+    } catch {
+      emit('result', result);
+      emit('complete', {
+        conversationId: conversationId || null,
+        mode: 'deterministic_fallback',
+      });
     }
   } catch (err) {
     emit('error', { message: err.message || 'Chat failed' });

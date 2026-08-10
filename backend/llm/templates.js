@@ -3,14 +3,29 @@
  * Used by agent fallback; full agent may still use Cohere when configured.
  */
 
-function extractRadiusKm(message) {
+export function isGreeting(message = '') {
+  return /^(hi|hello|hey|namaste|hola|yo|sup|hiya|good\s*(morning|evening|afternoon)|whats?\s*up|what'?s\s*up)[\s!.?]*$/i.test(
+    String(message).trim()
+  );
+}
+
+export function extractRadiusKm(message) {
   const radiusMatch = String(message).toLowerCase().match(/(\d+(?:\.\d+)?)\s*km/);
   return radiusMatch ? Number(radiusMatch[1]) : null;
 }
 
-function extractDays(message) {
+export function extractDays(message) {
   const daysMatch = String(message).match(/(?:last|pichle|past)\s+(\d+)\s*(?:din|days?)/i);
   return daysMatch ? Number(daysMatch[1]) : 90;
+}
+
+/** True if this looks like a business analytics question (prefer tools over free chat). */
+export function isAnalyticsIntent(message = '') {
+  const m = String(message);
+  if (matchTemplate(m)) return true;
+  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment)\b/i.test(
+    m
+  );
 }
 
 const FOOD =

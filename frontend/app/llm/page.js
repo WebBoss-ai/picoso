@@ -409,6 +409,9 @@ function AnswerCard({ turn }) {
         {primary && r.headline && r.headline !== formatMetricValue(primary) && (
           <p className="llm-narrative">{r.narrative || r.headline}</p>
         )}
+        {!primary && r.narrative && (
+          <p className="llm-narrative" style={{ whiteSpace: 'pre-wrap' }}>{r.narrative}</p>
+        )}
         {r.period && <p className="llm-meta">Period: {r.period} · Data: {r.freshness || 'live'}</p>}
       </div>
 
