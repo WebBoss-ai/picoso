@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Bowl } from '../../models/Model.js';
 import {
   executeProductBuyers,
@@ -458,6 +459,260 @@ async function query_customers(input = {}) {
     },
     definition: `Customers with order count in [${minOrders}, ${maxOrders ?? '∞'}] in period.`,
     calculationNote: `Grouped live orders by userId; filter orderCount ≥ ${minOrders}${maxOrders != null ? ` ≤ ${maxOrders}` : ''}`,
+  });
+}
+
+/**
+ * Export unique customers who placed orders in a period — full name, phone, distance.
+ * Company ops console: no PII masking.
+ */
+async function export_order_customers(input = {}) {
+  const { Order, User } = await import('../../models/Model.js');
+  const { COMPLETED_ORDER_STATUSES } = await import('../semantic/picosoModel.js');
+  const { haversineKm, storeCoords } = await import('../geo.js');
+  const days = input.days != null ? clampDays(input.days, 90) : null;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
+  const statuses = normalizeStatuses(input.statuses || input.status) || COMPLETED_ORDER_STATUSES;
+  const limit = clampLimit(input.limit ?? 300, 300);
+  const center = storeCoords(input.center);
+  const includeDistance = input.include_distance !== false && input.includeDistance !== false;
+
+  const match = { status: { $in: statuses } };
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  } else if (days != null) {
+    match.createdAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+  } else {
+    // Default last 30 days if no window
+    match.createdAt = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+  }
+
+  const rows = await Order.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$userId',
+        orderCount: { $sum: 1 },
+        revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
+        name: { $last: '$customerName' },
+        phone: { $last: '$phone' },
+        lat: { $last: '$deliveryAddress.lat' },
+        lng: { $last: '$deliveryAddress.lng' },
+        lastOrderAt: { $max: '$createdAt' },
+      },
+    },
+    { $sort: { revenue: -1 } },
+    { $limit: limit },
+  ]);
+
+  // Enrich from User when missing phone/name/coords
+  const ids = rows
+    .map((r) => r._id)
+    .filter((id) => id && mongoose.Types.ObjectId.isValid(String(id)));
+  const users = ids.length
+    ? await User.find({ _id: { $in: ids } })
+        .select('_id name phone email location.coordinates savedAddresses createdAt')
+        .lean()
+        .catch(() => [])
+    : [];
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  const customers = rows.map((r) => {
+    const u = byId.get(String(r._id));
+    let lat = r.lat != null ? Number(r.lat) : null;
+    let lng = r.lng != null ? Number(r.lng) : null;
+    if ((lat == null || lng == null) && u) {
+      lat = u.location?.coordinates?.lat ?? lat;
+      lng = u.location?.coordinates?.lng ?? lng;
+      if (lat == null || lng == null) {
+        const addr =
+          (u.savedAddresses || []).find((a) => a.isDefault && a.lat != null) ||
+          (u.savedAddresses || []).find((a) => a.lat != null && a.lng != null);
+        if (addr) {
+          lat = addr.lat;
+          lng = addr.lng;
+        }
+      }
+    }
+    let distanceKm = null;
+    if (includeDistance && lat != null && lng != null) {
+      distanceKm = haversineKm(center.lat, center.lng, lat, lng);
+      if (distanceKm != null) distanceKm = Math.round(distanceKm * 1000) / 1000;
+    }
+    return sanitizeCustomerRow({
+      customerId: r._id,
+      name: r.name || u?.name || '',
+      phone: r.phone || u?.phone || null,
+      email: u?.email || null,
+      orders: r.orderCount,
+      spend: r.revenue,
+      lastOrder: r.lastOrderAt,
+      distanceKm,
+      lat,
+      lng,
+    });
+  });
+
+  const totalCount = await Order.aggregate([
+    { $match: match },
+    { $group: { _id: '$userId' } },
+    { $count: 'n' },
+  ]);
+  const unique = totalCount[0]?.n || customers.length;
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'export_customers',
+    value: unique,
+    unit: 'customers',
+    preferMetric: 'export_customers',
+    related: {
+      rows_returned: customers.length,
+      total_unique: unique,
+    },
+    relatedLabels: {
+      rows_returned: 'Rows in export',
+      total_unique: 'Unique customers in window',
+    },
+    customers,
+    filters: {
+      days: fromDate || toDate ? null : days || 30,
+      fromDate,
+      toDate,
+      periodLabel: periodLabel || (days ? `Last ${days} days` : 'Last 30 days'),
+      statuses,
+      statusLabel: 'completed (non-cancelled)',
+      include_distance: includeDistance,
+      export: true,
+    },
+    source: {
+      dataset: 'orders+users',
+      freshness: 'live',
+      collection: 'orders',
+      match: { status: statuses },
+    },
+    definition:
+      'Unique customers (userId) who placed completed orders in the window, with full name/phone and haversine distance from store when coords exist.',
+    calculationNote: `Exported ${customers.length} of ${unique} unique customers (ops console — full contact fields).`,
+  });
+}
+
+async function count_registered_users(input = {}) {
+  const { User } = await import('../../models/Model.js');
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const match = {};
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  }
+  // Prefer role user / all docs
+  const total = await User.countDocuments(match);
+  const withRoleUser = await User.countDocuments({
+    ...match,
+    $or: [{ role: 'user' }, { role: { $exists: false } }, { role: null }],
+  }).catch(() => total);
+
+  return {
+    type: 'metric_result',
+    metric: 'registered_users',
+    value: total,
+    unit: 'customers',
+    preferMetric: 'registered_users',
+    related: {
+      role_user_est: withRoleUser,
+    },
+    relatedLabels: {
+      role_user_est: 'Approx non-admin users',
+    },
+    filters: {
+      fromDate,
+      toDate,
+      periodLabel: input.periodLabel || input.period_label || 'All time',
+      collection: 'users',
+    },
+    source: {
+      dataset: 'users',
+      freshness: 'live',
+      collection: 'users',
+    },
+    definition: 'Count of documents in the live users collection (platform registrations).',
+    calculationNote: `User.countDocuments() → ${total}`,
+  };
+}
+
+async function list_registered_users(input = {}) {
+  const { User } = await import('../../models/Model.js');
+  const { haversineKm, storeCoords } = await import('../geo.js');
+  const limit = clampLimit(input.limit ?? 200, 200);
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const center = storeCoords();
+  const match = {};
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  }
+  const rows = await User.find(match)
+    .select('_id name phone email location.coordinates savedAddresses createdAt role')
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+
+  const total = await User.countDocuments(match);
+  const customers = rows.map((u) => {
+    let lat = u.location?.coordinates?.lat;
+    let lng = u.location?.coordinates?.lng;
+    if (lat == null || lng == null) {
+      const addr =
+        (u.savedAddresses || []).find((a) => a.isDefault && a.lat != null) ||
+        (u.savedAddresses || []).find((a) => a.lat != null);
+      if (addr) {
+        lat = addr.lat;
+        lng = addr.lng;
+      }
+    }
+    let distanceKm = null;
+    if (lat != null && lng != null) {
+      distanceKm = haversineKm(center.lat, center.lng, lat, lng);
+      if (distanceKm != null) distanceKm = Math.round(distanceKm * 1000) / 1000;
+    }
+    return sanitizeCustomerRow({
+      customerId: u._id,
+      name: u.name,
+      phone: u.phone,
+      email: u.email,
+      lastOrder: u.createdAt,
+      distanceKm,
+      lat,
+      lng,
+    });
+  });
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'registered_users',
+    value: total,
+    unit: 'customers',
+    preferMetric: 'registered_users',
+    related: { rows_returned: customers.length },
+    customers,
+    filters: {
+      fromDate,
+      toDate,
+      periodLabel: input.periodLabel || 'All time',
+      collection: 'users',
+      limit,
+    },
+    source: { dataset: 'users', freshness: 'live', collection: 'users' },
+    definition: 'Registered platform users from live users collection (name, phone, distance when available).',
+    calculationNote: `Listed ${customers.length} of ${total} users.`,
   });
 }
 
@@ -1135,7 +1390,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'query_customers',
     description:
-      'Flexible customer segment by order frequency. Use for “customers ordered more than 5 times”, “exactly 1 order”, etc. Pass min_orders/max_orders + dates.',
+      'Flexible customer segment by order frequency. Use for “customers ordered more than 5 times”. For export with phones/distance prefer export_order_customers. min_orders defaults to 1.',
     parameters: {
       type: 'object',
       properties: {
@@ -1149,13 +1404,60 @@ export const TOOL_DEFINITIONS = [
         sort_by: { type: 'string', description: 'orderCount | spend' },
         limit: { type: 'number' },
       },
-      required: ['min_orders'],
+      required: [],
+    },
+  },
+  {
+    name: 'export_order_customers',
+    description:
+      'REQUIRED for export/list of customers who ordered in a period. Returns full name, phone, email, distanceKm, order count, spend. Company ops — full contact fields allowed. Use get_clock_context for last month dates first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        days: { type: 'number' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        statuses: { type: 'array', items: { type: 'string' } },
+        limit: { type: 'number', description: 'Max rows (default 300)' },
+        include_distance: { type: 'boolean' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'count_registered_users',
+    description:
+      'Count platform-registered users (User collection). Use for “customers registered on platform”, total users, signups — NOT order unique customers.',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'list_registered_users',
+    description:
+      'List registered platform users with name, phone, email, distance. Use for export/list of all signups.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+      },
+      required: [],
     },
   },
   {
     name: 'get_clock_context',
     description:
-      'Get timezone, today’s date, and precomputed month windows (January…December) so you can pass exact fromDate/toDate for “August orders”, last month, etc.',
+      'Get timezone, today’s date, last_month + precomputed month windows so you can pass exact fromDate/toDate for “last month” or “August orders”.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -1260,6 +1562,9 @@ const EXECUTORS = {
   count_unique_product_buyers,
   get_repeat_customers,
   query_customers,
+  export_order_customers,
+  count_registered_users,
+  list_registered_users,
   get_clock_context,
   calculate_revenue,
   count_orders,

@@ -264,7 +264,7 @@ export function isAnalyticsIntent(message = '') {
   const m = String(message);
   if (isConversational(m)) return false;
   if (matchTemplate(m)) return true;
-  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver)\b/i.test(
+  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver|export|list|phone|registered|signup|users?|distance)\b/i.test(
     m
   );
 }

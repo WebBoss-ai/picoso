@@ -802,8 +802,10 @@ export async function getBrainPackage(workspaceId) {
   // Also surface recent model versions for the UI
   const recentModels = await LlmSemanticModel.find({ workspaceId })
     .sort({ version: -1 })
-    .limit(12)
-    .select('version name status source domain createdAt updatedAt extractionMeta corpusId')
+    .limit(20)
+    .select(
+      'version name status source domain createdAt updatedAt extractionMeta corpusId textBrain parameters entities metrics glossary liveFieldMap businessContext'
+    )
     .lean();
 
   return {
@@ -836,6 +838,14 @@ export async function getBrainPackage(workspaceId) {
       source: m.source,
       domain: m.domain,
       sessions: m.extractionMeta?.learningSessions?.length || 0,
+      learningSessions: m.extractionMeta?.learningSessions || [],
+      textBrain: m.textBrain || '',
+      textPreview: String(m.textBrain || '').slice(0, 600),
+      parametersCount: (m.parameters || []).length,
+      entitiesCount: (m.entities || []).length,
+      metricsCount: (m.metrics || []).length,
+      glossaryCount: (m.glossary || []).length,
+      businessContext: m.businessContext || '',
       createdAt: m.createdAt,
       updatedAt: m.updatedAt,
     })),
@@ -981,7 +991,7 @@ export function modelContextForPrompt(model) {
     domain: m.domain,
     mode: 'live_first',
     instruction:
-      'Samples taught field meanings. ALWAYS answer business questions with live Mongo tools (resolve_product, count_unique_product_buyers, calculate_revenue, etc.). Use query_trained_samples / trained_* metrics ONLY if the user asks about the paste/training samples themselves.',
+      'COMPANY OPS CONSOLE. Full names/phones/distances are allowed. NEVER refuse exports for privacy. ALWAYS use live Mongo tools. Samples taught field meanings only. Use export_order_customers for list/export; count_registered_users for platform signups; never invent numbers.',
     businessContext: m.businessContext,
     liveFieldMap: m.liveFieldMap || null,
     queryPlan: m.queryPlan || null,

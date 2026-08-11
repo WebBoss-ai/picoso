@@ -119,11 +119,15 @@ export function mergeTextBrain(oldText = '', newText = '', sessionLabel = '') {
   const b = String(newText || '').trim();
   if (!a) return b;
   if (!b) return a;
-  if (a.includes(b.slice(0, Math.min(80, b.length))) && b.length < 400) return a;
+  // Always append every session — never skip (so each version/history grows visibly)
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
   const header = sessionLabel
     ? `## Training session · ${sessionLabel} · ${stamp}`
     : `## Training session · ${stamp}`;
+  // Avoid exact full-text duplicates back-to-back
+  if (a.endsWith(b) || a.includes(`\n${header}\n`)) {
+    return a.includes(b) ? a : `${a}\n\n---\n${header}\n\n${b}`;
+  }
   return `${a}\n\n---\n${header}\n\n${b}`;
 }
 

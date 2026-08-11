@@ -1388,7 +1388,7 @@ export default function LlmPage() {
 
                 {(brainPack?.history || []).length > 0 && (
                   <>
-                    <div className="llm-section-title mt-3">Brain versions</div>
+                    <div className="llm-section-title mt-3">Brain versions (full text each)</div>
                     <ul className="llm-session-list">
                       {brainPack.history.map((h) => (
                         <li key={h.id}>
@@ -1396,8 +1396,40 @@ export default function LlmPage() {
                             v{h.version} · {h.name}
                           </strong>
                           <span className="llm-muted">
-                            {h.status} · {h.source} · {h.sessions || 0} sessions
+                            {h.status} · {h.source} · {h.parametersCount ?? 0} params ·{' '}
+                            {h.entitiesCount ?? 0} entities · {h.sessions || 0} sessions
+                            {h.updatedAt
+                              ? ` · ${new Date(h.updatedAt).toLocaleString()}`
+                              : ''}
                           </span>
+                          {h.businessContext ? (
+                            <p className="llm-muted" style={{ marginTop: 4 }}>
+                              Context: {h.businessContext.slice(0, 200)}
+                              {h.businessContext.length > 200 ? '…' : ''}
+                            </p>
+                          ) : null}
+                          <details className="llm-calc" style={{ marginTop: 8 }}>
+                            <summary>Text brain for v{h.version}</summary>
+                            <pre className="llm-pre mt-2" style={{ maxHeight: '16rem' }}>
+                              {h.textBrain || h.textPreview || '(empty text for this version)'}
+                            </pre>
+                          </details>
+                          {(h.learningSessions || []).length > 0 && (
+                            <details className="llm-calc" style={{ marginTop: 6 }}>
+                              <summary>Sessions on this version</summary>
+                              <ul style={{ margin: '0.5rem 0 0 1rem', color: 'var(--llm-muted)' }}>
+                                {h.learningSessions
+                                  .slice()
+                                  .reverse()
+                                  .map((s, i) => (
+                                    <li key={i}>
+                                      {s.label || s.source} · {s.note || ''} · +
+                                      {s.recordCount ?? 0} rec
+                                    </li>
+                                  ))}
+                              </ul>
+                            </details>
+                          )}
                         </li>
                       ))}
                     </ul>

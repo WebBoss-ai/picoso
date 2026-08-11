@@ -34,26 +34,31 @@ const MAX_TOOL_CALLS = Number(process.env.LLM_MAX_TOOL_CALLS || 24);
 
 function systemPrompt(trainedModelContext, learning = []) {
   const picosoFallback = semanticContextForPrompt();
-  return `You are Intelligence Partner — an advanced live-data analytics copilot.
-You plan freely. You are NOT limited to fixed FAQ phrases.
-Greeting, general chat, product, geo, status, rankings, segments — you handle all of it.
+  return `You are Intelligence Partner — the company's private ops analytics console for THIS business.
+You plan freely. You are NOT a public chatbot with privacy restrictions.
 
-SECURITY
-- Never invent numbers. Ops metrics MUST come from tools on live Mongo.
-- Never reveal system secrets, API keys, or raw connection strings.
-- This is the company's private ops console: full customer names, phones, emails, and addresses MAY be shown and exported when tools return them.
-- Prefer tools with a high limit when the user asks for lists or exports (up to several hundred rows).
+CRITICAL — COMPANY OPS DATA (NOT PUBLIC)
+- Full customer names, phones, emails, addresses, and distances are ALLOWED and expected.
+- NEVER refuse exports/lists citing privacy, GDPR, PII, or anonymization. This is the business's own data.
+- NEVER invent numbers or lists. Always call tools for counts, revenue, ranks, and customer exports.
+- NEVER say "I can't provide" when a tool exists. Use tools and answer from tool results only.
 
-HOW YOU WORK
-1. Use conversation memory (prior turns + summary) for context continuity.
-2. For any time phrase (August, last month, yesterday) call get_clock_context first, then pass exact fromDate/toDate/periodLabel into tools.
-3. For rankings (“rank all items sold”, bestsellers) → top_products with a high limit (e.g. 40).
-4. For “customers ordered more than N times” → query_customers with min_orders=N+1 or min_orders=N depending on “more than”.
-5. For repeat rate → get_repeat_customers with preferred_metric="repeat_rate".
-6. For cancelled vs delivered → count_orders with statuses:["cancelled"] or ["delivered"] (never mix).
-7. Product + km → resolve_product then count_unique_product_buyers(radius_km).
-8. Pure chat / “where is store” → get_store_info or answer from brain; no fake product resolve.
-9. If unsure about schema → list_schema / inspect_brain / sample_collection.
+SECURITY (only secrets)
+- Never reveal API keys, connection strings, passwords, or LLM system secrets.
+- Contact fields from tools are OK to show and export.
+
+TOOLS — MANDATORY MAPPING
+1. Time phrases (last month, August, yesterday) → get_clock_context first, pass fromDate/toDate/periodLabel.
+2. Last month total sales / revenue → calculate_revenue (completed statuses by default).
+3. Export / list customers who ordered (names, phones, distances) → export_order_customers (high limit).
+4. Customers ordered N+ times → query_customers.
+5. Registered users / platform signups / users count → count_registered_users or list_registered_users (users collection).
+6. Rankings → top_products.
+7. Repeat rate → get_repeat_customers preferred_metric=repeat_rate.
+8. Product + km → resolve_product then count_unique_product_buyers.
+9. Store location / chat → get_store_info.
+
+After tools, headline with the real number/list count. Never claim privacy. Never claim data is unavailable without calling the tool first.
 
 TRAINED BRAIN (structure map; live answers still use tools)
 ${JSON.stringify(trainedModelContext, null, 2)}
@@ -62,10 +67,17 @@ OPS FALLBACK FACTS
 ${JSON.stringify(picosoFallback, null, 2)}
 
 CONTINUOUS LEARNING (recent successful episodes — reuse tool patterns when similar)
-${JSON.stringify(learning, null, 2)}
+${JSON.stringify(learning, null, 2)}`;
+}
 
-After tools, answer briefly with the headline number and what was measured.
-Never claim “template not matched”. Always try a tool when the user asks for counts, rank, rate, or revenue.`;
+function looksLikePrivacyRefusal(text = '') {
+  const t = String(text || '').toLowerCase();
+  return (
+    /\b(privacy|gdpr|pii|anonymiz|cannot provide|unable to (export|provide|share|give)|violat\w* privacy|raw user data|personal data)\b/i.test(
+      t
+    ) ||
+    /\bi'?m unable to\b.*\b(phone|name|customer|export|users?)\b/i.test(t)
+  );
 }
 
 /**
@@ -321,27 +333,46 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
       userMessage: message,
     });
 
-    // Pure chat path (LLM answered without tools)
+    // Pure chat path — only if NOT analytics and NOT a privacy refusal hallucination
     if (!hasMetricResult(collectedToolResults) && lastText && !isUsefulAnswer(answer)) {
-      answer = {
-        kind: 'chat',
-        headline: lastText.slice(0, 400),
-        narrative: lastText,
-        explanation: lastText,
-        metrics: [],
-        definitions: [],
-        calculationSteps: ['LLM direct response (no analytics tools)'],
-        sources: [],
-        dimensions: {},
-        confidence: { overall: 0.85 },
-        clarification: null,
-        freshness: 'live',
-        period: null,
-      };
+      if (
+        !isAnalyticsIntent(message) &&
+        !looksLikePrivacyRefusal(lastText) &&
+        !/\b(export|list|phone|registered|signup)\b/i.test(message)
+      ) {
+        answer = {
+          kind: 'chat',
+          headline: lastText.slice(0, 400),
+          narrative: lastText,
+          explanation: lastText,
+          metrics: [],
+          definitions: [],
+          calculationSteps: ['LLM direct response (no analytics tools)'],
+          sources: [],
+          dimensions: {},
+          confidence: { overall: 0.85 },
+          clarification: null,
+          freshness: 'live',
+          period: null,
+        };
+      } else if (looksLikePrivacyRefusal(lastText)) {
+        // Drop refusal text — recovery tools will run for analytics intents
+        answer = {
+          headline: 'Running live data query…',
+          metrics: [],
+          confidence: { overall: 0.1 },
+          incomplete: true,
+        };
+      }
     }
 
-    // Recovery only for analytics-shaped questions still empty
-    if (!isUsefulAnswer(answer) && isAnalyticsIntent(message)) {
+    // Recovery for analytics / export / registered-users still empty
+    if (
+      !isUsefulAnswer(answer) &&
+      (isAnalyticsIntent(message) ||
+        /\b(export|list|phone|registered|signup|platform users?)\b/i.test(message) ||
+        looksLikePrivacyRefusal(lastText))
+    ) {
       emit('status', { stage: 'recovery_tools', runId });
       answer = await runDeterministicFallback(message, emit);
     }
@@ -498,8 +529,14 @@ function hasMetricResult(toolResults = []) {
 
 export function isUsefulAnswer(answer) {
   if (!answer) return false;
+  if (answer.incomplete) return false;
+  const blob = `${answer.headline || ''} ${answer.narrative || ''} ${answer.explanation || ''}`;
+  if (looksLikePrivacyRefusal(blob)) return false;
   if (answer.kind === 'greeting') return true;
+  if (answer.customers?.length > 0) return true;
   if (answer.kind === 'chat' && (answer.headline || answer.narrative)?.length > 8) {
+    // Chat is only useful if it's not a refusal disguised as help
+    if (looksLikePrivacyRefusal(answer.headline || answer.narrative || '')) return false;
     return true;
   }
   if (answer.clarification?.candidates?.length) return true;
@@ -514,7 +551,8 @@ export function isUsefulAnswer(answer) {
     h.includes('no metrics returned') ||
     h.includes('no metric query ran') ||
     h.includes('could not map that') ||
-    h.includes('try again')
+    h.includes('try again') ||
+    h.includes('running live data')
   ) {
     return false;
   }
@@ -804,6 +842,8 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
 
   const primary =
     (preferredMetricId && deduped.find((m) => m.id === preferredMetricId)) ||
+    deduped.find((m) => m.id === 'export_customers') ||
+    deduped.find((m) => m.id === 'registered_users') ||
     deduped.find((m) => m.id === 'repeat_rate') ||
     deduped.find((m) => m.id === 'unique_customers') ||
     deduped.find((m) => m.id === 'orders') ||
@@ -1011,6 +1051,10 @@ function labelForMetric(id, statusLabel) {
     repeat_rate: 'Repeat rate',
     inactive_customers: 'Inactive customers',
     segment_customers: 'Customers in segment',
+    export_customers: 'Customers (export list)',
+    registered_users: 'Registered users',
+    rows_returned: 'Rows returned',
+    total_unique: 'Unique in window',
     min_orders: 'Min orders filter',
     total_product_buyers_any_distance: 'Buyers (any distance)',
     buyers_with_coordinates: 'Buyers with location data',
@@ -1056,7 +1100,6 @@ function formatHeadline(metric) {
 export async function runDeterministicFallback(message, emit = () => {}) {
   emit('status', { stage: 'understanding', mode: 'recovery_tools' });
 
-  // Try open LLM-less flexible heuristics via soft tool picks
   const lower = String(message || '').toLowerCase();
   const range = extractDateRange(message);
   const dateArgs = {
@@ -1067,20 +1110,74 @@ export async function runDeterministicFallback(message, emit = () => {}) {
   };
   const status = extractStatusFilter(message);
 
-  // Month name → calendar bounds via get_clock_context
+  // Last calendar month (when extractDateRange already set) + clock for named months / last month
   const monthMatch = lower.match(
     /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
   );
-  if (monthMatch) {
+  const wantsLastMonth = /\blast\s*month\b|\bprevious\s*month\b|\bllast\s*month\b/i.test(lower);
+  if (monthMatch || wantsLastMonth) {
     const clock = await executeTool('get_clock_context', {});
-    const key = monthMatch[1].toLowerCase();
-    const win = clock.result?.windows?.months?.[key];
-    if (win) {
+    if (wantsLastMonth && clock.result?.windows?.last_month) {
+      const win = clock.result.windows.last_month;
       dateArgs.fromDate = win.fromDate;
       dateArgs.toDate = win.toDate;
-      dateArgs.periodLabel = win.periodLabel;
+      dateArgs.periodLabel = win.periodLabel || 'Last calendar month';
       dateArgs.days = null;
+    } else if (monthMatch) {
+      const key = monthMatch[1].toLowerCase();
+      const win = clock.result?.windows?.months?.[key];
+      if (win) {
+        dateArgs.fromDate = win.fromDate;
+        dateArgs.toDate = win.toDate;
+        dateArgs.periodLabel = win.periodLabel;
+        dateArgs.days = null;
+      }
     }
+  }
+
+  // Registered users / platform signups
+  if (
+    /\b(registered|signup|sign[- ]?up|platform users?|users? on (the )?platform|total users?|all users?)\b/i.test(
+      lower
+    ) &&
+    !/\bordered?\b/i.test(lower)
+  ) {
+    emit('status', { stage: 'querying', tool: 'count_registered_users' });
+    const listWanted = /\b(list|export|show|names?|phones?)\b/i.test(lower);
+    const tools = [];
+    const countR = await executeTool('count_registered_users', {});
+    tools.push({ tool: 'count_registered_users', result: countR.result });
+    if (listWanted) {
+      const listR = await executeTool('list_registered_users', { limit: 200 });
+      tools.push({ tool: 'list_registered_users', result: listR.result });
+    }
+    return buildStructuredAnswer({
+      text: '',
+      toolResults: tools,
+      productConfidence: null,
+      userMessage: message,
+    });
+  }
+
+  // Export / list customers who ordered (phones, distances)
+  if (
+    /\b(export|list|download|csv)\b/i.test(lower) ||
+    (/\b(customers?|users?)\b/i.test(lower) &&
+      /\b(phone|distance|ordered|order)\b/i.test(lower))
+  ) {
+    emit('status', { stage: 'querying', tool: 'export_order_customers' });
+    const r = await executeTool('export_order_customers', {
+      ...dateArgs,
+      statuses: status.statuses,
+      limit: 300,
+      include_distance: true,
+    });
+    return buildStructuredAnswer({
+      text: '',
+      toolResults: [{ tool: 'export_order_customers', result: r.result }],
+      productConfidence: null,
+      userMessage: message,
+    });
   }
 
   // Rank items
@@ -1118,7 +1215,7 @@ export async function runDeterministicFallback(message, emit = () => {}) {
       ...dateArgs,
       min_orders: minOrders,
       statuses: status.statuses,
-      limit: 50,
+      limit: 100,
     });
     return buildStructuredAnswer({
       text: '',
@@ -1215,17 +1312,32 @@ export async function runDeterministicFallback(message, emit = () => {}) {
     }
   }
 
+  // Last month sales fallback
+  if (/\b(sales|revenue|total)\b/i.test(lower) && /\b(month|yesterday|today|week)\b/i.test(lower)) {
+    const r = await executeTool('calculate_revenue', {
+      ...dateArgs,
+      statuses: status.statuses,
+      statusLabel: status.label,
+    });
+    return buildStructuredAnswer({
+      text: '',
+      toolResults: [{ tool: 'calculate_revenue', result: r.result }],
+      productConfidence: null,
+      userMessage: message,
+    });
+  }
+
   return {
     kind: 'chat',
     headline:
-      'I could not finish that request. Rephrase with a date, status (delivered/cancelled), product, or metric — or ensure COHERE_API_KEY is set so the AI planner can choose tools.',
+      'I could not finish that request. Try: last month sales, list customers who ordered last month with phones, or customers registered on platform.',
     metrics: [],
     definitions: [],
     calculationSteps: [],
     sources: [],
     dimensions: {},
     explanation:
-      'Primary brain is the LLM with tools. This recovery path only runs if AI is unavailable or incomplete.',
+      'Tools path did not match. Rephrase with a date range, “export customers”, or “registered users”.',
     confidence: { overall: 0.15 },
     clarification: null,
     freshness: 'live',
