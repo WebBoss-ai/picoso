@@ -389,6 +389,7 @@ export default function LlmPage() {
         const decoder = new TextDecoder();
         let buffer = '';
         let finalResult = null;
+        let streamError = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -418,10 +419,17 @@ export default function LlmPage() {
               finalResult = data;
               setTurns((t) => [
                 ...t,
-                { role: 'assistant', content: data.headline || 'Done', result: data },
+                {
+                  role: 'assistant',
+                  content: data.headline || data.error || 'Done',
+                  result: data,
+                  error: Boolean(data.error),
+                },
               ]);
-            } else if (event === 'error') setError(data.message || 'Error');
-            else if (event === 'complete') {
+            } else if (event === 'error') {
+              streamError = data.message || 'Error';
+              setError(streamError);
+            } else if (event === 'complete') {
               if (data.conversationId) {
                 setConversationId(data.conversationId);
                 sessionStorage.setItem(CONV_KEY, data.conversationId);
@@ -434,7 +442,12 @@ export default function LlmPage() {
         if (!finalResult) {
           setTurns((t) => [
             ...t,
-            { role: 'assistant', content: 'No result returned.', result: null },
+            {
+              role: 'assistant',
+              content: streamError || 'No result returned.',
+              result: null,
+              error: Boolean(streamError),
+            },
           ]);
         }
       } catch (err) {

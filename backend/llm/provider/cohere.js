@@ -38,11 +38,13 @@ export class CohereProvider {
       messages,
       temperature,
       max_tokens: this.maxTokens,
-      strict_tools: true,
+      // strict_tools rejects tools whose parameters have required:[] or empty properties.
+      // Our analytics tools have many optional filters — keep flexible.
+      strict_tools: false,
     };
 
     if (tools?.length) {
-      body.tools = tools;
+      body.tools = normalizeToolsForCohere(tools);
     }
     // Cohere v2 uses tool call results as messages with role tool
     // We pass them inside messages already in agent runtime.
@@ -80,6 +82,48 @@ export class CohereProvider {
       clearTimeout(timer);
     }
   }
+}
+
+/**
+ * Cohere rejects tools with empty property maps / empty required lists under strict mode.
+ * Always ensure a valid JSON-schema object shape.
+ */
+function normalizeToolsForCohere(tools = []) {
+  return tools.map((t) => {
+    const fn = t.function || t;
+    const params = fn.parameters || { type: 'object', properties: {} };
+    let properties = params.properties && typeof params.properties === 'object'
+      ? { ...params.properties }
+      : {};
+    let required = Array.isArray(params.required) ? [...params.required] : [];
+
+    if (!Object.keys(properties).length) {
+      // Zero-arg tools (e.g. get_store_info, get_clock_context)
+      properties = {
+        _unused: {
+          type: 'string',
+          description: 'Optional unused placeholder for schema validity',
+        },
+      };
+    }
+
+    // If any property is present but required is empty, leave as-is when strict is off.
+    // If required points to missing keys, drop them.
+    required = required.filter((k) => Object.prototype.hasOwnProperty.call(properties, k));
+
+    return {
+      type: 'function',
+      function: {
+        name: fn.name,
+        description: fn.description || '',
+        parameters: {
+          type: 'object',
+          properties,
+          ...(required.length ? { required } : {}),
+        },
+      },
+    };
+  });
 }
 
 function extractText(content) {

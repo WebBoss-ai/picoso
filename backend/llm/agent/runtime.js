@@ -416,13 +416,21 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
       errors: [err.message],
     });
     emit('error', { message: err.message, runId });
+    // Always emit a result event so the UI never hangs on "No result returned".
+    emit('result', errorAnswer);
     emit('complete', {
       conversationId: String(conversation._id),
       runId,
       durationMs: Date.now() - started,
       failed: true,
     });
-    return { conversationId: conversation._id, runId, result: errorAnswer, error: err };
+    return {
+      conversationId: conversation._id,
+      runId,
+      result: errorAnswer,
+      error: err,
+      incomplete: true,
+    };
   } finally {
     clearToolContext();
   }
