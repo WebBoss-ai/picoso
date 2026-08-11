@@ -115,6 +115,7 @@ async function find_customers_within_radius(input = {}) {
   const radiusKm = clampRadiusKm(input.radius_km ?? input.radiusKm ?? 2, 2);
   const days = clampDays(input.days ?? 90, 90);
   const limit = clampLimit(input.limit ?? 100, 100);
+  const raw = await executeCustomersInRadius({ radiusKm, days, limit });
   return stripPiiDeep({
     type: 'metric_result',
     metric: 'unique_customers',
@@ -370,6 +371,7 @@ async function query_customers(input = {}) {
   const toDate = input.toDate || input.to_date || null;
   const statuses = normalizeStatuses(input.statuses || input.status) || COMPLETED_ORDER_STATUSES;
   const limit = clampLimit(input.limit ?? 200, 200);
+  const sortBy = String(input.sort_by || input.sortBy || 'orderCount');
   const periodLabel = input.periodLabel || input.period_label || null;
 
   const match = { status: { $in: statuses } };
@@ -713,6 +715,7 @@ async function inactive_customers(input = {}) {
   const daysLookback = clampDays(input.days_lookback ?? input.daysLookback ?? 365, 365);
   const minSpend = Number(input.min_spend ?? input.minSpend ?? 0) || 0;
   const limit = clampLimit(input.limit ?? 100, 100);
+  const raw = await executeInactiveCustomers({
     daysInactive,
     daysLookback,
     minSpend,
