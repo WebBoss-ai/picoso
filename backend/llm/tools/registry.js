@@ -509,14 +509,18 @@ async function inspect_brain(_input = {}) {
     name: model.name,
     source: model.source,
     domain: model.domain,
+    mode: 'live_first',
     jsonSchema: model.jsonSchema || corpus?.jsonSchema || null,
     textBrain: model.textBrain || corpus?.textBrain || '',
     parameters: model.parameters || corpus?.parameters || [],
+    liveFieldMap: model.liveFieldMap || null,
+    queryPlan: model.queryPlan || null,
     recordCount: corpus?.recordCount || corpus?.records?.length || 0,
     sampleRecords: (corpus?.records || []).slice(0, 5).map((r) => {
       const { rawPreview, _source, _confidence, ...rest } = r || {};
       return rest;
     }),
+    note: 'Samples teach structure. Ops numbers come from live Mongo tools.',
   };
 }
 
@@ -614,18 +618,32 @@ async function run_metric(input = {}) {
   const metricId = input.metric_id || input.metricId || input.id;
   if (!metricId) return { type: 'error', error: 'metric_id required' };
 
-  // Paste-trained metrics resolve against corpus
-  if (
-    String(metricId).startsWith('trained_') ||
-    model.source === 'unstructured' ||
-    (model.metrics || []).some(
-      (m) => m.id === metricId && String(m.entity || '').includes('__trained')
-    )
-  ) {
+  // Paste-trained corpus metrics only (sample QA). Live ops metrics use Mongo tools.
+  if (String(metricId).startsWith('trained_')) {
     return runTrainedSampleMetric(model, metricId, {
       status: input.status,
       aggregation: input.aggregation,
       field: input.field,
+    });
+  }
+
+  // Live commerce metrics → deterministic Mongo tools (not paste corpus)
+  if (metricId === 'revenue') return calculate_revenue(input);
+  if (metricId === 'orders' || metricId === 'order_count' || metricId === 'count_orders') {
+    return count_orders(input);
+  }
+  if (metricId === 'aov') return get_aov(input);
+
+  // If entity is trained samples corpus only
+  const metricDef = (model.metrics || []).find((m) => m.id === metricId);
+  if (
+    metricDef &&
+    String(metricDef.entity || '').includes('__trained')
+  ) {
+    return runTrainedSampleMetric(model, metricId, {
+      status: input.status,
+      aggregation: input.aggregation || metricDef.aggregation,
+      field: input.field || metricDef.field,
     });
   }
 

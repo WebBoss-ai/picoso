@@ -566,10 +566,9 @@ export default function LlmPage() {
               <Brain className="w-4 h-4" /> 1. Paste unorganized data (recommended)
             </h2>
             <p className="llm-muted">
-              Drop order admin dumps, notes, CSV, or JSON. The system detects parameters (ids,
-              status, COD, totals, items, pins, phones…) even when the text is messy. Stores a{' '}
-              <strong>JSON schema</strong> and a <strong>text brain</strong> you can open under
-              Brain.
+              Drop order admin dumps, notes, CSV, or JSON. AI learns fields (price, status, pin,
+              phone, items…). Those concepts are mapped to <strong>live Mongo</strong> so questions
+              like “Paneer Tikka in 5 km” scan real orders — samples only teach the structure.
             </p>
             <input
               className="llm-input mt-3"
@@ -781,6 +780,7 @@ export default function LlmPage() {
               {[
                 ['text', 'Text'],
                 ['json', 'JSON schema'],
+                ['live', 'Live map'],
                 ['params', 'Parameters'],
                 ['records', 'Records'],
               ].map(([id, label]) => (
@@ -810,6 +810,18 @@ export default function LlmPage() {
             {brainView === 'json' && (
               <pre className="llm-pre mt-3">
                 {JSON.stringify(brain?.jsonSchema || draftModel?.jsonSchema || {}, null, 2)}
+              </pre>
+            )}
+            {brainView === 'live' && (
+              <pre className="llm-pre mt-3">
+                {JSON.stringify(
+                  brain?.liveFieldMap ||
+                    draftModel?.liveFieldMap ||
+                    brain?.queryPlan ||
+                    { note: 'Train from paste to build concept → live Mongo field map' },
+                  null,
+                  2
+                )}
               </pre>
             )}
             {brainView === 'params' && (

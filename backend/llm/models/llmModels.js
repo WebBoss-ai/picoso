@@ -121,17 +121,18 @@ const llmConnectionSchema = new mongoose.Schema({
 
 const fieldSchema = new mongoose.Schema(
   {
-    path: String,
-    type: String,
+    path: { type: String },
+    /** field data type — must use nested form; bare `type: String` breaks Mongoose */
+    dataType: { type: String },
     sampleValues: [mongoose.Schema.Types.Mixed],
-    nullRate: Number,
-    isId: Boolean,
-    isForeignKey: Boolean,
-    isGeo: Boolean,
-    isDate: Boolean,
-    isNumeric: Boolean,
-    isMoneyLike: Boolean,
-    isStatusLike: Boolean,
+    nullRate: { type: Number },
+    isId: { type: Boolean },
+    isForeignKey: { type: Boolean },
+    isGeo: { type: Boolean },
+    isDate: { type: Boolean },
+    isNumeric: { type: Boolean },
+    isMoneyLike: { type: Boolean },
+    isStatusLike: { type: Boolean },
   },
   { _id: false }
 );
@@ -225,7 +226,7 @@ const semanticDimensionSchema = new mongoose.Schema(
     name: String,
     entity: String,
     field: String,
-    type: {
+    dataType: {
       type: String,
       enum: ['categorical', 'date', 'geo', 'boolean', 'numeric'],
       default: 'categorical',
@@ -291,17 +292,14 @@ const llmSemanticModelSchema = new mongoose.Schema({
   jsonSchema: { type: mongoose.Schema.Types.Mixed, default: null },
   /** Operator-readable trained brain (markdown/text) */
   textBrain: { type: String, default: '' },
-  /** Detected parameters with types + samples */
-  parameters: [
-    {
-      name: String,
-      type: String,
-      description: String,
-      sampleValues: [mongoose.Schema.Types.Mixed],
-      enumValues: [mongoose.Schema.Types.Mixed],
-      nullRate: Number,
-    },
-  ],
+  /** Detected parameters with types + samples (Mixed avoids Mongoose `type` keyword trap) */
+  parameters: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  /**
+   * Concept → live Mongo mapping inferred from samples + discovery.
+   * Queries use this to scan live DB, not only paste corpus.
+   */
+  liveFieldMap: { type: mongoose.Schema.Types.Mixed, default: null },
+  queryPlan: { type: mongoose.Schema.Types.Mixed, default: null },
   corpusId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'LlmTrainingCorpus',

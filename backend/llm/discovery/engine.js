@@ -129,28 +129,22 @@ export async function discoverSchema(db, options = {}) {
       }
       const isNumeric = dominant === 'number' || dominant === 'integer';
       const isDate = dominant === 'date' || dominant === 'date-string';
-      const isId = path === '_id' || ID_HINTS.test(f.path);
-      // fix: path variable wrong - use f.path
       const pathStr = f.path;
       return {
         path: pathStr,
-        type: dominant,
+        dataType: dominant,
+        type: dominant, // compat for readers
         sampleValues: f.samples,
         nullRate: f.seen ? f.nulls / Math.max(samples.length, 1) : 0,
         isId: pathStr === '_id' || ID_HINTS.test(pathStr),
         isForeignKey: /Id$|_id$/.test(pathStr) && pathStr !== '_id',
-        isGeo: GEO_HINTS.test(pathStr) || dominant === 'object',
+        isGeo: GEO_HINTS.test(pathStr),
         isDate: isDate || DATE_HINTS.test(pathStr),
         isNumeric,
         isMoneyLike: isNumeric && MONEY_HINTS.test(pathStr),
         isStatusLike: STATUS_HINTS.test(pathStr),
       };
     });
-
-    // fix isId binding (left buggy isId with path)
-    for (const field of fields) {
-      field.isId = field.path === '_id' || ID_HINTS.test(field.path);
-    }
 
     collections.push({
       name,
@@ -267,8 +261,9 @@ export function draftSemanticModel(snapshot, options = {}) {
 
   for (const col of collections) {
     const role = roleOf(col.name, col.fields);
+    const fieldType = (f) => f.dataType || f.type;
     const labelField =
-      col.fields.find((f) => NAME_HINTS.test(f.path) && f.type === 'string')?.path ||
+      col.fields.find((f) => NAME_HINTS.test(f.path) && fieldType(f) === 'string')?.path ||
       col.fields.find((f) => f.path === 'name')?.path ||
       null;
 
@@ -308,13 +303,14 @@ export function draftSemanticModel(snapshot, options = {}) {
           confirmed: false,
         });
       }
-      if (f.isStatusLike || (f.type === 'string' && f.sampleValues?.length)) {
+      if (f.isStatusLike || (fieldType(f) === 'string' && f.sampleValues?.length)) {
         if (!f.isId && f.path !== '_id') {
           dimensions.push({
             id: `dim_${col.name}_${f.path}`.replace(/[^a-z0-9_]+/gi, '_').toLowerCase(),
             name: `${f.path} (${humanize(col.name)})`,
             entity: col.name,
             field: f.path,
+            dataType: f.isDate ? 'date' : f.isNumeric ? 'numeric' : f.isGeo ? 'geo' : 'categorical',
             type: f.isDate ? 'date' : f.isNumeric ? 'numeric' : f.isGeo ? 'geo' : 'categorical',
             confirmed: false,
           });
@@ -326,6 +322,7 @@ export function draftSemanticModel(snapshot, options = {}) {
           name: `${f.path} date`,
           entity: col.name,
           field: f.path,
+          dataType: 'date',
           type: 'date',
           confirmed: false,
         });

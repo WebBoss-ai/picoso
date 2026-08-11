@@ -8,6 +8,11 @@ import { decryptSecret, hostFromUri } from '../security/secrets.js';
  */
 export async function getDataConnection(connectionDoc) {
   if (!connectionDoc || connectionDoc.mode === 'self') {
+    if (!mongoose.connection?.db) {
+      throw new Error(
+        'App MongoDB is not connected on this process. Wait for server Mongo connect, then retry Discover / Train.'
+      );
+    }
     return {
       db: mongoose.connection.db,
       conn: mongoose.connection,

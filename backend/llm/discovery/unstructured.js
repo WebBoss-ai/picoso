@@ -615,6 +615,7 @@ export function draftModelFromUnstructured({ label, records, parameters, busines
       name: p.name,
       entity: '__trained_samples__',
       field: p.name,
+      dataType: p.type === 'number' || p.type === 'integer' ? 'numeric' : 'categorical',
       type: p.type === 'number' || p.type === 'integer' ? 'numeric' : 'categorical',
       confirmed: false,
     }));
@@ -625,6 +626,7 @@ export function draftModelFromUnstructured({ label, records, parameters, busines
       name: 'Customer pin',
       entity: '__trained_samples__',
       field: 'customerLat',
+      dataType: 'geo',
       type: 'geo',
       confirmed: false,
     });

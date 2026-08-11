@@ -12,6 +12,11 @@ import {
   trainFromUnstructuredText,
   queryTrainedRecords,
 } from './unstructured.js';
+import {
+  buildLiveFieldMapFromSamples,
+  buildLiveQueryPlanText,
+  buildQueryPlan,
+} from './liveMap.js';
 
 export async function getOrCreateDefaultWorkspace() {
   let ws = await LlmWorkspace.findOne({ slug: 'default' });
@@ -277,7 +282,7 @@ export async function addTrainingHint(modelId, question, answer) {
 
 /**
  * Train from unorganized paste (order cards, notes, JSON, dumps).
- * Produces JSON schema + text brain + queryable corpus.
+ * Samples teach structure → brain + liveFieldMap; ops answers scan live Mongo.
  */
 export async function runUnstructuredTrain(workspaceId, options = {}) {
   const workspace = await LlmWorkspace.findById(workspaceId);
@@ -287,6 +292,167 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
     label: options.label || 'Operations paste',
     businessContext: options.businessContext || '',
   });
+
+  // Optional live schema discovery (non-fatal) — enriches field map
+  let discovery = null;
+  let discoveryError = null;
+  let snapshotId = null;
+  try {
+    const connection = await getOrCreateSelfConnection(workspaceId);
+    const data = await getDataConnection(connection);
+    try {
+      if (!data.db) {
+        throw new Error('App MongoDB not connected yet');
+      }
+      discovery = await discoverSchema(data.db, {
+        sampleSize: Math.min(Number(options.sampleSize) || 20, 40),
+        maxCollections: 25,
+      });
+      connection.meta = {
+        host: data.host || 'self',
+        dbName: data.dbName || '',
+        collectionsCount: discovery.collections.length,
+      };
+      connection.status = 'connected';
+      connection.lastError = null;
+      connection.lastDiscoveredAt = new Date();
+      await connection.save();
+
+      const lastSnap = await LlmSchemaSnapshot.findOne({ workspaceId })
+        .sort({ version: -1 })
+        .lean();
+      const snapVersion = (lastSnap?.version || 0) + 1;
+      const snapshot = await LlmSchemaSnapshot.create({
+        workspaceId,
+        connectionId: connection._id,
+        version: snapVersion,
+        collections: discovery.collections,
+        relationships: discovery.relationships,
+        discoveredAt: new Date(),
+      });
+      snapshotId = snapshot._id;
+    } finally {
+      await data.release();
+    }
+  } catch (err) {
+    discoveryError = err.message || String(err);
+    console.warn('[llm] live discover during paste train (non-fatal):', discoveryError);
+  }
+
+  const liveFieldMap = buildLiveFieldMapFromSamples({
+    parameters: result.parameters,
+    domain: result.domain,
+    discovery,
+  });
+  const queryPlan = buildQueryPlan(liveFieldMap);
+  const textBrain =
+    result.textBrain +
+    buildLiveQueryPlanText(liveFieldMap) +
+    (discoveryError
+      ? `\n\n## Live discovery note\nCould not sample Mongo during train: ${discoveryError}. Live tools still use built-in Order/Bowl/User mappings when the server is connected.`
+      : discovery
+        ? `\n\n## Live discovery\nSampled ${discovery.collections.length} collections from app Mongo and bound concepts to real field paths.`
+        : '');
+
+  // Entities: live collections first + sample corpus
+  const liveEntities = [
+    {
+      id: 'orders',
+      name: 'Orders (live)',
+      collectionName: 'orders',
+      description:
+        'Live order collection. grandTotal→totalPrice, pin→deliveryAddress.lat/lng, items→items',
+      primaryKey: '_id',
+      labelField: 'orderId',
+      role: 'order',
+      confirmed: true,
+    },
+    {
+      id: 'products',
+      name: 'Products / bowls (live)',
+      collectionName: 'bowls',
+      description: 'Live product catalog used by resolve_product',
+      primaryKey: '_id',
+      labelField: 'name',
+      role: 'product',
+      confirmed: true,
+    },
+    {
+      id: 'customers',
+      name: 'Customers (live)',
+      collectionName: 'users',
+      description: 'Live users; geo fallback for radius queries',
+      primaryKey: '_id',
+      labelField: 'name',
+      role: 'customer',
+      confirmed: true,
+    },
+  ];
+
+  const liveMetrics = [
+    {
+      id: 'revenue',
+      name: 'Live revenue',
+      description: 'Sum totalPrice on live completed orders',
+      aggregation: 'sum',
+      entity: 'orders',
+      field: 'totalPrice',
+      filters: [],
+      confirmed: true,
+    },
+    {
+      id: 'orders',
+      name: 'Live order count',
+      description: 'Count live completed orders',
+      aggregation: 'count',
+      entity: 'orders',
+      field: null,
+      filters: [],
+      confirmed: true,
+    },
+    {
+      id: 'aov',
+      name: 'Live AOV',
+      description: 'Average totalPrice on live completed orders',
+      aggregation: 'avg',
+      entity: 'orders',
+      field: 'totalPrice',
+      filters: [],
+      confirmed: true,
+    },
+  ];
+
+  const entities = [
+    ...liveEntities,
+    ...(result.draft.entities || []).map((e) => ({
+      ...e,
+      description: `${e.description || ''} (sample corpus — structure only)`,
+    })),
+  ];
+  const metrics = [...liveMetrics, ...(result.draft.metrics || [])];
+  const dimensions = (result.draft.dimensions || []).map((d) => ({
+    ...d,
+    dataType: d.dataType || d.type || 'categorical',
+  }));
+
+  const glossary = [
+    ...(result.draft.glossary || []),
+    {
+      term: 'live data',
+      definition:
+        'Full orders/products/users in MongoDB. Sample paste only teaches field meanings; use live tools for real answers.',
+    },
+    {
+      term: 'customer',
+      definition:
+        'Order deliveryAddress.lat / deliveryAddress.lng or user.location.coordinates; distance via haversine from store.',
+    },
+    {
+      term: 'product radius query',
+      definition:
+        'resolve_product then count_unique_product_buyers with radius_km on live data.',
+    },
+  ];
 
   const last = await LlmSemanticModel.findOne({ workspaceId }).sort({ version: -1 }).lean();
   const version = (last?.version || 0) + 1;
@@ -299,7 +465,7 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
     records: result.records,
     recordCount: result.recordCount,
     jsonSchema: result.jsonSchema,
-    textBrain: result.textBrain,
+    textBrain,
     parameters: result.parameters,
     rawPreview: result.rawPreview,
     updatedAt: new Date(),
@@ -307,22 +473,30 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
 
   const model = await LlmSemanticModel.create({
     workspaceId,
+    schemaSnapshotId: snapshotId,
     version,
     name: options.modelName || `${result.label} · brain v${version}`,
     status: 'draft',
-    source: 'unstructured',
+    source: discovery ? 'hybrid' : 'unstructured',
     domain: result.domain,
     businessContext: options.businessContext || '',
-    entities: result.draft.entities,
-    metrics: result.draft.metrics,
-    dimensions: result.draft.dimensions,
-    relationships: result.draft.relationships,
-    glossary: result.draft.glossary,
+    entities,
+    metrics,
+    dimensions,
+    relationships: result.draft.relationships || [],
+    glossary,
     jsonSchema: result.jsonSchema,
-    textBrain: result.textBrain,
+    textBrain,
     parameters: result.parameters,
+    liveFieldMap,
+    queryPlan,
     corpusId: corpus._id,
-    extractionMeta: result.extraction,
+    extractionMeta: {
+      ...result.extraction,
+      discoveryError,
+      liveCollections: discovery?.collections?.length || 0,
+      mode: 'live_first',
+    },
     updatedAt: new Date(),
   });
 
@@ -334,12 +508,26 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
     corpus: sanitizeCorpus(corpus, { includeRecords: true, recordLimit: 50 }),
     brain: {
       jsonSchema: result.jsonSchema,
-      textBrain: result.textBrain,
+      textBrain,
       parameters: result.parameters,
       domain: result.domain,
       recordCount: result.recordCount,
-      extraction: result.extraction,
+      extraction: { ...result.extraction, discoveryError },
+      liveFieldMap,
+      queryPlan,
+      mode: 'live_first',
     },
+    discovery: discovery
+      ? {
+          collections: discovery.collections.map((c) => ({
+            name: c.name,
+            estimatedCount: c.estimatedCount,
+            fieldCount: c.fields?.length || 0,
+          })),
+          relationships: discovery.relationships?.length || 0,
+        }
+      : null,
+    discoveryError,
   };
 }
 
@@ -375,6 +563,9 @@ export async function getBrainPackage(workspaceId) {
       recordCount: corpus?.recordCount || corpus?.records?.length || 0,
       source: o.source,
       extraction: o.extractionMeta,
+      liveFieldMap: o.liveFieldMap || null,
+      queryPlan: o.queryPlan || null,
+      mode: o.queryPlan?.priority || (o.liveFieldMap ? 'live_first' : null),
     },
   };
 }
@@ -492,6 +683,8 @@ export function sanitizeModel(model) {
     jsonSchema: o.jsonSchema || null,
     textBrain: o.textBrain || '',
     parameters: o.parameters || [],
+    liveFieldMap: o.liveFieldMap || null,
+    queryPlan: o.queryPlan || null,
     corpusId: o.corpusId ? String(o.corpusId) : null,
     extractionMeta: o.extractionMeta || null,
     createdAt: o.createdAt,
@@ -504,7 +697,7 @@ export function modelContextForPrompt(model) {
   if (!model) {
     return {
       trained: false,
-      note: 'No semantic model trained yet. Use built-in Picoso tools or ask user to Train from Data.',
+      note: 'No semantic model trained yet. Use built-in Picoso tools (live Mongo) for analytics.',
     };
   }
   const m = model.toObject?.() || model;
@@ -514,8 +707,12 @@ export function modelContextForPrompt(model) {
     status: m.status,
     source: m.source,
     domain: m.domain,
+    mode: 'live_first',
+    instruction:
+      'Samples taught field meanings. ALWAYS answer business questions with live Mongo tools (resolve_product, count_unique_product_buyers, calculate_revenue, etc.). Use query_trained_samples / trained_* metrics ONLY if the user asks about the paste/training samples themselves.',
     businessContext: m.businessContext,
-    textBrainSummary: String(m.textBrain || '').slice(0, 3500),
+    liveFieldMap: m.liveFieldMap || null,
+    queryPlan: m.queryPlan || null,
     parameters: (m.parameters || []).slice(0, 40).map((p) => ({
       name: p.name,
       type: p.type,
@@ -542,11 +739,12 @@ export function modelContextForPrompt(model) {
       name: d.name,
       entity: d.entity,
       field: d.field,
-      type: d.type,
+      type: d.dataType || d.type,
     })),
     relationships: (m.relationships || []).slice(0, 30),
     glossary: (m.glossary || []).slice(0, 30),
     trainingHints: (m.trainingHints || []).slice(-12),
+    textBrainSummary: String(m.textBrain || '').slice(0, 2500),
     jsonSchemaTitle: m.jsonSchema?.title || null,
   };
 }
