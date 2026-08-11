@@ -3,11 +3,9 @@ import { requireLlmPin } from './middleware/llmAuth.js';
 import {
   runAgent,
   runDeterministicFallback,
-  greetingAnswer,
   isUsefulAnswer,
 } from './agent/runtime.js';
 import { TOOL_DEFINITIONS } from './tools/registry.js';
-import { isGreeting, isConversational, conversationalAnswer } from './templates.js';
 import {
   getOrCreateConversation,
   appendTurn,
@@ -36,7 +34,7 @@ function rateLimit(req, res, next) {
 async function emitResult(emit, text, conversationId, answer, mode) {
   try {
     const conv = await getOrCreateConversation(conversationId);
-    await appendTurn(conv, text, answer.headline || '', answer);
+    await appendTurn(conv, text, answer.headline || answer.narrative || '', answer);
     emit('result', answer);
     emit('complete', {
       conversationId: String(conv._id),
@@ -57,6 +55,7 @@ router.get('/health', (_req, res) => {
     service: 'picoso-intelligence',
     cohereConfigured: Boolean(process.env.COHERE_API_KEY),
     model: process.env.COHERE_MODEL || 'command-a-03-2025',
+    mode: 'ai_first',
   });
 });
 
@@ -74,11 +73,9 @@ router.get('/tools', requireLlmPin, (_req, res) => {
 });
 
 /**
- * Pipeline:
- *  1. Greetings
- *  2. AI brain (Cohere) when key present — plans + tools; code always finishes metrics
- *  3. Deterministic full analytics path (always has numbers for known patterns)
- *  4. Soft failure message
+ * AI-first pipeline:
+ * 1) Cohere agent plans any intent (greet / chat / analytics) + tools for live numbers
+ * 2) Soft code fallback only if AI incomplete and key missing/error
  */
 router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
   const { message, conversationId, mode } = req.body || {};
@@ -115,51 +112,20 @@ router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
   try {
     emit('status', { stage: 'received' });
 
-    if (isGreeting(text)) {
-      await emitResult(emit, text, conversationId, greetingAnswer(), 'greeting');
-      return;
-    }
-    if (isConversational(text)) {
-      await emitResult(
-        emit,
-        text,
-        conversationId,
-        conversationalAnswer(text),
-        'conversational'
-      );
-      return;
-    }
-
-    // ── Deterministic tools FIRST for known analytics patterns (status, product+radius) ─
-    // Guarantees cancelled ≠ delivered and product geo uses live Mongo.
-    const detFirst = await runDeterministicFallback(text, emit);
-    if (isUsefulAnswer(detFirst) && detFirst.kind !== 'chat') {
-      await emitResult(emit, text, conversationId, detFirst, 'tools_first');
-      return;
-    }
-    // chat/unmapped may still try AI if configured
-    if (detFirst?.kind === 'chat' && detFirst.confidence?.overall >= 0.9) {
-      await emitResult(emit, text, conversationId, detFirst, 'conversational');
-      return;
-    }
-
-    // ── AI second (optional enrichment / open-ended) ──────────────────────
     if (process.env.COHERE_API_KEY && mode !== 'deterministic') {
       try {
         emit('status', { stage: 'planning', mode: 'ai' });
-        // runAgent emits result+complete itself when successful
         const out = await runAgent({
           message: text,
           conversationId: conversationId || undefined,
           emit,
         });
-        // If agent returned useless answer, fall through to tools engine
-        if (out?.result && isUsefulAnswer(out.result)) {
+        if (out?.result && isUsefulAnswer(out.result) && !out.incomplete) {
           return;
         }
         emit('status', {
           stage: 'tools_engine',
-          reason: 'ai_incomplete',
+          reason: out?.incomplete ? 'ai_incomplete' : 'ai_weak',
         });
       } catch (err) {
         emit('status', {
@@ -167,17 +133,22 @@ router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
           reason: err.message || 'AI error',
         });
       }
+    } else if (!process.env.COHERE_API_KEY) {
+      emit('status', {
+        stage: 'tools_engine',
+        reason: 'no_cohere_key',
+      });
     }
 
-    // ── Tools engine (deterministic analytics) ────────────────────────────
-    emit('status', { stage: 'deterministic_mode' });
+    // Safety net only — flexible tools, not keyword templates as primary brain
+    emit('status', { stage: 'recovery_tools' });
     const result = await runDeterministicFallback(text, emit);
     await emitResult(
       emit,
       text,
       conversationId,
       result,
-      process.env.COHERE_API_KEY ? 'tools_after_ai' : 'deterministic'
+      process.env.COHERE_API_KEY ? 'tools_after_ai' : 'tools_only'
     );
   } catch (err) {
     emit('error', { message: err.message || 'Chat failed' });

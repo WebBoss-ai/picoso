@@ -20,6 +20,26 @@ const llmConversationSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+/** Continuous learning: Q → tools → result episodes (not templates). */
+const llmMemoryEpisodeSchema = new mongoose.Schema({
+  workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'LlmWorkspace', default: null, index: true },
+  conversationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LlmConversation',
+    default: null,
+    index: true,
+  },
+  question: { type: String, required: true },
+  toolsUsed: [String],
+  metricId: { type: String, default: null },
+  metricValue: { type: mongoose.Schema.Types.Mixed, default: null },
+  dimensions: { type: mongoose.Schema.Types.Mixed, default: null },
+  sources: { type: mongoose.Schema.Types.Mixed, default: null },
+  explanation: { type: String, default: '' },
+  confidence: { type: Number, default: null },
+  createdAt: { type: Date, default: Date.now, index: true },
+});
+
 const llmToolExecutionSchema = new mongoose.Schema({
   runId: { type: String, required: true, index: true },
   tool: { type: String, required: true },
@@ -344,6 +364,10 @@ const llmTrainingCorpusSchema = new mongoose.Schema({
 export const LlmConversation =
   mongoose.models.LlmConversation ||
   mongoose.model('LlmConversation', llmConversationSchema);
+
+export const LlmMemoryEpisode =
+  mongoose.models.LlmMemoryEpisode ||
+  mongoose.model('LlmMemoryEpisode', llmMemoryEpisodeSchema);
 
 export const LlmAgentRun =
   mongoose.models.LlmAgentRun || mongoose.model('LlmAgentRun', llmAgentRunSchema);

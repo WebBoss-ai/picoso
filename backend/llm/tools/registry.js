@@ -215,81 +215,117 @@ async function count_unique_product_buyers(input = {}) {
 
 async function get_repeat_customers(input = {}) {
   const productId = input.product_id || input.productId || null;
-  const days = clampDays(input.days ?? 90, 90);
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const minOrders = Math.max(2, Number(input.min_orders ?? input.minOrders ?? 2) || 2);
+  const preferred =
+    input.preferred_metric ||
+    input.preferredMetric ||
+    input.metric ||
+    'repeat_customers';
   const radiusKm =
     input.radius_km != null || input.radiusKm != null
       ? clampRadiusKm(input.radius_km ?? input.radiusKm, 2)
       : null;
+  const statuses = normalizeStatuses(input.statuses || input.status);
+  const periodLabel = input.periodLabel || input.period_label || null;
 
   if (productId) {
-    const raw = await executeProductBuyers({ productId, days, radiusKm, listLimit: 20 });
+    const raw = await executeProductBuyers({
+      productId,
+      days: fromDate || toDate ? undefined : days,
+      fromDate,
+      toDate,
+      radiusKm,
+      listLimit: 40,
+    });
+    const filtered = (raw.customers || []).filter((c) => (c.orderCount || c.orders || 0) >= minOrders);
+    const uniqueCustomers = raw.uniqueCustomers;
+    const repeatCustomers = filtered.length;
+    const rate = uniqueCustomers > 0 ? repeatCustomers / uniqueCustomers : 0;
+    const primaryIsRate = /rate/i.test(String(preferred));
     return stripPiiDeep({
       type: 'metric_result',
-      metric: 'repeat_customers',
-      value: raw.repeatCustomers,
-      unit: 'customers',
+      metric: primaryIsRate ? 'repeat_rate' : 'repeat_customers',
+      value: primaryIsRate ? Math.round(rate * 10000) / 10000 : repeatCustomers,
+      unit: primaryIsRate ? 'ratio' : 'customers',
+      preferMetric: preferred,
       related: {
-        unique_customers: raw.uniqueCustomers,
-        repeat_rate: raw.repeatRate,
+        unique_customers: uniqueCustomers,
+        repeat_customers: repeatCustomers,
+        repeat_rate: Math.round(rate * 10000) / 10000,
         orders: raw.orders,
         revenue: raw.revenue,
+        min_orders: minOrders,
       },
-      customers: (raw.customers || [])
-        .filter((c) => c.orderCount >= 2)
-        .map(sanitizeCustomerRow),
-      filters: { productId, days, radiusKm },
+      customers: filtered.map(sanitizeCustomerRow),
+      filters: {
+        productId,
+        days: fromDate || toDate ? null : days,
+        fromDate,
+        toDate,
+        periodLabel,
+        radiusKm,
+        min_orders: minOrders,
+        statuses: statuses || undefined,
+      },
       source: raw.source,
-      definition: GLOSSARY.repeat_customer,
+      definition: `Customers with ≥${minOrders} completed product orders in period.`,
     });
   }
 
-  // all customers with 2+ orders in period
   const { Order } = await import('../../models/Model.js');
   const { COMPLETED_ORDER_STATUSES } = await import('../semantic/picosoModel.js');
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const statusList = statuses || COMPLETED_ORDER_STATUSES;
+  const match = {
+    status: { $in: statusList },
+  };
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  } else {
+    match.createdAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+  }
+
   const rows = await Order.aggregate([
-    {
-      $match: {
-        status: { $in: COMPLETED_ORDER_STATUSES },
-        createdAt: { $gte: since },
-      },
-    },
+    { $match: match },
     {
       $group: {
         _id: '$userId',
         orderCount: { $sum: 1 },
-        revenue: { $sum: '$totalPrice' },
+        revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
         name: { $last: '$customerName' },
         phone: { $last: '$phone' },
       },
     },
-    { $match: { orderCount: { $gte: 2 } } },
+    { $match: { orderCount: { $gte: minOrders } } },
     { $sort: { orderCount: -1 } },
-    { $limit: 100 },
+    { $limit: clampLimit(input.limit ?? 100, 100) },
   ]);
 
   const uniques = await Order.aggregate([
-    {
-      $match: {
-        status: { $in: COMPLETED_ORDER_STATUSES },
-        createdAt: { $gte: since },
-      },
-    },
+    { $match: match },
     { $group: { _id: '$userId' } },
     { $count: 'n' },
   ]);
   const uniqueCustomers = uniques[0]?.n || 0;
   const repeatCustomers = rows.length;
   const rate = uniqueCustomers > 0 ? repeatCustomers / uniqueCustomers : 0;
+  const primaryIsRate = /rate/i.test(String(preferred));
 
   return stripPiiDeep({
     type: 'metric_result',
-    metric: 'repeat_customers',
-    value: repeatCustomers,
-    unit: 'customers',
+    metric: primaryIsRate ? 'repeat_rate' : 'repeat_customers',
+    value: primaryIsRate ? Math.round(rate * 10000) / 10000 : repeatCustomers,
+    unit: primaryIsRate ? 'ratio' : 'customers',
+    preferMetric: preferred,
     related: {
       unique_customers: uniqueCustomers,
+      repeat_customers: repeatCustomers,
       repeat_rate: Math.round(rate * 10000) / 10000,
+      min_orders: minOrders,
     },
     customers: rows.map((r) =>
       sanitizeCustomerRow({
@@ -300,10 +336,207 @@ async function get_repeat_customers(input = {}) {
         phone: r.phone,
       })
     ),
-    filters: { days },
-    source: { dataset: 'orders', freshness: 'live' },
-    definition: GLOSSARY.repeat_customer,
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      min_orders: minOrders,
+      statuses: statusList,
+    },
+    source: {
+      dataset: 'orders',
+      freshness: 'live',
+      collection: 'orders',
+      match: { status: statusList, min_orders: minOrders },
+    },
+    definition: `Customers with ≥${minOrders} orders in status set during the period.`,
   });
+}
+
+/**
+ * Flexible customer segment by order frequency (any threshold).
+ * Examples: more than 5 times, exactly 1 order, top spenders among frequent buyers.
+ */
+async function query_customers(input = {}) {
+  const { Order } = await import('../../models/Model.js');
+  const { COMPLETED_ORDER_STATUSES } = await import('../semantic/picosoModel.js');
+  const minOrders = Math.max(1, Number(input.min_orders ?? input.minOrders ?? 1) || 1);
+  const maxOrders =
+    input.max_orders != null || input.maxOrders != null
+      ? Number(input.max_orders ?? input.maxOrders)
+      : null;
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const statuses = normalizeStatuses(input.statuses || input.status) || COMPLETED_ORDER_STATUSES;
+  const limit = clampLimit(input.limit ?? 50, 50);
+  const sortBy = String(input.sort_by || input.sortBy || 'orderCount');
+  const periodLabel = input.periodLabel || input.period_label || null;
+
+  const match = { status: { $in: statuses } };
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  } else {
+    match.createdAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+  }
+
+  const qtyMatch = { orderCount: { $gte: minOrders } };
+  if (maxOrders != null && !Number.isNaN(maxOrders)) {
+    qtyMatch.orderCount.$lte = maxOrders;
+  }
+
+  const sort =
+    sortBy === 'spend' || sortBy === 'revenue'
+      ? { revenue: -1 }
+      : { orderCount: -1 };
+
+  const rows = await Order.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$userId',
+        orderCount: { $sum: 1 },
+        revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
+        name: { $last: '$customerName' },
+        phone: { $last: '$phone' },
+      },
+    },
+    { $match: qtyMatch },
+    { $sort: sort },
+    { $limit: limit },
+  ]);
+
+  const totalSeg = await Order.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$userId',
+        orderCount: { $sum: 1 },
+      },
+    },
+    { $match: qtyMatch },
+    { $count: 'n' },
+  ]);
+  const count = totalSeg[0]?.n || 0;
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'segment_customers',
+    value: count,
+    unit: 'customers',
+    related: {
+      min_orders: minOrders,
+      max_orders: maxOrders,
+      sample_size: rows.length,
+    },
+    customers: rows.map((r) =>
+      sanitizeCustomerRow({
+        customerId: r._id,
+        orders: r.orderCount,
+        spend: r.revenue,
+        name: r.name,
+        phone: r.phone,
+      })
+    ),
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      min_orders: minOrders,
+      max_orders: maxOrders,
+      statuses,
+    },
+    source: {
+      dataset: 'orders',
+      freshness: 'live',
+      collection: 'orders',
+      match: { status: statuses, min_orders: minOrders, max_orders: maxOrders },
+    },
+    definition: `Customers with order count in [${minOrders}, ${maxOrders ?? '∞'}] in period.`,
+    calculationNote: `Grouped live orders by userId; filter orderCount ≥ ${minOrders}${maxOrders != null ? ` ≤ ${maxOrders}` : ''}`,
+  });
+}
+
+async function get_clock_context() {
+  const now = new Date();
+  const partsFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    partsFmt
+      .formatToParts(now)
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value])
+  );
+  const y = Number(parts.year);
+  const mo = Number(parts.month);
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  const istStart = (yy, mm, dd) =>
+    new Date(Date.UTC(yy, mm - 1, dd, 0, 0, 0) - (5 * 60 + 30) * 60 * 1000);
+  const thisMonthStart = istStart(y, mo, 1);
+  const nextMonth = mo === 12 ? istStart(y + 1, 1, 1) : istStart(y, mo + 1, 1);
+  let ly = y;
+  let lmo = mo - 1;
+  if (lmo < 1) {
+    lmo = 12;
+    ly -= 1;
+  }
+  const lastMonthStart = istStart(ly, lmo, 1);
+  const lastMonthEnd = thisMonthStart;
+
+  // Named months this year (and previous year for early months if needed)
+  const monthWindows = {};
+  for (let m = 1; m <= 12; m++) {
+    const name = monthNames[m - 1].toLowerCase();
+    monthWindows[name] = {
+      fromDate: istStart(y, m, 1).toISOString(),
+      toDate: (m === 12 ? istStart(y + 1, 1, 1) : istStart(y, m + 1, 1)).toISOString(),
+      periodLabel: `${monthNames[m - 1]} ${y}`,
+    };
+  }
+
+  return {
+    type: 'clock',
+    timezone: 'Asia/Kolkata',
+    now_iso: now.toISOString(),
+    today_ist: `${parts.year}-${parts.month}-${parts.day}`,
+    current_month: monthNames[mo - 1],
+    current_year: y,
+    windows: {
+      this_month: {
+        fromDate: thisMonthStart.toISOString(),
+        toDate: nextMonth.toISOString(),
+        periodLabel: `This month ${monthNames[mo - 1]} ${y}`,
+      },
+      last_month: {
+        fromDate: lastMonthStart.toISOString(),
+        toDate: lastMonthEnd.toISOString(),
+        periodLabel: `Last calendar month (${ly}-${String(lmo).padStart(2, '0')})`,
+      },
+      months: monthWindows,
+    },
+    note: 'When the user says a month (e.g. August), use windows.months.august fromDate/toDate + periodLabel on analytics tools.',
+  };
 }
 
 async function calculate_revenue(input = {}) {
@@ -455,7 +688,7 @@ async function top_products(input = {}) {
   const fromDate = input.fromDate || input.from_date || null;
   const toDate = input.toDate || input.to_date || null;
   const periodLabel = input.periodLabel || input.period_label || null;
-  const limit = clampLimit(input.limit ?? 10, 10);
+  const limit = clampLimit(input.limit ?? 25);
   const raw = await executeTopProducts({
     days: fromDate || toDate ? undefined : days,
     fromDate,
@@ -877,20 +1110,58 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_repeat_customers',
-    description: 'Count repeat customers (2+ completed orders). Optional product_id and radius_km.',
+    description:
+      'Repeat / frequent buyers. Use min_orders (default 2). preferred_metric: "repeat_rate" or "repeat_customers". Supports fromDate/toDate/statuses.',
     parameters: {
       type: 'object',
       properties: {
         product_id: { type: 'string' },
         days: { type: 'number' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
         radius_km: { type: 'number' },
+        min_orders: { type: 'number', description: 'Minimum completed orders (default 2)' },
+        preferred_metric: {
+          type: 'string',
+          description: 'repeat_rate | repeat_customers',
+        },
+        statuses: { type: 'array', items: { type: 'string' } },
+        limit: { type: 'number' },
       },
       required: [],
     },
   },
   {
+    name: 'query_customers',
+    description:
+      'Flexible customer segment by order frequency. Use for “customers ordered more than 5 times”, “exactly 1 order”, etc. Pass min_orders/max_orders + dates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        min_orders: { type: 'number' },
+        max_orders: { type: 'number' },
+        days: { type: 'number' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        statuses: { type: 'array', items: { type: 'string' } },
+        sort_by: { type: 'string', description: 'orderCount | spend' },
+        limit: { type: 'number' },
+      },
+      required: ['min_orders'],
+    },
+  },
+  {
+    name: 'get_clock_context',
+    description:
+      'Get timezone, today’s date, and precomputed month windows (January…December) so you can pass exact fromDate/toDate for “August orders”, last month, etc.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'calculate_revenue',
-    description: 'Sum revenue (INR totalPrice) for completed orders in period.',
+    description:
+      'Sum totalPrice (INR) for orders. Pass statuses/fromDate/toDate/periodLabel. Default completed non-cancelled.',
     parameters: {
       type: 'object',
       properties: {
@@ -898,6 +1169,9 @@ export const TOOL_DEFINITIONS = [
         product_id: { type: 'string' },
         fromDate: { type: 'string' },
         toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        statuses: { type: 'array', items: { type: 'string' } },
+        statusLabel: { type: 'string' },
       },
       required: [],
     },
@@ -905,7 +1179,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'count_orders',
     description:
-      'Count orders in period. Pass statuses for cancelled or delivered-only (e.g. statuses:["cancelled"]). Default is completed non-cancelled.',
+      'Count orders. Pass statuses e.g. ["delivered"] or ["cancelled"], fromDate/toDate/periodLabel from get_clock_context for named months.',
     parameters: {
       type: 'object',
       properties: {
@@ -913,10 +1187,10 @@ export const TOOL_DEFINITIONS = [
         product_id: { type: 'string' },
         fromDate: { type: 'string' },
         toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
         statuses: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Order status filter e.g. cancelled, delivered, or completed set',
         },
         statusLabel: { type: 'string' },
       },
@@ -925,7 +1199,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_aov',
-    description: 'Average order value for completed orders.',
+    description: 'Average order value. Supports fromDate/toDate/statuses.',
     parameters: {
       type: 'object',
       properties: {
@@ -933,20 +1207,24 @@ export const TOOL_DEFINITIONS = [
         product_id: { type: 'string' },
         fromDate: { type: 'string' },
         toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        statuses: { type: 'array', items: { type: 'string' } },
       },
       required: [],
     },
   },
   {
     name: 'top_products',
-    description: 'Top selling products by units in the period.',
+    description:
+      'Rank / list items sold by units. Use for “rank all items sold”, bestsellers, top products. increase limit for full ranking.',
     parameters: {
       type: 'object',
       properties: {
         days: { type: 'number' },
-        limit: { type: 'number' },
+        limit: { type: 'number', description: 'How many products (default 10, max 50)' },
         fromDate: { type: 'string' },
         toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
       },
       required: [],
     },
@@ -981,6 +1259,8 @@ const EXECUTORS = {
   find_customers_within_radius,
   count_unique_product_buyers,
   get_repeat_customers,
+  query_customers,
+  get_clock_context,
   calculate_revenue,
   count_orders,
   get_aov,
