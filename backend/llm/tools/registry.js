@@ -16,6 +16,11 @@ import {
   executeModelMetric,
   sampleCollection,
 } from '../query/semanticExecutor.js';
+import {
+  getCorpusForModel,
+  runTrainedSampleMetric,
+} from '../discovery/workspaceService.js';
+import { queryTrainedRecords } from '../discovery/unstructured.js';
 
 function scoreProductName(query, name) {
   const q = String(query || '')
@@ -467,13 +472,15 @@ async function list_schema(_input = {}) {
       type: 'schema',
       trained: false,
       message:
-        'No trained semantic model yet. Ask the user to open Train, connect MongoDB, discover samples, and activate a model. Built-in Picoso tools still work.',
+        'No trained semantic model yet. Ask the user to open Train, paste sample ops data or discover MongoDB, and activate a model. Built-in Picoso tools still work.',
     };
   }
   return {
     type: 'schema',
     trained: true,
     name: model.name,
+    source: model.source,
+    domain: model.domain,
     entities: model.entities,
     metrics: (model.metrics || []).map((m) => ({
       id: m.id,
@@ -486,6 +493,89 @@ async function list_schema(_input = {}) {
     dimensions: model.dimensions,
     relationships: model.relationships,
     glossary: model.glossary,
+    parameters: (model.parameters || []).slice(0, 40),
+    textBrainPreview: String(model.textBrain || '').slice(0, 1500),
+  };
+}
+
+async function inspect_brain(_input = {}) {
+  const { model } = getToolContext();
+  if (!model) {
+    return { type: 'error', error: 'No trained brain active.' };
+  }
+  const corpus = await getCorpusForModel(model);
+  return {
+    type: 'brain',
+    name: model.name,
+    source: model.source,
+    domain: model.domain,
+    jsonSchema: model.jsonSchema || corpus?.jsonSchema || null,
+    textBrain: model.textBrain || corpus?.textBrain || '',
+    parameters: model.parameters || corpus?.parameters || [],
+    recordCount: corpus?.recordCount || corpus?.records?.length || 0,
+    sampleRecords: (corpus?.records || []).slice(0, 5).map((r) => {
+      const { rawPreview, _source, _confidence, ...rest } = r || {};
+      return rest;
+    }),
+  };
+}
+
+async function query_trained_samples(input = {}) {
+  const { model } = getToolContext();
+  if (!model) return { type: 'error', error: 'No trained model' };
+  const corpus = await getCorpusForModel(model);
+  if (!corpus?.records?.length) {
+    return {
+      type: 'error',
+      error:
+        'No paste corpus on this brain. Train from unstructured data, or use Mongo metrics.',
+    };
+  }
+
+  const aggregation = input.aggregation || 'count';
+  const q = queryTrainedRecords(corpus.records, {
+    aggregation,
+    field: input.field || 'grandTotal',
+    status: input.status,
+    paymentMethod: input.payment_method || input.paymentMethod,
+    minTotal: input.min_total,
+    maxTotal: input.max_total,
+    minDistanceM: input.min_distance_m,
+    maxDistanceM: input.max_distance_m,
+    includeRows: Boolean(input.include_rows),
+  });
+
+  const display =
+    q.unit === 'INR' && typeof q.value === 'number'
+      ? `₹${Math.round(q.value).toLocaleString('en-IN')}`
+      : typeof q.value === 'object'
+        ? JSON.stringify(q.value)
+        : String(q.value);
+
+  return {
+    type: 'metric',
+    source: 'trained_samples',
+    aggregation,
+    value: q.value,
+    display,
+    unit: q.unit === 'INR' ? 'INR' : undefined,
+    sampleSize: corpus.recordCount || corpus.records.length,
+    rows: q.rows
+      ? q.rows.slice(0, 20).map((r) => ({
+          orderId: r.orderId,
+          status: r.status,
+          grandTotal: r.grandTotal,
+          customerName: r.customerName,
+          distanceMeters: r.distanceMeters,
+          items: r.items?.map((i) => i.name),
+        }))
+      : undefined,
+    calculationSteps: [
+      `Queried ${corpus.recordCount || corpus.records.length} trained records (paste corpus)`,
+      `aggregation=${aggregation}`,
+      `result=${display}`,
+    ],
+    confidence: { overall: 0.92 },
   };
 }
 
@@ -523,6 +613,22 @@ async function run_metric(input = {}) {
   }
   const metricId = input.metric_id || input.metricId || input.id;
   if (!metricId) return { type: 'error', error: 'metric_id required' };
+
+  // Paste-trained metrics resolve against corpus
+  if (
+    String(metricId).startsWith('trained_') ||
+    model.source === 'unstructured' ||
+    (model.metrics || []).some(
+      (m) => m.id === metricId && String(m.entity || '').includes('__trained')
+    )
+  ) {
+    return runTrainedSampleMetric(model, metricId, {
+      status: input.status,
+      aggregation: input.aggregation,
+      field: input.field,
+    });
+  }
+
   return executeModelMetric(workspaceId, model, metricId, {
     fromDate: input.fromDate || input.from_date,
     toDate: input.toDate || input.to_date,
@@ -570,8 +676,37 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'list_schema',
     description:
-      'List the trained business brain: entities, metrics, dimensions, glossary. Call this first for open-ended questions when a model is trained.',
+      'List the trained business brain: entities, metrics, dimensions, glossary, parameters. Call first for open-ended questions when a model is trained.',
     parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'inspect_brain',
+    description:
+      'Return full trained brain: JSON schema, text description, parameters, and sample normalized records from paste training.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'query_trained_samples',
+    description:
+      'Analytics over paste-trained records (not full Mongo unless also discovered). Use for status mix, AOV, revenue, distance filters on trained samples.',
+    parameters: {
+      type: 'object',
+      properties: {
+        aggregation: {
+          type: 'string',
+          description: 'count | sum | avg | min | max | group_by_status',
+        },
+        field: { type: 'string', description: 'default grandTotal' },
+        status: { type: 'string' },
+        payment_method: { type: 'string' },
+        min_total: { type: 'number' },
+        max_total: { type: 'number' },
+        min_distance_m: { type: 'number' },
+        max_distance_m: { type: 'number' },
+        include_rows: { type: 'boolean' },
+      },
+      required: [],
+    },
   },
   {
     name: 'list_metrics',
@@ -581,7 +716,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'run_metric',
     description:
-      'Run a named metric from the trained semantic model by metric_id (e.g. revenue, orders). Preferred for trained models.',
+      'Run a named metric from the trained semantic model by metric_id (e.g. trained_revenue, revenue, orders).',
     parameters: {
       type: 'object',
       properties: {
@@ -589,6 +724,7 @@ export const TOOL_DEFINITIONS = [
         fromDate: { type: 'string' },
         toDate: { type: 'string' },
         group_by: { type: 'string' },
+        status: { type: 'string' },
       },
       required: ['metric_id'],
     },
@@ -765,6 +901,8 @@ export const TOOL_DEFINITIONS = [
 
 const EXECUTORS = {
   list_schema,
+  inspect_brain,
+  query_trained_samples,
   list_metrics,
   run_metric,
   semantic_query,

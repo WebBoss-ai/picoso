@@ -43,10 +43,11 @@ TRAINED BUSINESS BRAIN
 ${JSON.stringify(trainedModelContext, null, 2)}
 
 WHEN A MODEL IS TRAINED (trained=true)
-1) Call list_schema or list_metrics to orient.
-2) Prefer run_metric for named metrics in the brain.
-3) Use semantic_query for flexible count/sum/avg/group_by on approved collections.
-4) Use sample_collection only to explore structure, not for final numbers.
+1) Call list_schema, inspect_brain, or list_metrics to orient.
+2) If source is unstructured / trained samples → use query_trained_samples or run_metric (trained_* ids).
+3) Prefer run_metric for named metrics in the brain.
+4) Use semantic_query for flexible Mongo count/sum/avg when entities map to real collections.
+5) sample_collection only for exploration, not final numbers.
 
 FALLBACK PICOSO / FOOD OPS TOOLS (always available)
 ${JSON.stringify(picosoFallback, null, 2)}

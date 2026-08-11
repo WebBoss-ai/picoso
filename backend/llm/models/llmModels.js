@@ -281,6 +281,64 @@ const llmSemanticModelSchema = new mongoose.Schema({
     },
   ],
   businessContext: { type: String, default: '' },
+  /** How this brain was built */
+  source: {
+    type: String,
+    enum: ['mongodb', 'unstructured', 'hybrid'],
+    default: 'mongodb',
+  },
+  /** JSON Schema for human + agent inspection */
+  jsonSchema: { type: mongoose.Schema.Types.Mixed, default: null },
+  /** Operator-readable trained brain (markdown/text) */
+  textBrain: { type: String, default: '' },
+  /** Detected parameters with types + samples */
+  parameters: [
+    {
+      name: String,
+      type: String,
+      description: String,
+      sampleValues: [mongoose.Schema.Types.Mixed],
+      enumValues: [mongoose.Schema.Types.Mixed],
+      nullRate: Number,
+    },
+  ],
+  corpusId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LlmTrainingCorpus',
+    default: null,
+  },
+  domain: { type: String, default: '' },
+  extractionMeta: { type: mongoose.Schema.Types.Mixed, default: null },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+/**
+ * Corpus of records extracted from unorganized pastes (and optional snapshots).
+ * Agent queries this for trained-sample metrics.
+ */
+const llmTrainingCorpusSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LlmWorkspace',
+    required: true,
+    index: true,
+  },
+  modelId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LlmSemanticModel',
+    default: null,
+    index: true,
+  },
+  label: { type: String, default: 'Unstructured corpus' },
+  source: { type: String, default: 'paste' },
+  domain: { type: String, default: '' },
+  records: [mongoose.Schema.Types.Mixed],
+  recordCount: { type: Number, default: 0 },
+  jsonSchema: { type: mongoose.Schema.Types.Mixed, default: null },
+  textBrain: { type: String, default: '' },
+  parameters: [mongoose.Schema.Types.Mixed],
+  rawPreview: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -309,3 +367,7 @@ export const LlmSchemaSnapshot =
 export const LlmSemanticModel =
   mongoose.models.LlmSemanticModel ||
   mongoose.model('LlmSemanticModel', llmSemanticModelSchema);
+
+export const LlmTrainingCorpus =
+  mongoose.models.LlmTrainingCorpus ||
+  mongoose.model('LlmTrainingCorpus', llmTrainingCorpusSchema);

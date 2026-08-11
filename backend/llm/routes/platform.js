@@ -5,11 +5,13 @@ import {
   getOrCreateSelfConnection,
   upsertExternalConnection,
   runTrainingDiscover,
+  runUnstructuredTrain,
   getActiveModel,
   getLatestDraftOrActive,
   updateSemanticModel,
   activateSemanticModel,
   addTrainingHint,
+  getBrainPackage,
   sanitizeConnection,
   sanitizeModel,
   modelContextForPrompt,
@@ -28,6 +30,7 @@ router.get('/workspace', async (_req, res) => {
     const model = await getLatestDraftOrActive(ws._id);
     const active = await getActiveModel(ws._id);
     const connections = await LlmConnection.find({ workspaceId: ws._id }).lean();
+    const brain = await getBrainPackage(ws._id);
     res.json({
       workspace: {
         id: String(ws._id),
@@ -40,9 +43,29 @@ router.get('/workspace', async (_req, res) => {
       model: model ? sanitizeModel(model) : null,
       activeModel: active ? sanitizeModel(active) : null,
       trained: Boolean(active),
+      brain: brain.brain,
+      corpus: brain.corpus
+        ? {
+            id: brain.corpus.id,
+            label: brain.corpus.label,
+            recordCount: brain.corpus.recordCount,
+            domain: brain.corpus.domain,
+          }
+        : null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || 'Workspace error' });
+  }
+});
+
+/** Full trained brain for inspection (JSON + text) */
+router.get('/brain', async (_req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const pack = await getBrainPackage(ws._id);
+    res.json(pack);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Brain load failed' });
   }
 });
 
@@ -62,7 +85,42 @@ router.post('/connections', async (req, res) => {
   }
 });
 
-/** Discover schema from samples + draft semantic model (TRAIN) */
+/**
+ * TRAIN from unorganized paste (order admin dumps, notes, JSON).
+ * Primary path for "any messy data".
+ */
+router.post('/train/unstructured', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const { text, raw, label, businessContext, modelName, activate } = req.body || {};
+    const payload = text || raw;
+    if (!payload || String(payload).trim().length < 20) {
+      return res.status(400).json({
+        error: 'Paste sample data (order cards, JSON, notes) in the text field.',
+      });
+    }
+
+    const result = await runUnstructuredTrain(ws._id, {
+      text: payload,
+      label: label || 'Operations paste',
+      businessContext,
+      modelName,
+    });
+
+    if (activate) {
+      const activated = await activateSemanticModel(ws._id, result.model.id);
+      result.model = sanitizeModel(activated);
+      result.trained = true;
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('[llm] unstructured train', err);
+    res.status(500).json({ error: err.message || 'Unstructured training failed' });
+  }
+});
+
+/** Discover schema from Mongo samples + draft semantic model */
 router.post('/train/discover', async (req, res) => {
   try {
     const ws = await getOrCreateDefaultWorkspace();
@@ -85,7 +143,12 @@ router.post('/train/discover', async (req, res) => {
     });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[llm] discover', err);
+    res.status(500).json({
+      error:
+        err.message ||
+        'Mongo discovery failed. You can still Train from paste under Unstructured data.',
+    });
   }
 });
 

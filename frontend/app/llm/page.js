@@ -73,7 +73,9 @@ export default function LlmPage() {
   const [pinError, setPinError] = useState('');
   const [authing, setAuthing] = useState(false);
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState('ask'); // ask | train
+  const [tab, setTab] = useState('ask'); // ask | train | brain
+  const [brainView, setBrainView] = useState('text'); // text | json | records | params
+  const [brainPack, setBrainPack] = useState(null);
 
   const [message, setMessage] = useState('');
   const [conversationId, setConversationId] = useState(null);
@@ -94,6 +96,8 @@ export default function LlmPage() {
   const [hintA, setHintA] = useState('');
   const [externalUri, setExternalUri] = useState('');
   const [businessContext, setBusinessContext] = useState('');
+  const [pasteText, setPasteText] = useState('');
+  const [pasteLabel, setPasteLabel] = useState('Order ops paste');
 
   useEffect(() => {
     const saved = getPin();
@@ -110,7 +114,10 @@ export default function LlmPage() {
   }, [turns, status, loading]);
 
   useEffect(() => {
-    if (ready && pin) loadWorkspace(pin);
+    if (ready && pin) {
+      loadWorkspace(pin);
+      loadBrain(pin);
+    }
   }, [ready, pin]);
 
   async function loadWorkspace(p = pin) {
@@ -121,6 +128,23 @@ export default function LlmPage() {
       if (!res.ok) return;
       const data = await res.json();
       setWorkspace(data);
+      if (data.model) setDraftModel(data.model);
+      if (data.brain) {
+        setBrainPack((prev) => ({ ...(prev || {}), brain: data.brain, model: data.model }));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function loadBrain(p = pin) {
+    try {
+      const res = await fetch(`${API_BASE}/llm/brain`, {
+        headers: apiHeaders(p, false),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setBrainPack(data);
       if (data.model) setDraftModel(data.model);
     } catch {
       /* ignore */
@@ -224,6 +248,49 @@ export default function LlmPage() {
       setSnapshot(data.snapshot);
       setDraftModel(data.model);
       await loadWorkspace();
+      await loadBrain();
+    } catch (e) {
+      setTrainError(e.message);
+    } finally {
+      setTrainBusy(false);
+    }
+  }
+
+  async function runUnstructuredTrain(andActivate = false) {
+    if (!pasteText.trim() || pasteText.trim().length < 20) {
+      setTrainError('Paste at least one order card / dump (min ~20 characters).');
+      return;
+    }
+    setTrainBusy(true);
+    setTrainError('');
+    try {
+      const res = await fetch(`${API_BASE}/llm/train/unstructured`, {
+        method: 'POST',
+        headers: apiHeaders(pin),
+        body: JSON.stringify({
+          text: pasteText,
+          label: pasteLabel || 'Operations paste',
+          businessContext:
+            businessContext ||
+            'Picoso food delivery ops. Order cards show status, COD, distance, items, totals, customer pin.',
+          modelName: pasteLabel || 'Ops paste brain',
+          activate: andActivate,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Unstructured training failed');
+      setDraftModel(data.model);
+      setBrainPack({
+        trained: data.trained || false,
+        model: data.model,
+        corpus: data.corpus,
+        brain: data.brain,
+      });
+      await loadWorkspace();
+      await loadBrain();
+      setTab('brain');
+      setBrainView('text');
+      if (andActivate) setTab('brain');
     } catch (e) {
       setTrainError(e.message);
     } finally {
@@ -236,7 +303,6 @@ export default function LlmPage() {
     setTrainBusy(true);
     setTrainError('');
     try {
-      // save context first
       await fetch(`${API_BASE}/llm/models/${draftModel.id}`, {
         method: 'PUT',
         headers: apiHeaders(pin),
@@ -255,6 +321,7 @@ export default function LlmPage() {
       if (!res.ok) throw new Error(data.error || 'Activate failed');
       setDraftModel(data.model);
       await loadWorkspace();
+      await loadBrain();
       setTab('ask');
     } catch (e) {
       setTrainError(e.message);
@@ -395,15 +462,9 @@ export default function LlmPage() {
           </div>
           <h1 className="llm-pin-title">Intelligence Partner</h1>
           <p className="llm-pin-sub">
-            Connect data · Train a business brain · Ask anything. Access code required.
+            Paste messy ops data or connect Mongo · inspect trained brain · ask anything.
           </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              verifyPin(pinInput);
-            }}
-            className="space-y-3"
-          >
+          <div className="space-y-3">
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--llm-muted)]" />
               <input
@@ -412,6 +473,12 @@ export default function LlmPage() {
                 autoComplete="off"
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    verifyPin(pinInput);
+                  }
+                }}
                 placeholder="Access code"
                 className="llm-input pl-10"
               />
@@ -421,16 +488,23 @@ export default function LlmPage() {
                 <AlertCircle className="w-4 h-4" /> {pinError}
               </p>
             )}
-            <button type="submit" disabled={authing || !pinInput} className="llm-btn-primary w-full">
+            <button
+              type="button"
+              disabled={authing || !pinInput}
+              className="llm-btn-primary w-full"
+              onClick={() => verifyPin(pinInput)}
+            >
               {authing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enter'}
             </button>
-          </form>
+          </div>
         </div>
       </div>
     );
   }
 
   const trained = Boolean(workspace?.trained || workspace?.activeModel);
+  const brain = brainPack?.brain || workspace?.brain;
+  const corpusRecords = brainPack?.corpus?.records || [];
 
   return (
     <div className="llm-root min-h-screen flex flex-col">
@@ -445,8 +519,10 @@ export default function LlmPage() {
             <div className="llm-header-title">Intelligence Partner</div>
             <div className="llm-header-sub truncate">
               {trained
-                ? `Brain active · ${workspace?.activeModel?.name || 'model online'}`
-                : 'Train a brain on your MongoDB — then ask anything'}
+                ? `Brain active · ${workspace?.activeModel?.name || draftModel?.name || 'online'}`
+                : draftModel
+                  ? 'Draft brain ready — activate or train more data'
+                  : 'Train on paste or Mongo — then ask'}
             </div>
           </div>
         </div>
@@ -466,6 +542,16 @@ export default function LlmPage() {
             >
               Train
             </button>
+            <button
+              type="button"
+              className={tab === 'brain' ? 'on' : ''}
+              onClick={() => {
+                setTab('brain');
+                loadBrain();
+              }}
+            >
+              Brain
+            </button>
           </div>
           <button type="button" onClick={logout} className="llm-btn-ghost">
             <LogOut className="w-4 h-4" /> Exit
@@ -477,15 +563,78 @@ export default function LlmPage() {
         <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-5 space-y-5 overflow-y-auto">
           <section className="llm-card">
             <h2 className="llm-section-h">
-              <Database className="w-4 h-4" /> 1. Connect MongoDB
+              <Brain className="w-4 h-4" /> 1. Paste unorganized data (recommended)
             </h2>
             <p className="llm-muted">
-              Default uses this app database. Optionally connect an external cluster (server must allow
-              it).
+              Drop order admin dumps, notes, CSV, or JSON. The system detects parameters (ids,
+              status, COD, totals, items, pins, phones…) even when the text is messy. Stores a{' '}
+              <strong>JSON schema</strong> and a <strong>text brain</strong> you can open under
+              Brain.
+            </p>
+            <input
+              className="llm-input mt-3"
+              placeholder="Label (e.g. Aug order cards)"
+              value={pasteLabel}
+              onChange={(e) => setPasteLabel(e.target.value)}
+            />
+            <textarea
+              className="llm-textarea mt-2"
+              rows={2}
+              placeholder="Business context (optional)"
+              value={businessContext}
+              onChange={(e) => setBusinessContext(e.target.value)}
+            />
+            <textarea
+              className="llm-textarea mt-2 font-mono text-sm"
+              rows={12}
+              placeholder={`Paste like:\n#A47C9AFD\ndelivered\nCOD\n…\nGrand Total\n₹254\nCustomer Pin\n28.44, 77.06`}
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button
+                type="button"
+                className="llm-btn-primary"
+                disabled={trainBusy || pasteText.trim().length < 20}
+                onClick={() => runUnstructuredTrain(false)}
+              >
+                {trainBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Extract & draft brain
+              </button>
+              <button
+                type="button"
+                className="llm-btn-ghost"
+                disabled={trainBusy || pasteText.trim().length < 20}
+                onClick={() => runUnstructuredTrain(true)}
+              >
+                Train & activate
+              </button>
+            </div>
+          </section>
+
+          <section className="llm-card">
+            <h2 className="llm-section-h">
+              <Database className="w-4 h-4" /> 2. Optional: MongoDB sample train
+            </h2>
+            <p className="llm-muted">
+              Also connect live collections. If Mongo discovery fails on the server, use paste
+              training above — it does not need a special origin header.
             </p>
             <div className="flex flex-wrap gap-2 mt-3">
-              <button type="button" className="llm-btn-primary" disabled={trainBusy} onClick={connectSelf}>
+              <button type="button" className="llm-btn-ghost" disabled={trainBusy} onClick={connectSelf}>
                 <Link2 className="w-4 h-4" /> Use app database
+              </button>
+              <button
+                type="button"
+                className="llm-btn-ghost"
+                disabled={trainBusy}
+                onClick={runDiscover}
+              >
+                Discover Mongo schema
               </button>
             </div>
             <div className="mt-3 grid gap-2">
@@ -507,55 +656,34 @@ export default function LlmPage() {
             {workspace?.primaryConnection && (
               <p className="llm-meta mt-2">
                 Connection: {workspace.primaryConnection.mode} ·{' '}
-                {workspace.primaryConnection.meta?.dbName || workspace.primaryConnection.meta?.host || '—'}{' '}
+                {workspace.primaryConnection.meta?.dbName ||
+                  workspace.primaryConnection.meta?.host ||
+                  '—'}{' '}
                 · {workspace.primaryConnection.status}
+                {workspace.primaryConnection.lastError
+                  ? ` · err: ${workspace.primaryConnection.lastError}`
+                  : ''}
               </p>
             )}
-          </section>
-
-          <section className="llm-card">
-            <h2 className="llm-section-h">
-              <Brain className="w-4 h-4" /> 2. Sample & auto-detect
-            </h2>
-            <p className="llm-muted">
-              We sample documents, infer field types, relationships, money fields, and draft metrics.
-              Full data is never sent to the model — only schema + small samples.
-            </p>
-            <textarea
-              className="llm-textarea mt-3"
-              rows={2}
-              placeholder="Business context (optional): e.g. healthy food delivery in Gurugram"
-              value={businessContext}
-              onChange={(e) => setBusinessContext(e.target.value)}
-            />
-            <button
-              type="button"
-              className="llm-btn-primary mt-3"
-              disabled={trainBusy}
-              onClick={runDiscover}
-            >
-              {trainBusy ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Play className="w-4 h-4" />
-              )}
-              Discover schema & draft brain
-            </button>
           </section>
 
           {(snapshot || draftModel) && (
             <section className="llm-card">
               <h2 className="llm-section-h">
-                <CheckCircle2 className="w-4 h-4" /> 3. Review brain
+                <CheckCircle2 className="w-4 h-4" /> 3. Review & activate
               </h2>
               {snapshot && (
                 <p className="llm-meta">
-                  Snapshot v{snapshot.version} · {snapshot.collections?.length || 0} collections ·{' '}
-                  {snapshot.relationships?.length || 0} relationships
+                  Snapshot v{snapshot.version} · {snapshot.collections?.length || 0} collections
                 </p>
               )}
               {draftModel && (
                 <>
+                  <p className="llm-meta">
+                    {draftModel.source || 'model'} · v{draftModel.version} ·{' '}
+                    {(draftModel.parameters || []).length} params ·{' '}
+                    {(draftModel.metrics || []).length} metrics
+                  </p>
                   <div className="llm-tag-row mt-3">
                     {(draftModel.entities || []).slice(0, 12).map((e) => (
                       <span key={e.id} className="llm-tag">
@@ -571,30 +699,34 @@ export default function LlmPage() {
                       </span>
                     ))}
                   </div>
-                  <p className="llm-muted mt-3 text-sm">
-                    {(draftModel.entities || []).length} entities ·{' '}
-                    {(draftModel.metrics || []).length} metrics ·{' '}
-                    {(draftModel.dimensions || []).length} dimensions
-                  </p>
                 </>
               )}
-              <button
-                type="button"
-                className="llm-btn-primary mt-4"
-                disabled={trainBusy || !draftModel?.id}
-                onClick={activateModel}
-              >
-                <CheckCircle2 className="w-4 h-4" /> Activate brain for chat
-              </button>
+              <div className="flex flex-wrap gap-2 mt-4">
+                <button
+                  type="button"
+                  className="llm-btn-primary"
+                  disabled={trainBusy || !draftModel?.id}
+                  onClick={activateModel}
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Activate for chat
+                </button>
+                <button
+                  type="button"
+                  className="llm-btn-ghost"
+                  onClick={() => {
+                    setTab('brain');
+                    loadBrain();
+                  }}
+                >
+                  Open trained brain
+                </button>
+              </div>
             </section>
           )}
 
           {draftModel?.id && (
             <section className="llm-card">
               <h2 className="llm-section-h">4. Teach (optional)</h2>
-              <p className="llm-muted">
-                Example: Q “What is a completed order?” → A “status delivered or confirmed, not cancelled.”
-              </p>
               <input
                 className="llm-input mt-2"
                 placeholder="Definition question"
@@ -635,13 +767,100 @@ export default function LlmPage() {
             </div>
           )}
         </div>
+      ) : tab === 'brain' ? (
+        <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-5 space-y-4 overflow-y-auto">
+          <section className="llm-card">
+            <h2 className="llm-section-h">
+              <Brain className="w-4 h-4" /> Trained brain
+            </h2>
+            <p className="llm-muted">
+              Inspect what was learned: readable text + JSON schema + parameters + extracted
+              records.
+            </p>
+            <div className="llm-tabs mt-3" style={{ display: 'inline-flex' }}>
+              {[
+                ['text', 'Text'],
+                ['json', 'JSON schema'],
+                ['params', 'Parameters'],
+                ['records', 'Records'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={brainView === id ? 'on' : ''}
+                  onClick={() => setBrainView(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="llm-btn-ghost mt-3 ml-2"
+              onClick={() => loadBrain()}
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </button>
+            {!brain && !draftModel && (
+              <p className="llm-muted mt-4">No brain yet — train from paste first.</p>
+            )}
+            {brainView === 'text' && (
+              <pre className="llm-pre mt-3">{brain?.textBrain || draftModel?.textBrain || '—'}</pre>
+            )}
+            {brainView === 'json' && (
+              <pre className="llm-pre mt-3">
+                {JSON.stringify(brain?.jsonSchema || draftModel?.jsonSchema || {}, null, 2)}
+              </pre>
+            )}
+            {brainView === 'params' && (
+              <div className="mt-3 space-y-2">
+                {(brain?.parameters || draftModel?.parameters || []).map((p) => (
+                  <div key={p.name} className="llm-param">
+                    <div className="font-semibold">
+                      {p.name} <em className="opacity-50 font-normal">{p.type}</em>
+                    </div>
+                    <div className="llm-muted text-sm">{p.description}</div>
+                    {p.sampleValues?.length > 0 && (
+                      <div className="text-xs opacity-70 mt-1">
+                        e.g.{' '}
+                        {p.sampleValues
+                          .slice(0, 3)
+                          .map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v)))
+                          .join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {!(brain?.parameters || draftModel?.parameters || []).length && (
+                  <p className="llm-muted">No parameters stored yet.</p>
+                )}
+              </div>
+            )}
+            {brainView === 'records' && (
+              <pre className="llm-pre mt-3">
+                {JSON.stringify(
+                  corpusRecords.length
+                    ? corpusRecords
+                    : brainPack?.corpus?.records || draftModel?.extractionMeta || [],
+                  null,
+                  2
+                )}
+              </pre>
+            )}
+            <p className="llm-meta mt-3">
+              Records: {brain?.recordCount ?? brainPack?.corpus?.recordCount ?? '—'} · Domain:{' '}
+              {brain?.domain || draftModel?.domain || '—'} · Source:{' '}
+              {brain?.source || draftModel?.source || '—'}
+            </p>
+          </section>
+        </div>
       ) : (
         <div className="flex-1 flex flex-col max-w-3xl w-full mx-auto px-4 pb-6 pt-4 min-h-0">
           {!trained && (
             <button type="button" className="llm-banner" onClick={() => setTab('train')}>
               <Brain className="w-4 h-4" />
-              No trained brain yet — open Train to sample MongoDB and activate a model. Built-in tools
-              still answer common Picoso questions.
+              No active brain — paste order cards under Train (works offline of Mongo). Built-in
+              tools still answer many Picoso questions.
             </button>
           )}
 
@@ -650,8 +869,7 @@ export default function LlmPage() {
               <div className="llm-hero animate-llm-in">
                 <h2 className="llm-hero-title">Your flexible analytics partner</h2>
                 <p className="llm-hero-sub">
-                  AI plans. Code runs exact queries on your data — after train, answers follow your
-                  business definitions.
+                  Train on messy real ops data or Mongo. AI plans; code runs exact numbers.
                 </p>
                 <div className="llm-suggestions">
                   {SUGGESTIONS.map((s) => (
@@ -684,13 +902,7 @@ export default function LlmPage() {
             )}
           </div>
 
-          <form
-            className="llm-composer"
-            onSubmit={(e) => {
-              e.preventDefault();
-              ask();
-            }}
-          >
+          <div className="llm-composer">
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -706,14 +918,15 @@ export default function LlmPage() {
               disabled={loading}
             />
             <button
-              type="submit"
+              type="button"
               disabled={loading || !message.trim()}
               className="llm-btn-primary llm-send"
               aria-label="Ask"
+              onClick={() => ask()}
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>
-          </form>
+          </div>
         </div>
       )}
     </div>
@@ -1038,6 +1251,16 @@ const LLM_CSS = `
     background: linear-gradient(to top, var(--llm-bg1) 70%, transparent);
   }
   .llm-send { width: 3rem; height: 3rem; padding: 0; border-radius: 0.9rem; }
+  .llm-pre {
+    max-height: 28rem; overflow: auto; font-size: 0.78rem; line-height: 1.45;
+    background: rgba(28, 22, 16, 0.04); border: 1px solid var(--llm-line);
+    border-radius: 0.75rem; padding: 0.85rem 1rem; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .llm-param {
+    border: 1px solid var(--llm-line); border-radius: 0.75rem; padding: 0.65rem 0.8rem;
+    background: rgba(255,255,255,0.45);
+  }
   @keyframes llm-in {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: none; }
