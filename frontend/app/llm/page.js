@@ -952,7 +952,11 @@ function AnswerCard({ turn }) {
   }
 
   const primary = r.primaryMetric || r.metrics?.[0];
-  const others = (r.metrics || []).filter((m) => m.id !== primary?.id).slice(0, 8);
+  const others = (r.metrics || []).filter((m) => m.id !== primary?.id).slice(0, 10);
+  const dims = r.dimensions || {};
+  const dimEntries = Object.entries(dims).filter(
+    ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)
+  );
 
   return (
     <div className="space-y-4">
@@ -961,21 +965,20 @@ function AnswerCard({ turn }) {
         <div className="llm-answer-value">
           {primary ? formatMetricValue(primary) : r.headline}
         </div>
-        {primary && r.headline && r.headline !== formatMetricValue(primary) && (
+        {(r.explanation || r.narrative || r.headline) && (
           <p className="llm-narrative" style={{ whiteSpace: 'pre-wrap' }}>
-            {r.narrative || r.headline}
+            {r.explanation || r.narrative || (primary ? r.headline : null)}
           </p>
         )}
-        {!primary && r.narrative && (
-          <p className="llm-narrative" style={{ whiteSpace: 'pre-wrap' }}>
-            {r.narrative}
-          </p>
-        )}
-        {r.period && (
-          <p className="llm-meta">
-            Period: {r.period} · Data: {r.freshness || 'live'}
-          </p>
-        )}
+        <div className="llm-chip-row mt-2">
+          {r.period && <span className="llm-pill">Period · {r.period}</span>}
+          <span className="llm-pill">Data · {r.freshness || 'live'}</span>
+          {dims.status && <span className="llm-pill strong">Status · {dims.status}</span>}
+          {dims.product && <span className="llm-pill">Product · {dims.product}</span>}
+          {dims.radius_km != null && (
+            <span className="llm-pill">Radius · {dims.radius_km} km</span>
+          )}
+        </div>
       </div>
 
       {r.clarification?.candidates?.length > 0 && (
@@ -1002,6 +1005,38 @@ function AnswerCard({ turn }) {
               <div className="llm-metric-value">{formatMetricValue(m)}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {r.sources?.length > 0 && (
+        <div className="llm-panel">
+          <div className="llm-section-title">Sources measured</div>
+          <ul className="llm-source-list">
+            {r.sources.map((s, i) => (
+              <li key={i}>
+                <span className="llm-source-kind">{s.kind || 'data'}</span>
+                <strong>{s.name}</strong>
+                {s.detail && <span className="llm-muted"> — {s.detail}</span>}
+                {s.freshness && <em className="llm-source-fresh">{s.freshness}</em>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {dimEntries.length > 0 && (
+        <div className="llm-panel">
+          <div className="llm-section-title">Dimensions</div>
+          <div className="llm-dim-grid">
+            {dimEntries.map(([k, v]) => (
+              <div key={k} className="llm-dim">
+                <div className="llm-dim-k">{k.replace(/_/g, ' ')}</div>
+                <div className="llm-dim-v">
+                  {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1034,7 +1069,7 @@ function AnswerCard({ turn }) {
       {r.customers?.length > 0 && (
         <div>
           <div className="llm-section-title">
-            <Users className="w-4 h-4" /> Sample
+            <Users className="w-4 h-4" /> Sample customers
           </div>
           <table className="llm-table">
             <thead>
@@ -1273,6 +1308,39 @@ const LLM_CSS = `
     border: 1px solid var(--llm-line); border-radius: 0.75rem; padding: 0.65rem 0.8rem;
     background: rgba(255,255,255,0.45);
   }
+  .llm-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .llm-pill {
+    font-size: 0.7rem; border: 1px solid var(--llm-line); border-radius: 999px;
+    padding: 0.2rem 0.55rem; color: var(--llm-muted); background: rgba(255,255,255,0.55);
+  }
+  .llm-pill.strong {
+    border-color: rgba(196, 92, 38, 0.35); color: var(--llm-accent-deep);
+    background: rgba(196, 92, 38, 0.08);
+  }
+  .llm-panel {
+    border: 1px solid var(--llm-line); border-radius: 0.85rem; padding: 0.75rem 0.9rem;
+    background: rgba(255,255,255,0.4);
+  }
+  .llm-source-list { list-style: none; margin: 0.4rem 0 0; padding: 0; font-size: 0.85rem; }
+  .llm-source-list li {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem;
+    padding: 0.3rem 0; border-top: 1px solid var(--llm-line);
+  }
+  .llm-source-list li:first-child { border-top: 0; }
+  .llm-source-kind {
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--llm-muted); min-width: 3.5rem;
+  }
+  .llm-source-fresh { margin-left: auto; font-size: 0.7rem; opacity: 0.65; font-style: normal; }
+  .llm-dim-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.45rem; margin-top: 0.4rem;
+  }
+  .llm-dim {
+    border: 1px solid var(--llm-line); border-radius: 0.65rem; padding: 0.45rem 0.55rem;
+    background: rgba(255,255,255,0.5);
+  }
+  .llm-dim-k { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--llm-muted); }
+  .llm-dim-v { font-size: 0.82rem; font-weight: 600; margin-top: 0.1rem; word-break: break-word; }
   @keyframes llm-in {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: none; }

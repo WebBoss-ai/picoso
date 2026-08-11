@@ -7,7 +7,7 @@ import {
   isUsefulAnswer,
 } from './agent/runtime.js';
 import { TOOL_DEFINITIONS } from './tools/registry.js';
-import { isGreeting } from './templates.js';
+import { isGreeting, isConversational, conversationalAnswer } from './templates.js';
 import {
   getOrCreateConversation,
   appendTurn,
@@ -119,8 +119,31 @@ router.post('/chat', rateLimit, requireLlmPin, async (req, res) => {
       await emitResult(emit, text, conversationId, greetingAnswer(), 'greeting');
       return;
     }
+    if (isConversational(text)) {
+      await emitResult(
+        emit,
+        text,
+        conversationId,
+        conversationalAnswer(text),
+        'conversational'
+      );
+      return;
+    }
 
-    // ── AI first (brain) ──────────────────────────────────────────────────
+    // ── Deterministic tools FIRST for known analytics patterns (status, product+radius) ─
+    // Guarantees cancelled ≠ delivered and product geo uses live Mongo.
+    const detFirst = await runDeterministicFallback(text, emit);
+    if (isUsefulAnswer(detFirst) && detFirst.kind !== 'chat') {
+      await emitResult(emit, text, conversationId, detFirst, 'tools_first');
+      return;
+    }
+    // chat/unmapped may still try AI if configured
+    if (detFirst?.kind === 'chat' && detFirst.confidence?.overall >= 0.9) {
+      await emitResult(emit, text, conversationId, detFirst, 'conversational');
+      return;
+    }
+
+    // ── AI second (optional enrichment / open-ended) ──────────────────────
     if (process.env.COHERE_API_KEY && mode !== 'deterministic') {
       try {
         emit('status', { stage: 'planning', mode: 'ai' });

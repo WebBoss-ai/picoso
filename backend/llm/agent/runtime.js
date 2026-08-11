@@ -18,8 +18,12 @@ import {
   extractDateRange,
   isGreeting,
   isAnalyticsIntent,
+  isConversational,
+  conversationalAnswer,
   extractProductQuery,
+  extractStatusFilter,
 } from '../templates.js';
+import { STORE_LOCATION } from '../semantic/picosoModel.js';
 import {
   getOrCreateDefaultWorkspace,
   getActiveModel,
@@ -102,6 +106,26 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
     });
   } catch {
     /* persistence optional */
+  }
+
+  // Conversational / location questions — never product-resolve
+  if (isConversational(message) || isGreeting(message)) {
+    const answer = isGreeting(message) ? greetingAnswer() : conversationalAnswer(message);
+    await appendTurn(conversation, message, answer.headline || '', answer);
+    finishRun(runDoc, {
+      status: 'COMPLETED',
+      result: answer,
+      tokenUsage,
+      steps,
+      started,
+    });
+    emit('result', answer);
+    emit('complete', {
+      conversationId: String(conversation._id),
+      runId,
+      durationMs: Date.now() - started,
+    });
+    return { conversationId: conversation._id, runId, result: answer };
   }
 
   const setStatus = async (status, detail = {}) => {
@@ -464,6 +488,9 @@ function hasMetricResult(toolResults = []) {
 export function isUsefulAnswer(answer) {
   if (!answer) return false;
   if (answer.kind === 'greeting') return true;
+  if (answer.kind === 'chat' && answer.explanation && answer.confidence?.overall >= 0.9) {
+    return true;
+  }
   if (answer.clarification?.candidates?.length) return true;
   if (answer.error === 'fallback_no_match') return false;
   const h = String(answer.headline || '').toLowerCase();
@@ -631,17 +658,20 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
   const metrics = [];
   const calculationSteps = [];
   const definitions = [];
+  const sources = [];
   let customers = [];
   let products = [];
   let filters = {};
   let notes = [];
   let toolErrors = [];
   let preferredMetricId = null;
+  let relatedLabels = {};
   const llmText = (text || '').trim();
+  const statusHint = userMessage ? extractStatusFilter(userMessage) : null;
 
   for (const { tool, result } of toolResults || []) {
     if (!result) continue;
-    calculationSteps.push(`Ran ${tool}`);
+    calculationSteps.push(`Ran tool: ${tool}`);
 
     if (result.type === 'error') {
       toolErrors.push(`${tool}: ${result.error || 'failed'}`);
@@ -651,32 +681,41 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
 
     if (tool === 'resolve_product' && result.match) {
       calculationSteps.push(
-        `Resolved product → ${result.match.name} (confidence ${Math.round((result.confidence || 0) * 100)}%)`
+        `Resolved product → ${result.match.name} (match ${Math.round((result.confidence || 0) * 100)}%)`
       );
       filters.product = result.match.name;
       filters.productId = result.match.productId;
+      sources.push({
+        kind: 'catalog',
+        name: 'bowls',
+        detail: `Matched product ${result.match.name} (_id ${result.match.productId})`,
+      });
     }
 
     if (result.type === 'metric_result') {
       preferredMetricId = result.metric || preferredMetricId;
-      // Always treat as metric even when value is 0
       metrics.push({
         id: result.metric,
-        label: labelForMetric(result.metric),
+        label: labelForMetric(result.metric, result.filters?.statusLabel),
         value: result.value ?? 0,
         unit: result.unit,
       });
       if (result.related) {
         for (const [k, v] of Object.entries(result.related)) {
           if (typeof v === 'number') {
+            const custom =
+              result.relatedLabels?.[k] || relatedLabels[k];
             metrics.push({
               id: k,
-              label: labelForMetric(k),
+              label: custom || labelForMetric(k, result.filters?.statusLabel),
               value: v,
               unit: unitFor(k),
             });
           }
         }
+      }
+      if (result.relatedLabels) {
+        relatedLabels = { ...relatedLabels, ...result.relatedLabels };
       }
       if (result.filters) filters = { ...filters, ...result.filters };
       if (result.customers) {
@@ -691,9 +730,28 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
         definitions.push({ id: result.metric, text: result.definition });
       }
       if (result.notes) notes.push(result.notes);
+      if (result.calculationNote) calculationSteps.push(result.calculationNote);
+
+      if (result.source) {
+        sources.push({
+          kind: 'mongo',
+          name: result.source.collection || result.source.dataset || 'orders',
+          freshness: result.source.freshness || 'live',
+          detail: result.source.match
+            ? `status ∈ [${(result.source.match.status || []).join(', ')}]`
+            : 'live aggregation',
+        });
+      }
 
       if (result.filters?.radiusKm != null) {
-        calculationSteps.push(`Applied ${result.filters.radiusKm} km radius from store`);
+        calculationSteps.push(
+          `Radius ${result.filters.radiusKm} km from store ${STORE_LOCATION.lat}, ${STORE_LOCATION.lng} (haversine on deliveryAddress / profile)`
+        );
+      }
+      if (result.filters?.statusLabel) {
+        calculationSteps.push(`Status dimension: ${result.filters.statusLabel}`);
+      } else if (result.filters?.statuses?.length) {
+        calculationSteps.push(`Status ∈ ${result.filters.statuses.join(', ')}`);
       }
       if (result.filters?.periodLabel) {
         calculationSteps.push(`Period: ${result.filters.periodLabel}`);
@@ -701,11 +759,11 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
         calculationSteps.push(`Period: last ${result.filters.days} days`);
       }
       if (result.metric === 'unique_customers') {
-        calculationSteps.push(`Counted ${result.value ?? 0} unique customers`);
+        calculationSteps.push(`Counted ${result.value ?? 0} unique customers (userId)`);
       }
       if (result.related?.repeat_customers != null) {
         calculationSteps.push(
-          `Repeat customers (2+ orders): ${result.related.repeat_customers}`
+          `Repeat customers (2+ completed product orders): ${result.related.repeat_customers}`
         );
       }
     }
@@ -714,7 +772,13 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
       preferredMetricId = preferredMetricId || 'top_products';
       products = result.products;
       if (result.filters) filters = { ...filters, ...result.filters };
-      calculationSteps.push(`Ranked top ${result.products.length} products`);
+      calculationSteps.push(`Ranked top ${result.products.length} products on live items`);
+      sources.push({
+        kind: 'mongo',
+        name: 'orders.items',
+        freshness: 'live',
+        detail: 'Top products by units',
+      });
     }
   }
 
@@ -726,12 +790,12 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     deduped.push(m);
   }
 
-  // Prefer the primary tool metric (revenue for sales, orders for order counts, …)
   const primary =
     (preferredMetricId && deduped.find((m) => m.id === preferredMetricId)) ||
     deduped.find((m) => m.id === 'unique_customers') ||
-    deduped.find((m) => m.id === 'revenue') ||
     deduped.find((m) => m.id === 'orders') ||
+    deduped.find((m) => m.id === 'revenue') ||
+    deduped.find((m) => m.id === 'cancelled_order_value') ||
     deduped.find((m) => m.id === 'repeat_customers') ||
     deduped.find((m) => m.id === 'inactive_customers') ||
     deduped[0];
@@ -779,25 +843,76 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
       headline += ` · ${rep.value} repeat`;
       if (rateText) headline += ` (${rateText})`;
     }
-    if (filters.product || filters.productName) {
-      headline += `\n${filters.product || filters.productName}`;
-    }
-    if (filters.radiusKm != null) headline += ` · within ${filters.radiusKm} km`;
   }
 
+  // Dimensions used in the query
+  const dimensions = {
+    metric: primary?.id || null,
+    status: filters.statusLabel || statusHint?.label || null,
+    statuses: filters.statuses || statusHint?.statuses || null,
+    product: filters.product || filters.productName || null,
+    productId: filters.productId || null,
+    radius_km: filters.radiusKm ?? null,
+    period: filters.periodLabel || (filters.days != null ? `Last ${filters.days} days` : null),
+    fromDate: filters.fromDate || null,
+    toDate: filters.toDate || null,
+    currency: 'INR',
+    store_origin:
+      filters.radiusKm != null
+        ? { lat: STORE_LOCATION.lat, lng: STORE_LOCATION.lng }
+        : null,
+    dataset: 'live MongoDB · orders',
+  };
+
+  // Short human explanation of what we measured
+  const explanation = buildExplanation({
+    primary,
+    filters,
+    dimensions,
+    productConfidence,
+    customers,
+    products,
+    userMessage,
+  });
+
   let narrative = notes.length ? notes.join(' ') : null;
+  if (!narrative) narrative = explanation;
+  else narrative = `${explanation}\n${narrative}`;
+
   if (llmText && primary && !llmText.includes(String(primary.value))) {
-    narrative = [narrative, llmText].filter(Boolean).join('\n');
-  } else if (llmText && !primary) {
-    narrative = llmText;
+    // ignore pure "Analysis complete"
+    if (!/^analysis complete\.?$/i.test(llmText)) {
+      narrative = [narrative, llmText].filter(Boolean).join('\n');
+    }
+  }
+
+  // Dedup sources
+  const srcSeen = new Set();
+  const dedupeSources = [];
+  for (const s of sources) {
+    const k = `${s.kind}|${s.name}|${s.detail}`;
+    if (srcSeen.has(k)) continue;
+    srcSeen.add(k);
+    dedupeSources.push(s);
+  }
+  if (!dedupeSources.length && hasData) {
+    dedupeSources.push({
+      kind: 'mongo',
+      name: 'orders',
+      freshness: 'live',
+      detail: 'Live aggregation on app MongoDB',
+    });
   }
 
   return {
     headline: String(headline).slice(0, 2000),
+    explanation,
     metrics: deduped,
     primaryMetric: primary || null,
     definitions,
     calculationSteps: uniqueSteps(calculationSteps),
+    sources: dedupeSources,
+    dimensions,
     customers: customers.slice(0, 50),
     products,
     filters,
@@ -816,6 +931,45 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
   };
 }
 
+function buildExplanation({ primary, filters, dimensions, productConfidence, customers, userMessage }) {
+  const bits = [];
+  if (dimensions.product) {
+    bits.push(
+      `Measured live buyers of “${dimensions.product}”` +
+        (dimensions.radius_km != null ? ` inside ${dimensions.radius_km} km of the store` : '') +
+        '.'
+    );
+  } else if (primary?.id === 'orders') {
+    bits.push(
+      `Counted live orders with status “${dimensions.status || 'completed (non-cancelled)'}”.`
+    );
+  } else if (primary?.id === 'revenue' || primary?.id === 'cancelled_order_value') {
+    bits.push(`Summed totalPrice on live orders (${dimensions.status || 'completed'}).`);
+  } else if (primary) {
+    bits.push(`Computed ${labelForMetric(primary.id)} from live Mongo orders.`);
+  } else {
+    bits.push('No live metric rows returned for this question.');
+  }
+
+  if (dimensions.period) bits.push(`Window: ${dimensions.period}.`);
+  if (filters.statusLabel || dimensions.statuses) {
+    bits.push(
+      `Status filter is required for cancelled vs delivered — they are separate Mongo status values.`
+    );
+  }
+  if (productConfidence != null && dimensions.product) {
+    bits.push(`Product match confidence ${Math.round(productConfidence * 100)}%.`);
+  }
+  if (customers?.length) {
+    bits.push(`Showing ${Math.min(customers.length, 15)} sample customer rows (PII masked).`);
+  }
+  if (userMessage && /repeat/i.test(userMessage) && dimensions.product) {
+    bits.push('Repeat = 2+ completed product orders for that buyer in the window.');
+  }
+  bits.push('Training paste is structure-only; this number is from live data.');
+  return bits.join(' ');
+}
+
 function uniqueSteps(steps) {
   const out = [];
   for (const s of steps) {
@@ -824,11 +978,12 @@ function uniqueSteps(steps) {
   return out;
 }
 
-function labelForMetric(id) {
+function labelForMetric(id, statusLabel) {
   const map = {
     unique_customers: 'Unique customers',
-    orders: 'Orders',
+    orders: statusLabel ? `Orders (${statusLabel})` : 'Orders',
     revenue: 'Revenue',
+    cancelled_order_value: 'Cancelled order value (nominal)',
     aov: 'AOV',
     repeat_customers: 'Repeat customers',
     repeat_rate: 'Repeat rate',
@@ -837,19 +992,25 @@ function labelForMetric(id) {
     total_product_buyers_any_distance: 'Buyers (any distance)',
     buyers_with_coordinates: 'Buyers with location data',
   };
-  return map[id] || id.replace(/_/g, ' ');
+  return map[id] || String(id || '').replace(/_/g, ' ');
 }
 
 function unitFor(id) {
-  if (id === 'revenue' || id === 'aov' || id === 'spend') return 'INR';
+  if (id === 'revenue' || id === 'aov' || id === 'spend' || id === 'cancelled_order_value') {
+    return 'INR';
+  }
   if (id === 'repeat_rate') return 'ratio';
-  if (id === 'orders' || id.includes('orders')) return 'orders';
+  if (id === 'orders' || String(id).includes('orders')) return 'orders';
   return 'count';
 }
 
 function formatHeadline(metric) {
   if (!metric) return 'Done';
-  if (metric.id === 'revenue' || metric.id === 'aov') {
+  if (
+    metric.id === 'revenue' ||
+    metric.id === 'aov' ||
+    metric.id === 'cancelled_order_value'
+  ) {
     return `₹${Number(metric.value).toLocaleString('en-IN')}`;
   }
   if (metric.id === 'repeat_rate') {
@@ -866,13 +1027,16 @@ function formatHeadline(metric) {
 }
 
 /**
- * Full tools engine for analytics — always resolves product + runs metrics.
+ * Full tools engine for analytics — status filters + product geo on live Mongo.
  */
 export async function runDeterministicFallback(message, emit = () => {}) {
   emit('status', { stage: 'understanding', mode: 'tools_engine' });
 
   if (isGreeting(message)) {
     return greetingAnswer();
+  }
+  if (isConversational(message)) {
+    return conversationalAnswer(message);
   }
 
   const tmpl = matchTemplate(message);
@@ -885,17 +1049,42 @@ export async function runDeterministicFallback(message, emit = () => {}) {
     periodLabel: range.label,
   };
 
-  // ── Product analytics (flagship + variants) ─────────────────────────────
-  if (tmpl?.id === 'product_buyers' || tmpl?.productQuery || /order|buy|customer|kitne|buyer/i.test(message)) {
-    const productQuery =
-      tmpl?.productQuery ||
-      matchTemplate(message)?.productQuery ||
-      null;
+  // Order status counts FIRST so cancelled/delivered never collapse to completed
+  if (tmpl?.id === 'count_orders') {
+    emit('status', { stage: 'querying', tool: 'count_orders' });
+    const r = await executeTool('count_orders', { ...dateArgs, ...(tmpl.args || {}) });
+    return buildStructuredAnswer({
+      text: '',
+      toolResults: [{ tool: 'count_orders', result: r.result }],
+      productConfidence: null,
+      userMessage: message,
+    });
+  }
 
-    if (productQuery || tmpl?.id === 'product_buyers') {
-      const name = productQuery || 'product';
+  const earlyTools = [
+    'inactive_customers',
+    'top_products',
+    'calculate_revenue',
+    'get_aov',
+    'get_repeat_customers',
+    'find_customers_within_radius',
+  ];
+  if (tmpl?.id && earlyTools.includes(tmpl.id)) {
+    const r = await executeTool(tmpl.id, { ...dateArgs, ...(tmpl.args || {}) });
+    return buildStructuredAnswer({
+      text: '',
+      toolResults: [{ tool: tmpl.id, result: r.result }],
+      productConfidence: null,
+      userMessage: message,
+    });
+  }
+
+  // Product analytics ONLY when a real food product phrase exists
+  if (tmpl?.id === 'product_buyers' || tmpl?.productQuery) {
+    const productQuery = tmpl?.productQuery || extractProductQuery(message);
+    if (productQuery) {
       emit('status', { stage: 'resolving_product' });
-      const resolved = await executeTool('resolve_product', { name });
+      const resolved = await executeTool('resolve_product', { name: productQuery });
 
       if (resolved.result?.needsClarification) {
         return buildClarificationAnswer(
@@ -959,30 +1148,26 @@ export async function runDeterministicFallback(message, emit = () => {}) {
           });
         }
       }
+
+      return {
+        kind: 'chat',
+        headline: `No product matched “${productQuery}”.`,
+        narrative:
+          'Try the full menu name (e.g. Paneer Tikka Rice Bowl) or ask cancelled vs delivered order counts / revenue.',
+        metrics: [],
+        definitions: [],
+        calculationSteps: ['resolve_product found no catalog match'],
+        sources: [{ kind: 'catalog', name: 'bowls', detail: 'no match' }],
+        dimensions: { product_query: productQuery },
+        explanation: 'Product name could not be resolved in the live catalog.',
+        confidence: { overall: 0.4, product: 0 },
+        clarification: null,
+        freshness: 'live',
+        period: null,
+      };
     }
   }
 
-  // Generic template tools (orders, revenue, top products, …)
-  const templateTools = [
-    'inactive_customers',
-    'top_products',
-    'calculate_revenue',
-    'count_orders',
-    'get_aov',
-    'get_repeat_customers',
-    'find_customers_within_radius',
-  ];
-  if (tmpl?.id && templateTools.includes(tmpl.id)) {
-    const r = await executeTool(tmpl.id, { ...dateArgs, ...(tmpl.args || {}) });
-    return buildStructuredAnswer({
-      text: '',
-      toolResults: [{ tool: tmpl.id, result: r.result }],
-      productConfidence: null,
-      userMessage: message,
-    });
-  }
-
-  // Free-form without match
   const completed = await completeMissingTools({
     message,
     collectedToolResults: [],
@@ -1014,13 +1199,17 @@ export async function runDeterministicFallback(message, emit = () => {}) {
   return {
     kind: 'chat',
     headline:
-      'I could not map that to an analytics query. Try asking about customers, a product, revenue, geo (km), or inactive users.',
+      'I could not map that to an analytics query. Try customers + product + km, cancelled/delivered orders, revenue, or inactive users.',
     metrics: [],
     definitions: [],
     calculationSteps: [],
+    sources: [],
+    dimensions: {},
+    explanation: 'No deterministic template matched this message.',
     confidence: { overall: 0 },
     clarification: null,
     freshness: 'live',
     error: 'fallback_no_match',
+    period: null,
   };
 }

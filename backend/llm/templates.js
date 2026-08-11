@@ -1,6 +1,12 @@
 /**
- * Deterministic intent templates + date/geo extractors for Picoso Intelligence.
+ * Deterministic intent templates + date/geo/status extractors for Picoso Intelligence.
  */
+
+import {
+  COMPLETED_ORDER_STATUSES,
+  CANCELLED_STATUS,
+  STORE_LOCATION,
+} from './semantic/picosoModel.js';
 
 export function isGreeting(message = '') {
   return /^(hi|hello|hey|namaste|hola|yo|sup|hiya|good\s*(morning|evening|afternoon)|whats?\s*up|what'?s\s*up)[\s!.?]*$/i.test(
@@ -8,9 +14,91 @@ export function isGreeting(message = '') {
   );
 }
 
+function isAnalyticsIntentQuick(m) {
+  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver|total)\b/i.test(
+    m
+  );
+}
+
+/** Non-analytics chat — never force product resolution */
+export function isConversational(message = '') {
+  const m = String(message || '').trim().toLowerCase();
+  if (!m) return false;
+  if (isGreeting(m)) return true;
+  if (isAnalyticsIntentQuick(m)) return false;
+  return (
+    /\b(where are you|who are you|what are you|how are you|based out|your (name|location|address)|what can you do|help me|thank(s| you))\b/i.test(
+      m
+    ) ||
+    /^(where|who|what|how)\s+(are|is)\s+you\b/i.test(m) ||
+    /\bbased\s+out\b/i.test(m)
+  );
+}
+
 export function extractRadiusKm(message) {
   const radiusMatch = String(message).toLowerCase().match(/(\d+(?:\.\d+)?)\s*km/);
   return radiusMatch ? Number(radiusMatch[1]) : null;
+}
+
+/**
+ * Status filter from NL: cancelled / delivered / default completed set.
+ */
+export function extractStatusFilter(message = '') {
+  const m = String(message).toLowerCase();
+
+  if (/\b(cancel+e?d|cancelled|cancellation)\b/i.test(m)) {
+    return {
+      statuses: [CANCELLED_STATUS],
+      label: 'cancelled',
+      includeRevenueLabel: 'Cancelled order value (nominal)',
+    };
+  }
+
+  if (/\bdelivered\b/i.test(m) && !/\bcancel/i.test(m)) {
+    return {
+      statuses: ['delivered'],
+      label: 'delivered',
+      includeRevenueLabel: 'Revenue from delivered orders',
+    };
+  }
+
+  if (/\bpending\b/i.test(m) && /\border/i.test(m)) {
+    return {
+      statuses: ['pending'],
+      label: 'pending',
+      includeRevenueLabel: 'Order value (pending)',
+    };
+  }
+
+  if (/\b(out[- ]for[- ]delivery|ofd)\b/i.test(m)) {
+    return {
+      statuses: ['out-for-delivery'],
+      label: 'out-for-delivery',
+      includeRevenueLabel: 'Order value (out for delivery)',
+    };
+  }
+
+  if (/\bpreparing\b/i.test(m)) {
+    return {
+      statuses: ['preparing'],
+      label: 'preparing',
+      includeRevenueLabel: 'Order value (preparing)',
+    };
+  }
+
+  if (/\bconfirmed\b/i.test(m) && /\border/i.test(m)) {
+    return {
+      statuses: ['confirmed'],
+      label: 'confirmed',
+      includeRevenueLabel: 'Order value (confirmed)',
+    };
+  }
+
+  return {
+    statuses: [...COMPLETED_ORDER_STATUSES],
+    label: 'completed (non-cancelled)',
+    includeRevenueLabel: 'Revenue from completed orders',
+  };
 }
 
 /**
@@ -174,27 +262,44 @@ export function extractDays(message) {
 /** True if this looks like a business analytics question. */
 export function isAnalyticsIntent(message = '') {
   const m = String(message);
+  if (isConversational(m)) return false;
   if (matchTemplate(m)) return true;
-  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month)\b/i.test(
+  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver)\b/i.test(
     m
   );
 }
 
 const FOOD =
-  'rice|bowl|wrap|sandwich|salad|coffee|tikka|paneer|meal|snack|dessert|drink|biryani|thali|burger|pizza|pasta|smoothie|shake';
+  'rice|bowl|wrap|sandwich|salad|coffee|tikka|paneer|meal|snack|dessert|drink|biryani|thali|burger|pizza|pasta|smoothie|shake|cappuccino|coke|protein|matar|beast|nutty';
+
+const ANALYTICS_STOP =
+  'ke|ki|ka|andar|mein|me|kitne|kitna|customers?|logon?|logo|ne|liya|liye|lene|wale|order|orders?|buyers?|aur|unmein|se|repeat|hain|hai|how|many|people|who|bought|buy|within|radius|yesterday|today|last|month|total|sales|revenue|canceled|cancelled|delivered|pending|confirmed|complete|completed|aov|unique|count|please|tell|show|give|list';
 
 /**
  * Extract a plausible product phrase from free text (EN/Hinglish).
+ * Never returns rubbish for chitchat or pure order-status questions.
  */
 export function extractProductQuery(message = '') {
-  let s = String(message)
+  if (isConversational(message)) return null;
+  const raw = String(message || '');
+  if (
+    /\b(cancel+e?d|cancelled|delivered|pending)\b/i.test(raw) &&
+    /\borders?\b/i.test(raw) &&
+    !new RegExp(FOOD, 'i').test(raw)
+  ) {
+    return null;
+  }
+
+  let s = raw
     .replace(/\d+(?:\.\d+)?\s*km/gi, ' ')
-    .replace(
-      /\b(ke|ki|ka|andar|mein|me|kitne|kitna|customers?|logon?|logo|ne|liya|liye|lene|wale|order|orders?|buyers?|aur|unmein|se|repeat|hain|hai|how|many|people|who|bought|buy|within|radius|yesterday|today|last|month|total|sales|revenue)\b/gi,
-      ' '
-    )
+    .replace(new RegExp(`\\b(${ANALYTICS_STOP})\\b`, 'gi'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Require a food-ish signal somewhere unless quoted
+  if (!new RegExp(FOOD, 'i').test(raw) && !/["“].+["”]/.test(raw)) {
+    return null;
+  }
 
   const eng = s.match(
     new RegExp(
@@ -207,11 +312,15 @@ export function extractProductQuery(message = '') {
   const rev = s.match(new RegExp(`\\b((?:${FOOD})(?:\\s+[A-Za-z][A-Za-z]+){0,4})\\b`, 'i'));
   if (rev) return cleanProductPhrase(rev[1]);
 
-  const q = String(message).match(/["“](.+?)["”]/);
+  const q = raw.match(/["“](.+?)["”]/);
   if (q) return cleanProductPhrase(q[1]);
 
-  const loose = s.match(/\b([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+){1,4})\b/);
-  if (loose && !/^(last|what|which|total|average)\b/i.test(loose[1])) {
+  const loose = s.match(/\b([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+){0,4})\b/);
+  if (
+    loose &&
+    !/^(last|what|which|total|average|where|based|out|from|you|are)$/i.test(loose[1]) &&
+    new RegExp(FOOD, 'i').test(loose[1])
+  ) {
     return cleanProductPhrase(loose[1]);
   }
 
@@ -225,6 +334,7 @@ function cleanProductPhrase(phrase) {
     .trim();
   p = p.replace(/^(the|a|an|of|for|about)\s+/i, '').trim();
   if (p.length < 3) return null;
+  if (/^(where|what|who|how|based|you|out|of)$/i.test(p)) return null;
   return p;
 }
 
@@ -239,9 +349,17 @@ function dateArgsFromMessage(message) {
 }
 
 export function matchTemplate(message = '') {
+  if (isConversational(message)) return null;
+
   const radiusKm = extractRadiusKm(message);
   const dateArgs = dateArgsFromMessage(message);
   const productQuery = extractProductQuery(message);
+  const status = extractStatusFilter(message);
+  const statusArgs = {
+    statuses: status.statuses,
+    statusLabel: status.label,
+    revenueLabel: status.includeRevenueLabel,
+  };
 
   if (/top product|best.?sell|sabse (zyada|jyada)|most sold|sell the most|products sell/i.test(message)) {
     return { id: 'top_products', args: { ...dateArgs, limit: 10 } };
@@ -249,34 +367,58 @@ export function matchTemplate(message = '') {
   if (/inactive|60\s*din|haven'?t ordered|nahi order/i.test(message)) {
     return { id: 'inactive_customers', args: { days_inactive: 60 } };
   }
-  if (/\baov\b|average order/i.test(message)) {
-    return { id: 'get_aov', args: { ...dateArgs } };
+  if (/\baov\b|average order/i.test(message) && !productQuery) {
+    return { id: 'get_aov', args: { ...dateArgs, ...statusArgs } };
   }
 
-  // Orders count — including "total orders of yesterday"
+  // Status-specific counts first (cancelled / delivered must never collapse to completed)
+  if (
+    /\b(cancel+e?d|cancelled|delivered|pending|confirmed|preparing|out[- ]for[- ]delivery)\b/i.test(
+      message
+    ) &&
+    /\b(orders?|order count)\b/i.test(message) &&
+    !productQuery
+  ) {
+    return { id: 'count_orders', args: { ...dateArgs, ...statusArgs } };
+  }
+
+  // Generic order counts → completed set by default (via statusArgs)
   if (
     /\b(orders?|order count)\b/i.test(message) &&
     !/customer/i.test(message) &&
     !productQuery
   ) {
-    return { id: 'count_orders', args: { ...dateArgs } };
+    return { id: 'count_orders', args: { ...dateArgs, ...statusArgs } };
   }
 
-  // Revenue / sales
+  // Revenue / sales — completed; never treat cancelled as revenue
   if (
     /revenue|sales|kitna sale|kitna kamaya|total revenue|total sales|sale\b/i.test(
       message
     ) &&
-    !productQuery
+    !productQuery &&
+    !/\bcancel/i.test(message)
   ) {
-    return { id: 'calculate_revenue', args: { ...dateArgs } };
+    return {
+      id: 'calculate_revenue',
+      args: {
+        ...dateArgs,
+        statuses: [...COMPLETED_ORDER_STATUSES],
+        statusLabel: 'completed (non-cancelled)',
+      },
+    };
   }
 
   if (productQuery) {
     return {
       id: 'product_buyers',
       productQuery,
-      args: { ...dateArgs, radius_km: radiusKm },
+      args: {
+        ...dateArgs,
+        radius_km: radiusKm,
+        statuses: [...COMPLETED_ORDER_STATUSES],
+        statusLabel: 'completed (non-cancelled)',
+      },
       wantRepeat: /repeat/i.test(message),
     };
   }
@@ -293,4 +435,61 @@ export function matchTemplate(message = '') {
   }
 
   return null;
+}
+
+/** Short store/identity answers without analytics tools */
+export function conversationalAnswer(message = '') {
+  const store = STORE_LOCATION;
+  if (/\b(based|where|location|store|from)\b/i.test(message)) {
+    return {
+      kind: 'chat',
+      headline: 'Picoso store — Gurugram operations origin',
+      narrative: `We measure every distance from the Picoso store pin used in ops: ${store.lat}, ${store.lng} (${store.name}). Geo answers (e.g. “2 km ke andar…”) compare customer deliveryAddress.lat/lng (with user-profile fallback) against this origin using haversine.`,
+      metrics: [],
+      primaryMetric: null,
+      definitions: [
+        {
+          id: 'store_origin',
+          text: `Store origin ${store.lat}, ${store.lng} — radius math center`,
+        },
+      ],
+      calculationSteps: ['Conversational location question — no order aggregate run'],
+      sources: [
+        {
+          kind: 'config',
+          name: 'STORE_LOCATION',
+          detail: `${store.lat}, ${store.lng}`,
+        },
+      ],
+      dimensions: {
+        store_lat: store.lat,
+        store_lng: store.lng,
+        timezone: store.timezone,
+        currency: store.currency,
+      },
+      explanation:
+        'This is about where distance is measured from, not a product or order query.',
+      confidence: { overall: 1 },
+      clarification: null,
+      freshness: 'live',
+      period: null,
+    };
+  }
+
+  return {
+    kind: 'chat',
+    headline: 'Intelligence Partner · analytics on live Picoso orders',
+    narrative:
+      'Ask about customers, products, radius (km), revenue, cancelled vs delivered counts, AOV, or top products. Numbers always come from live Mongo aggregates — training samples only teach field meanings.',
+    metrics: [],
+    definitions: [],
+    calculationSteps: [],
+    sources: [],
+    dimensions: {},
+    explanation: 'General chat — no metric query required.',
+    confidence: { overall: 1 },
+    clarification: null,
+    freshness: 'live',
+    period: null,
+  };
 }

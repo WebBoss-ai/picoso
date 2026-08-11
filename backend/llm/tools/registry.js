@@ -312,15 +312,19 @@ async function calculate_revenue(input = {}) {
   const toDate = input.toDate || input.to_date || null;
   const periodLabel = input.periodLabel || input.period_label || null;
   const productId = input.product_id || input.productId || undefined;
+  const statuses = normalizeStatuses(input.statuses || input.status);
+  const statusLabel = input.statusLabel || input.status_label || null;
   const raw = await executeRevenue({
     days: fromDate || toDate ? undefined : days,
     fromDate,
     toDate,
     productId,
+    statuses,
   });
+  const cancelled = isCancelledStatuses(statuses);
   return {
     type: 'metric_result',
-    metric: 'revenue',
+    metric: cancelled ? 'cancelled_order_value' : 'revenue',
     value: raw.revenue,
     unit: 'INR',
     related: {
@@ -334,9 +338,14 @@ async function calculate_revenue(input = {}) {
       toDate,
       periodLabel,
       productId: productId || null,
+      statuses,
+      statusLabel,
     },
     source: raw.source,
-    definition: GLOSSARY.revenue,
+    definition: cancelled
+      ? 'Sum of totalPrice on cancelled orders (nominal — not booked revenue).'
+      : GLOSSARY.revenue,
+    calculationNote: `Matched orders with status ∈ [${(statuses || raw.filters?.statuses || []).join(', ')}]`,
   };
 }
 
@@ -346,21 +355,31 @@ async function count_orders(input = {}) {
   const toDate = input.toDate || input.to_date || null;
   const periodLabel = input.periodLabel || input.period_label || null;
   const productId = input.product_id || input.productId || undefined;
+  const statuses = normalizeStatuses(input.statuses || input.status);
+  const statusLabel =
+    input.statusLabel || input.status_label || 'completed (non-cancelled)';
   const raw = await executeRevenue({
     days: fromDate || toDate ? undefined : days,
     fromDate,
     toDate,
     productId,
+    statuses,
   });
+  const cancelled = isCancelledStatuses(statuses);
   return {
     type: 'metric_result',
     metric: 'orders',
     value: raw.orders,
     unit: 'orders',
     related: {
-      revenue: raw.revenue,
+      [cancelled ? 'cancelled_order_value' : 'revenue']: raw.revenue,
       unique_customers: raw.unique_customers,
       aov: raw.aov,
+    },
+    relatedLabels: {
+      [cancelled ? 'cancelled_order_value' : 'revenue']: cancelled
+        ? 'Cancelled order value (nominal)'
+        : 'Revenue',
     },
     filters: {
       days: fromDate || toDate ? null : days,
@@ -368,8 +387,14 @@ async function count_orders(input = {}) {
       toDate,
       periodLabel,
       productId: productId || null,
+      statuses: statuses || raw.filters?.statuses,
+      statusLabel,
     },
     source: raw.source,
+    definition: cancelled
+      ? 'Count of cancelled orders in the period (live Mongo orders collection).'
+      : `Count of orders with status in ${(statuses || raw.filters?.statuses || []).join(', ') || 'completed'} (live Mongo).`,
+    calculationNote: `status filter: ${statusLabel}`,
   };
 }
 
@@ -379,11 +404,13 @@ async function get_aov(input = {}) {
   const toDate = input.toDate || input.to_date || null;
   const periodLabel = input.periodLabel || input.period_label || null;
   const productId = input.product_id || input.productId || undefined;
+  const statuses = normalizeStatuses(input.statuses || input.status);
   const raw = await executeRevenue({
     days: fromDate || toDate ? undefined : days,
     fromDate,
     toDate,
     productId,
+    statuses,
   });
   return {
     type: 'metric_result',
@@ -400,10 +427,27 @@ async function get_aov(input = {}) {
       toDate,
       periodLabel,
       productId: productId || null,
+      statuses,
+      statusLabel: input.statusLabel || null,
     },
     source: raw.source,
     definition: GLOSSARY.aov,
   };
+}
+
+function normalizeStatuses(raw) {
+  if (!raw) return undefined;
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    if (raw.includes(',')) return raw.split(',').map((s) => s.trim()).filter(Boolean);
+    return [raw];
+  }
+  return undefined;
+}
+
+function isCancelledStatuses(statuses) {
+  if (!statuses?.length) return false;
+  return statuses.every((s) => /cancel/i.test(String(s)));
 }
 
 async function top_products(input = {}) {
@@ -860,7 +904,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'count_orders',
-    description: 'Count completed orders in period, optional product filter.',
+    description:
+      'Count orders in period. Pass statuses for cancelled or delivered-only (e.g. statuses:["cancelled"]). Default is completed non-cancelled.',
     parameters: {
       type: 'object',
       properties: {
@@ -868,6 +913,12 @@ export const TOOL_DEFINITIONS = [
         product_id: { type: 'string' },
         fromDate: { type: 'string' },
         toDate: { type: 'string' },
+        statuses: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Order status filter e.g. cancelled, delivered, or completed set',
+        },
+        statusLabel: { type: 'string' },
       },
       required: [],
     },

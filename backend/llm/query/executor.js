@@ -219,13 +219,14 @@ export async function executeProductBuyers({
 }
 
 export async function executeRevenue(filters = {}) {
-  const { days, fromDate, toDate, productId, productName } = filters;
+  const { days, fromDate, toDate, productId, productName, statuses } = filters;
   const pipeline = compileRevenuePipeline({
     days: fromDate || toDate ? undefined : days,
     fromDate,
     toDate,
     productId,
     productName,
+    statuses: statuses || undefined,
   });
   const [row] = await runAggregation(pipeline);
   return {
@@ -238,8 +239,17 @@ export async function executeRevenue(filters = {}) {
       fromDate: fromDate || null,
       toDate: toDate || null,
       productId: productId || null,
+      statuses: statuses || COMPLETED_ORDER_STATUSES,
     },
-    source: { dataset: 'orders', freshness: 'live' },
+    source: {
+      dataset: 'orders',
+      freshness: 'live',
+      collection: 'orders',
+      match: {
+        status: statuses || COMPLETED_ORDER_STATUSES,
+        period: { fromDate, toDate, days },
+      },
+    },
   };
 }
 
