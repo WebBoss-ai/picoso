@@ -2,13 +2,39 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Lock, Sparkles, Send, Loader2, LogOut, ChevronRight,
-  Calculator, Users, RefreshCw, AlertCircle, BarChart3,
-  Database, Brain, CheckCircle2, Link2, Play,
+  Lock,
+  Sparkles,
+  Send,
+  Loader2,
+  LogOut,
+  ChevronRight,
+  Calculator,
+  Users,
+  RefreshCw,
+  AlertCircle,
+  BarChart3,
+  Database,
+  Brain,
+  CheckCircle2,
+  Link2,
+  Play,
+  Download,
+  PanelRightOpen,
+  PanelRightClose,
+  Maximize2,
+  Minimize2,
+  Table2,
+  FileJson,
+  FileText,
+  Phone,
+  Copy,
+  Check,
+  X,
 } from 'lucide-react';
 
 const PIN_KEY = 'picoso_llm_pin';
 const CONV_KEY = 'picoso_llm_conversation';
+const EDITOR_W_KEY = 'picoso_llm_editor_w';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
 
 const SUGGESTIONS = [
@@ -17,7 +43,8 @@ const SUGGESTIONS = [
   'Total orders of yesterday',
   'What products sell the most?',
   'Which customers are inactive for 60 days?',
-  'What is my average order value?',
+  'List customers with more than 5 orders — include name and phone',
+  'Export top 50 customers by spend this month',
 ];
 
 function getPin() {
@@ -51,7 +78,7 @@ function stageLabel(stage, tool) {
   const map = {
     received: 'Received…',
     classifying: 'Understanding…',
-    planning: 'Planning with business brain…',
+    planning: 'Planning…',
     waiting_for_tool: 'Selecting tools…',
     executing: tool ? `Running ${String(tool).replace(/_/g, ' ')}…` : 'Querying…',
     validating: 'Validating…',
@@ -67,14 +94,157 @@ function stageLabel(stage, tool) {
   return map[stage] || stage || 'Working…';
 }
 
+function downloadBlob(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeCsv(val) {
+  if (val == null) return '';
+  const s = typeof val === 'object' ? JSON.stringify(val) : String(val);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function rowsToCsv(rows = []) {
+  if (!rows.length) return '';
+  const keySet = new Set();
+  rows.forEach((r) => Object.keys(r || {}).forEach((k) => keySet.add(k)));
+  const keys = Array.from(keySet);
+  const lines = [keys.join(',')];
+  for (const row of rows) {
+    lines.push(keys.map((k) => escapeCsv(row?.[k])).join(','));
+  }
+  return lines.join('\n');
+}
+
+function stamp() {
+  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+}
+
+function exportResult(result, format = 'json') {
+  if (!result) return;
+  const base = `picoso-export-${stamp()}`;
+
+  if (format === 'json') {
+    downloadBlob(
+      `${base}.json`,
+      JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          headline: result.headline,
+          explanation: result.explanation,
+          metrics: result.metrics,
+          primaryMetric: result.primaryMetric,
+          dimensions: result.dimensions,
+          filters: result.filters,
+          products: result.products || [],
+          customers: result.customers || [],
+          sources: result.sources,
+          calculationSteps: result.calculationSteps,
+        },
+        null,
+        2
+      ),
+      'application/json'
+    );
+    return;
+  }
+
+  // CSV — customers preferred, else products, else metrics
+  if (result.customers?.length) {
+    downloadBlob(`${base}-customers.csv`, rowsToCsv(result.customers), 'text/csv;charset=utf-8');
+  } else if (result.products?.length) {
+    downloadBlob(`${base}-products.csv`, rowsToCsv(result.products), 'text/csv;charset=utf-8');
+  } else if (result.metrics?.length) {
+    downloadBlob(
+      `${base}-metrics.csv`,
+      rowsToCsv(
+        result.metrics.map((m) => ({
+          id: m.id,
+          label: m.label,
+          value: m.value,
+          unit: m.unit,
+          display: m.display || formatMetricValue(m),
+        }))
+      ),
+      'text/csv;charset=utf-8'
+    );
+  } else {
+    downloadBlob(
+      `${base}-summary.csv`,
+      rowsToCsv([
+        {
+          headline: result.headline,
+          explanation: result.explanation || result.narrative || '',
+          period: result.period || '',
+        },
+      ]),
+      'text/csv;charset=utf-8'
+    );
+  }
+}
+
+function buildReportText(result) {
+  if (!result) return '';
+  const lines = [];
+  lines.push(result.headline || 'Analysis');
+  lines.push('');
+  if (result.explanation || result.narrative) {
+    lines.push(result.explanation || result.narrative);
+    lines.push('');
+  }
+  if (result.primaryMetric) {
+    lines.push(`Primary: ${result.primaryMetric.label || result.primaryMetric.id} = ${formatMetricValue(result.primaryMetric)}`);
+  }
+  if (result.metrics?.length) {
+    lines.push('');
+    lines.push('Metrics');
+    result.metrics.forEach((m) => {
+      lines.push(`- ${m.label || m.id}: ${formatMetricValue(m)}`);
+    });
+  }
+  if (result.customers?.length) {
+    lines.push('');
+    lines.push(`Customers (${result.customers.length})`);
+    result.customers.forEach((c, i) => {
+      lines.push(
+        `${i + 1}. ${c.name || '—'} | ${c.phone || '—'} | orders ${c.orders ?? '—'} | spend ${c.spend != null ? c.spend : '—'}`
+      );
+    });
+  }
+  if (result.products?.length) {
+    lines.push('');
+    lines.push(`Products (${result.products.length})`);
+    result.products.forEach((p, i) => {
+      lines.push(
+        `${i + 1}. ${p.name || '—'} | units ${p.units ?? p.orders ?? '—'} | ₹${p.revenue ?? 0}`
+      );
+    });
+  }
+  if (result.calculationSteps?.length) {
+    lines.push('');
+    lines.push('How calculated');
+    result.calculationSteps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
+  }
+  return lines.join('\n');
+}
+
 export default function LlmPage() {
   const [pin, setPin] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [authing, setAuthing] = useState(false);
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState('ask'); // ask | train | brain
-  const [brainView, setBrainView] = useState('text'); // text | json | records | params
+  const [tab, setTab] = useState('ask');
+  const [brainView, setBrainView] = useState('text');
   const [brainPack, setBrainPack] = useState(null);
 
   const [message, setMessage] = useState('');
@@ -86,7 +256,18 @@ export default function LlmPage() {
   const listRef = useRef(null);
   const abortRef = useRef(null);
 
-  // Train state
+  // Live studio (right panel)
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [studioExpanded, setStudioExpanded] = useState(false);
+  const [studioTab, setStudioTab] = useState('table'); // table | json | report
+  const [studioResult, setStudioResult] = useState(null);
+  const [studioWidth, setStudioWidth] = useState(420);
+  const [editorText, setEditorText] = useState('');
+  const [compact, setCompact] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const dragRef = useRef(null);
+
+  // Train
   const [workspace, setWorkspace] = useState(null);
   const [trainBusy, setTrainBusy] = useState(false);
   const [trainError, setTrainError] = useState('');
@@ -107,6 +288,8 @@ export default function LlmPage() {
     }
     const cid = sessionStorage.getItem(CONV_KEY);
     if (cid) setConversationId(cid);
+    const w = Number(sessionStorage.getItem(EDITOR_W_KEY));
+    if (w >= 320 && w <= 900) setStudioWidth(w);
   }, []);
 
   useEffect(() => {
@@ -119,6 +302,42 @@ export default function LlmPage() {
       loadBrain(pin);
     }
   }, [ready, pin]);
+
+  useEffect(() => {
+    if (!studioResult) {
+      setEditorText('');
+      return;
+    }
+    if (studioTab === 'json') {
+      setEditorText(
+        JSON.stringify(
+          {
+            headline: studioResult.headline,
+            metrics: studioResult.metrics,
+            customers: studioResult.customers || [],
+            products: studioResult.products || [],
+            dimensions: studioResult.dimensions,
+            filters: studioResult.filters,
+          },
+          null,
+          2
+        )
+      );
+    } else if (studioTab === 'report') {
+      setEditorText(buildReportText(studioResult));
+    }
+  }, [studioResult, studioTab]);
+
+  function openStudio(result) {
+    if (!result) return;
+    setStudioResult(result);
+    setStudioOpen(true);
+    if (!result.customers?.length && !result.products?.length) {
+      setStudioTab('report');
+    } else {
+      setStudioTab('table');
+    }
+  }
 
   async function loadWorkspace(p = pin) {
     try {
@@ -184,6 +403,8 @@ export default function LlmPage() {
     setReady(false);
     setTurns([]);
     setConversationId(null);
+    setStudioOpen(false);
+    setStudioResult(null);
   }
 
   async function connectSelf() {
@@ -290,7 +511,6 @@ export default function LlmPage() {
       await loadBrain();
       setTab('brain');
       setBrainView('text');
-      if (andActivate) setTab('brain');
     } catch (e) {
       setTrainError(e.message);
     } finally {
@@ -361,6 +581,7 @@ export default function LlmPage() {
       setStatus({ stage: 'received' });
       setMessage('');
       setTurns((t) => [...t, { role: 'user', content: q }]);
+      setTab('ask');
 
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
@@ -426,6 +647,13 @@ export default function LlmPage() {
                   error: Boolean(data.error),
                 },
               ]);
+              // Auto-open studio when tabular data arrives
+              if (
+                (data.customers?.length || data.products?.length) &&
+                !data.error
+              ) {
+                openStudio(data);
+              }
             } else if (event === 'error') {
               streamError = data.message || 'Error';
               setError(streamError);
@@ -465,6 +693,39 @@ export default function LlmPage() {
     [message, loading, pin, conversationId]
   );
 
+  function onStudioResizeStart(e) {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startW: studioWidth };
+    function onMove(ev) {
+      if (!dragRef.current) return;
+      const dx = dragRef.current.startX - ev.clientX;
+      const next = Math.min(900, Math.max(320, dragRef.current.startW + dx));
+      setStudioWidth(next);
+    }
+    function onUp(ev) {
+      const finalW = dragRef.current
+        ? Math.min(900, Math.max(320, dragRef.current.startW + (dragRef.current.startX - ev.clientX)))
+        : studioWidth;
+      setStudioWidth(finalW);
+      sessionStorage.setItem(EDITOR_W_KEY, String(finalW));
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  async function copyEditor() {
+    try {
+      await navigator.clipboard.writeText(editorText || buildReportText(studioResult));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* ignore */
+    }
+  }
+
   if (!ready) {
     return (
       <div className="llm-root min-h-screen flex items-center justify-center px-4">
@@ -475,7 +736,7 @@ export default function LlmPage() {
           </div>
           <h1 className="llm-pin-title">Intelligence Partner</h1>
           <p className="llm-pin-sub">
-            Paste messy ops data or connect Mongo · inspect trained brain · ask anything.
+            Private ops console for your business data — full customer detail, live queries, export.
           </p>
           <div className="space-y-3">
             <div className="relative">
@@ -507,7 +768,7 @@ export default function LlmPage() {
               className="llm-btn-primary w-full"
               onClick={() => verifyPin(pinInput)}
             >
-              {authing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enter'}
+              {authing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enter workspace'}
             </button>
           </div>
         </div>
@@ -519,8 +780,14 @@ export default function LlmPage() {
   const brain = brainPack?.brain || workspace?.brain;
   const corpusRecords = brainPack?.corpus?.records || [];
 
+  const paneWidth = studioExpanded
+    ? 'min(100%, 100vw)'
+    : studioOpen
+      ? `${studioWidth}px`
+      : '0px';
+
   return (
-    <div className="llm-root min-h-screen flex flex-col">
+    <div className={`llm-root min-h-screen flex flex-col ${studioExpanded ? 'llm-expanded' : ''}`}>
       <style dangerouslySetInnerHTML={{ __html: LLM_CSS }} />
 
       <header className="llm-header">
@@ -532,20 +799,16 @@ export default function LlmPage() {
             <div className="llm-header-title">Intelligence Partner</div>
             <div className="llm-header-sub truncate">
               {trained
-                ? `Brain active · ${workspace?.activeModel?.name || draftModel?.name || 'online'}`
+                ? `Live · ${workspace?.activeModel?.name || draftModel?.name || 'brain online'}`
                 : draftModel
-                  ? 'Draft brain ready — activate or train more data'
-                  : 'Train on paste or Mongo — then ask'}
+                  ? 'Draft brain — activate or train more'
+                  : 'Train, ask, export your ops data'}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <div className="llm-tabs">
-            <button
-              type="button"
-              className={tab === 'ask' ? 'on' : ''}
-              onClick={() => setTab('ask')}
-            >
+            <button type="button" className={tab === 'ask' ? 'on' : ''} onClick={() => setTab('ask')}>
               Ask
             </button>
             <button
@@ -566,6 +829,32 @@ export default function LlmPage() {
               Brain
             </button>
           </div>
+          {tab === 'ask' && (
+            <button
+              type="button"
+              className="llm-btn-ghost"
+              onClick={() => {
+                if (studioOpen) {
+                  setStudioOpen(false);
+                  setStudioExpanded(false);
+                } else {
+                  setStudioOpen(true);
+                  if (!studioResult) {
+                    const last = [...turns].reverse().find((t) => t.result);
+                    if (last?.result) setStudioResult(last.result);
+                  }
+                }
+              }}
+              title="Data studio"
+            >
+              {studioOpen ? (
+                <PanelRightClose className="w-4 h-4" />
+              ) : (
+                <PanelRightOpen className="w-4 h-4" />
+              )}
+              Studio
+            </button>
+          )}
           <button type="button" onClick={logout} className="llm-btn-ghost">
             <LogOut className="w-4 h-4" /> Exit
           </button>
@@ -576,12 +865,11 @@ export default function LlmPage() {
         <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-5 space-y-5 overflow-y-auto">
           <section className="llm-card">
             <h2 className="llm-section-h">
-              <Brain className="w-4 h-4" /> 1. Paste unorganized data (recommended)
+              <Brain className="w-4 h-4" /> 1. Paste unorganized data
             </h2>
             <p className="llm-muted">
-              Drop order admin dumps, notes, CSV, or JSON. AI learns fields (price, status, pin,
-              phone, items…). Those concepts are mapped to <strong>live Mongo</strong> so questions
-              like “Paneer Tikka in 5 km” scan real orders — samples only teach the structure.
+              Drop order dumps, notes, CSV, or JSON. Structure maps to live Mongo so answers use
+              real orders. Names and phones are full company-visible fields.
             </p>
             <input
               className="llm-input mt-3"
@@ -599,7 +887,7 @@ export default function LlmPage() {
             <textarea
               className="llm-textarea mt-2 font-mono text-sm"
               rows={12}
-              placeholder={`Paste like:\n#A47C9AFD\ndelivered\nCOD\n…\nGrand Total\n₹254\nCustomer Pin\n28.44, 77.06`}
+              placeholder={`Paste like:\n#A47C9AFD\ndelivered\nCOD\n…`}
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
             />
@@ -630,22 +918,13 @@ export default function LlmPage() {
 
           <section className="llm-card">
             <h2 className="llm-section-h">
-              <Database className="w-4 h-4" /> 2. Optional: MongoDB sample train
+              <Database className="w-4 h-4" /> 2. MongoDB sample train
             </h2>
-            <p className="llm-muted">
-              Also connect live collections. If Mongo discovery fails on the server, use paste
-              training above — it does not need a special origin header.
-            </p>
             <div className="flex flex-wrap gap-2 mt-3">
               <button type="button" className="llm-btn-ghost" disabled={trainBusy} onClick={connectSelf}>
                 <Link2 className="w-4 h-4" /> Use app database
               </button>
-              <button
-                type="button"
-                className="llm-btn-ghost"
-                disabled={trainBusy}
-                onClick={runDiscover}
-              >
+              <button type="button" className="llm-btn-ghost" disabled={trainBusy} onClick={runDiscover}>
                 Discover Mongo schema
               </button>
             </div>
@@ -672,9 +951,6 @@ export default function LlmPage() {
                   workspace.primaryConnection.meta?.host ||
                   '—'}{' '}
                 · {workspace.primaryConnection.status}
-                {workspace.primaryConnection.lastError
-                  ? ` · err: ${workspace.primaryConnection.lastError}`
-                  : ''}
               </p>
             )}
           </section>
@@ -684,30 +960,17 @@ export default function LlmPage() {
               <h2 className="llm-section-h">
                 <CheckCircle2 className="w-4 h-4" /> 3. Review & activate
               </h2>
-              {snapshot && (
-                <p className="llm-meta">
-                  Snapshot v{snapshot.version} · {snapshot.collections?.length || 0} collections
-                </p>
-              )}
               {draftModel && (
                 <>
                   <p className="llm-meta">
                     {draftModel.source || 'model'} · v{draftModel.version} ·{' '}
-                    {(draftModel.parameters || []).length} params ·{' '}
-                    {(draftModel.metrics || []).length} metrics
+                    {(draftModel.parameters || []).length} params
                   </p>
                   <div className="llm-tag-row mt-3">
                     {(draftModel.entities || []).slice(0, 12).map((e) => (
                       <span key={e.id} className="llm-tag">
                         {e.name}
                         <em>{e.role}</em>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="llm-tag-row mt-2">
-                    {(draftModel.metrics || []).slice(0, 10).map((m) => (
-                      <span key={m.id} className="llm-tag muted">
-                        {m.name}
                       </span>
                     ))}
                   </div>
@@ -752,24 +1015,9 @@ export default function LlmPage() {
                 value={hintA}
                 onChange={(e) => setHintA(e.target.value)}
               />
-              <button
-                type="button"
-                className="llm-btn-ghost mt-2"
-                disabled={trainBusy}
-                onClick={teachHint}
-              >
+              <button type="button" className="llm-btn-ghost mt-2" disabled={trainBusy} onClick={teachHint}>
                 Save teaching
               </button>
-              {(draftModel.trainingHints || []).length > 0 && (
-                <ul className="llm-hint-list">
-                  {(draftModel.trainingHints || []).slice(-5).map((h, i) => (
-                    <li key={i}>
-                      <strong>{h.question}</strong>
-                      <span>{h.answer}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </section>
           )}
 
@@ -785,10 +1033,6 @@ export default function LlmPage() {
             <h2 className="llm-section-h">
               <Brain className="w-4 h-4" /> Trained brain
             </h2>
-            <p className="llm-muted">
-              Inspect what was learned: readable text + JSON schema + parameters + extracted
-              records.
-            </p>
             <div className="llm-tabs mt-3" style={{ display: 'inline-flex' }}>
               {[
                 ['text', 'Text'],
@@ -807,11 +1051,7 @@ export default function LlmPage() {
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              className="llm-btn-ghost mt-3 ml-2"
-              onClick={() => loadBrain()}
-            >
+            <button type="button" className="llm-btn-ghost mt-3 ml-2" onClick={() => loadBrain()}>
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
             {!brain && !draftModel && (
@@ -831,7 +1071,7 @@ export default function LlmPage() {
                   brain?.liveFieldMap ||
                     draftModel?.liveFieldMap ||
                     brain?.queryPlan ||
-                    { note: 'Train from paste to build concept → live Mongo field map' },
+                    { note: 'Train from paste to build field map' },
                   null,
                   2
                 )}
@@ -845,20 +1085,8 @@ export default function LlmPage() {
                       {p.name} <em className="opacity-50 font-normal">{p.type}</em>
                     </div>
                     <div className="llm-muted text-sm">{p.description}</div>
-                    {p.sampleValues?.length > 0 && (
-                      <div className="text-xs opacity-70 mt-1">
-                        e.g.{' '}
-                        {p.sampleValues
-                          .slice(0, 3)
-                          .map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v)))
-                          .join(' · ')}
-                      </div>
-                    )}
                   </div>
                 ))}
-                {!(brain?.parameters || draftModel?.parameters || []).length && (
-                  <p className="llm-muted">No parameters stored yet.</p>
-                )}
               </div>
             )}
             {brainView === 'records' && (
@@ -872,93 +1100,339 @@ export default function LlmPage() {
                 )}
               </pre>
             )}
-            <p className="llm-meta mt-3">
-              Records: {brain?.recordCount ?? brainPack?.corpus?.recordCount ?? '—'} · Domain:{' '}
-              {brain?.domain || draftModel?.domain || '—'} · Source:{' '}
-              {brain?.source || draftModel?.source || '—'}
-            </p>
           </section>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col max-w-3xl w-full mx-auto px-4 pb-6 pt-4 min-h-0">
-          {!trained && (
-            <button type="button" className="llm-banner" onClick={() => setTab('train')}>
-              <Brain className="w-4 h-4" />
-              No active brain — paste order cards under Train (works offline of Mongo). Built-in
-              tools still answer many Picoso questions.
-            </button>
+        <div className="llm-workspace">
+          {!studioExpanded && (
+            <div className="llm-chat-pane">
+              {!trained && (
+                <button type="button" className="llm-banner" onClick={() => setTab('train')}>
+                  <Brain className="w-4 h-4" />
+                  No active brain — open Train to paste data. Built-in tools still answer live
+                  questions.
+                </button>
+              )}
+
+              <div ref={listRef} className="llm-chat-scroll">
+                {turns.length === 0 && !loading && (
+                  <div className="llm-hero animate-llm-in">
+                    <p className="llm-eyebrow">Company data · full visibility · export ready</p>
+                    <h2 className="llm-hero-title">Ask anything about your operations</h2>
+                    <p className="llm-hero-sub">
+                      Live Mongo metrics, customer names & phones, and one-click CSV/JSON export in
+                      the Data Studio.
+                    </p>
+                    <div className="llm-suggestions">
+                      {SUGGESTIONS.map((s) => (
+                        <button key={s} type="button" className="llm-chip" onClick={() => ask(s)}>
+                          <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-40" />
+                          <span>{s}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {turns.map((t, i) =>
+                  t.role === 'user' ? (
+                    <div key={i} className="llm-bubble-user">
+                      <p>{t.content}</p>
+                    </div>
+                  ) : (
+                    <div key={i} className="llm-bubble-ai">
+                      <AnswerCard
+                        turn={t}
+                        onOpenStudio={openStudio}
+                        onExport={(fmt) => exportResult(t.result, fmt)}
+                      />
+                    </div>
+                  )
+                )}
+
+                {loading && status && (
+                  <div className="llm-status animate-llm-pulse">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{stageLabel(status.stage, status.tool)}</span>
+                  </div>
+                )}
+
+                {error && !loading && (
+                  <div className="llm-error">
+                    <AlertCircle className="w-4 h-4" /> {error}
+                  </div>
+                )}
+              </div>
+
+              <div className="llm-composer">
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      ask();
+                    }
+                  }}
+                  placeholder="Ask for metrics, customers, rankings — or “export list of…”"
+                  rows={2}
+                  className="llm-textarea"
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  disabled={loading || !message.trim()}
+                  className="llm-btn-primary llm-send"
+                  aria-label="Ask"
+                  onClick={() => ask()}
+                >
+                  {loading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            </div>
           )}
 
-          <div ref={listRef} className="flex-1 overflow-y-auto space-y-4 pb-4">
-            {turns.length === 0 && !loading && (
-              <div className="llm-hero animate-llm-in">
-                <h2 className="llm-hero-title">Your flexible analytics partner</h2>
-                <p className="llm-hero-sub">
-                  Train on messy real ops data or Mongo. AI plans; code runs exact numbers.
-                </p>
-                <div className="llm-suggestions">
-                  {SUGGESTIONS.map((s) => (
-                    <button key={s} type="button" className="llm-chip" onClick={() => ask(s)}>
-                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-50" />
-                      <span>{s}</span>
-                    </button>
-                  ))}
+          {studioOpen && (
+            <aside
+              className={`llm-studio ${studioExpanded ? 'expanded' : ''}`}
+              style={studioExpanded ? undefined : { width: paneWidth }}
+            >
+              {!studioExpanded && (
+                <div className="llm-studio-resizer" onMouseDown={onStudioResizeStart} />
+              )}
+              <div className="llm-studio-head">
+                <div>
+                  <div className="llm-studio-title">Data studio</div>
+                  <div className="llm-studio-sub">
+                    {studioResult
+                      ? studioResult.customers?.length
+                        ? `${studioResult.customers.length} customers · live edit & export`
+                        : studioResult.products?.length
+                          ? `${studioResult.products.length} products · live edit & export`
+                          : 'Result inspector'
+                      : 'Results open here after a data query'}
+                  </div>
+                </div>
+                <div className="llm-studio-actions">
+                  <button
+                    type="button"
+                    className="llm-icon-btn"
+                    title={studioExpanded ? 'Dock' : 'Expand'}
+                    onClick={() => setStudioExpanded((v) => !v)}
+                  >
+                    {studioExpanded ? (
+                      <Minimize2 className="w-4 h-4" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="llm-icon-btn"
+                    title="Close"
+                    onClick={() => {
+                      setStudioOpen(false);
+                      setStudioExpanded(false);
+                    }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-            )}
 
-            {turns.map((t, i) => (
-              <div key={i} className={t.role === 'user' ? 'llm-bubble-user' : 'llm-bubble-ai'}>
-                {t.role === 'user' ? <p>{t.content}</p> : <AnswerCard turn={t} />}
+              <div className="llm-studio-toolbar">
+                <div className="llm-tabs sm">
+                  <button
+                    type="button"
+                    className={studioTab === 'table' ? 'on' : ''}
+                    onClick={() => setStudioTab('table')}
+                  >
+                    <Table2 className="w-3.5 h-3.5" /> Table
+                  </button>
+                  <button
+                    type="button"
+                    className={studioTab === 'json' ? 'on' : ''}
+                    onClick={() => setStudioTab('json')}
+                  >
+                    <FileJson className="w-3.5 h-3.5" /> JSON
+                  </button>
+                  <button
+                    type="button"
+                    className={studioTab === 'report' ? 'on' : ''}
+                    onClick={() => setStudioTab('report')}
+                  >
+                    <FileText className="w-3.5 h-3.5" /> Report
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <label className="llm-check">
+                    <input
+                      type="checkbox"
+                      checked={compact}
+                      onChange={(e) => setCompact(e.target.checked)}
+                    />
+                    Compact
+                  </label>
+                  <button
+                    type="button"
+                    className="llm-btn-ghost sm"
+                    disabled={!studioResult}
+                    onClick={() => exportResult(studioResult, 'csv')}
+                  >
+                    <Download className="w-3.5 h-3.5" /> CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="llm-btn-ghost sm"
+                    disabled={!studioResult}
+                    onClick={() => exportResult(studioResult, 'json')}
+                  >
+                    <Download className="w-3.5 h-3.5" /> JSON
+                  </button>
+                  <button
+                    type="button"
+                    className="llm-btn-ghost sm"
+                    disabled={!studioResult && !editorText}
+                    onClick={copyEditor}
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    Copy
+                  </button>
+                </div>
               </div>
-            ))}
 
-            {loading && status && (
-              <div className="llm-status animate-llm-pulse">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{stageLabel(status.stage, status.tool)}</span>
+              <div className="llm-studio-body">
+                {!studioResult ? (
+                  <div className="llm-studio-empty">
+                    <PanelRightOpen className="w-8 h-8 opacity-30" />
+                    <p>Ask a question that returns customers or products. Open any answer with
+                      “Open in studio”.</p>
+                  </div>
+                ) : studioTab === 'table' ? (
+                  <StudioTable result={studioResult} compact={compact} />
+                ) : (
+                  <textarea
+                    className="llm-studio-editor"
+                    value={editorText}
+                    onChange={(e) => setEditorText(e.target.value)}
+                    spellCheck={false}
+                  />
+                )}
               </div>
-            )}
-
-            {error && !loading && (
-              <div className="llm-error">
-                <AlertCircle className="w-4 h-4" /> {error}
-              </div>
-            )}
-          </div>
-
-          <div className="llm-composer">
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  ask();
-                }
-              }}
-              placeholder="Ask anything about your data…"
-              rows={2}
-              className="llm-textarea"
-              disabled={loading}
-            />
-            <button
-              type="button"
-              disabled={loading || !message.trim()}
-              className="llm-btn-primary llm-send"
-              aria-label="Ask"
-              onClick={() => ask()}
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-            </button>
-          </div>
+            </aside>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function AnswerCard({ turn }) {
+function StudioTable({ result, compact }) {
+  const customers = result.customers || [];
+  const products = result.products || [];
+  const metrics = result.metrics || [];
+
+  if (customers.length) {
+    return (
+      <div className={`llm-table-wrap ${compact ? 'compact' : ''}`}>
+        <table className="llm-table sticky-head">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Phone</th>
+              <th>Email</th>
+              <th>Orders</th>
+              <th>Spend</th>
+              <th>Distance</th>
+              <th>Customer ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {customers.map((c, i) => (
+              <tr key={i}>
+                <td className="muted">{i + 1}</td>
+                <td className="strong">{c.name || '—'}</td>
+                <td className="mono">{c.phone || '—'}</td>
+                <td>{c.email || '—'}</td>
+                <td>{c.orders ?? '—'}</td>
+                <td>
+                  {c.spend != null ? `₹${Number(c.spend).toLocaleString('en-IN')}` : '—'}
+                </td>
+                <td>{c.distanceKm != null ? `${c.distanceKm} km` : '—'}</td>
+                <td className="mono muted">{c.customerId || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (products.length) {
+    return (
+      <div className={`llm-table-wrap ${compact ? 'compact' : ''}`}>
+        <table className="llm-table sticky-head">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product</th>
+              <th>Units</th>
+              <th>Revenue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p, i) => (
+              <tr key={i}>
+                <td className="muted">{i + 1}</td>
+                <td className="strong">{p.name || '—'}</td>
+                <td>{p.units ?? p.orders ?? '—'}</td>
+                <td>₹{Number(p.revenue || 0).toLocaleString('en-IN')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (metrics.length) {
+    return (
+      <div className={`llm-table-wrap ${compact ? 'compact' : ''}`}>
+        <table className="llm-table sticky-head">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Value</th>
+              <th>Unit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map((m) => (
+              <tr key={m.id}>
+                <td className="strong">{m.label || m.id}</td>
+                <td>{formatMetricValue(m)}</td>
+                <td className="muted">{m.unit || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="llm-studio-empty">
+      <p>{result.headline || 'No tabular rows in this answer.'}</p>
+    </div>
+  );
+}
+
+function AnswerCard({ turn, onOpenStudio, onExport }) {
   const r = turn.result;
   if (turn.error || !r) {
     return <p className={turn.error ? 'text-red-600' : ''}>{turn.content}</p>;
@@ -970,28 +1444,61 @@ function AnswerCard({ turn }) {
   const dimEntries = Object.entries(dims).filter(
     ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)
   );
+  const hasExport =
+    (r.customers?.length || 0) + (r.products?.length || 0) + (r.metrics?.length || 0) > 0;
+  const isChat = r.kind === 'chat' || r.kind === 'greeting';
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="llm-answer-label">Answer</div>
-        <div className="llm-answer-value">
-          {primary ? formatMetricValue(primary) : r.headline}
+      <div className="llm-ai-head">
+        <div className="llm-ai-badge">
+          <Sparkles className="w-3.5 h-3.5" /> Intelligence
         </div>
-        {(r.explanation || r.narrative || r.headline) && (
-          <p className="llm-narrative" style={{ whiteSpace: 'pre-wrap' }}>
-            {r.explanation || r.narrative || (primary ? r.headline : null)}
-          </p>
+        {hasExport && (
+          <div className="llm-ai-tools">
+            <button type="button" className="llm-btn-ghost sm" onClick={() => onOpenStudio(r)}>
+              <PanelRightOpen className="w-3.5 h-3.5" /> Studio
+            </button>
+            <button type="button" className="llm-btn-ghost sm" onClick={() => onExport('csv')}>
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button type="button" className="llm-btn-ghost sm" onClick={() => onExport('json')}>
+              <Download className="w-3.5 h-3.5" /> JSON
+            </button>
+          </div>
         )}
-        <div className="llm-chip-row mt-2">
-          {r.period && <span className="llm-pill">Period · {r.period}</span>}
-          <span className="llm-pill">Data · {r.freshness || 'live'}</span>
-          {dims.status && <span className="llm-pill strong">Status · {dims.status}</span>}
-          {dims.product && <span className="llm-pill">Product · {dims.product}</span>}
-          {dims.radius_km != null && (
-            <span className="llm-pill">Radius · {dims.radius_km} km</span>
-          )}
+      </div>
+
+      {!isChat && primary && (
+        <div className="llm-hero-metric">
+          <div className="llm-answer-label">{primary.label || primary.id || 'Answer'}</div>
+          <div className="llm-answer-value">{formatMetricValue(primary)}</div>
         </div>
+      )}
+
+      {(isChat || !primary) && (
+        <div className="llm-answer-value chat">{r.headline}</div>
+      )}
+
+      {(r.explanation || r.narrative) && (
+        <p className="llm-narrative">{r.explanation || r.narrative}</p>
+      )}
+
+      {!isChat && primary && r.headline && r.headline !== formatMetricValue(primary) && (
+        <p className="llm-narrative soft">{r.headline}</p>
+      )}
+
+      <div className="llm-chip-row">
+        {r.period && <span className="llm-pill">Period · {r.period}</span>}
+        <span className="llm-pill">Data · {r.freshness || 'live'}</span>
+        {dims.status && <span className="llm-pill strong">Status · {dims.status}</span>}
+        {dims.product && <span className="llm-pill">Product · {dims.product}</span>}
+        {dims.radius_km != null && (
+          <span className="llm-pill">Radius · {dims.radius_km} km</span>
+        )}
+        {r.customers?.length > 0 && (
+          <span className="llm-pill strong">{r.customers.length} customers</span>
+        )}
       </div>
 
       {r.clarification?.candidates?.length > 0 && (
@@ -1021,16 +1528,93 @@ function AnswerCard({ turn }) {
         </div>
       )}
 
+      {r.products?.length > 0 && (
+        <div>
+          <div className="llm-section-title">
+            <BarChart3 className="w-4 h-4" /> Top products
+            <span className="llm-section-count">{r.products.length}</span>
+          </div>
+          <div className="llm-table-wrap inline">
+            <table className="llm-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Units</th>
+                  <th>Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.products.slice(0, 12).map((p, i) => (
+                  <tr key={i}>
+                    <td>{p.name || '—'}</td>
+                    <td>{p.units ?? p.orders}</td>
+                    <td>₹{Number(p.revenue || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {r.products.length > 12 && (
+            <button type="button" className="llm-link-btn" onClick={() => onOpenStudio(r)}>
+              View all {r.products.length} in studio →
+            </button>
+          )}
+        </div>
+      )}
+
+      {r.customers?.length > 0 && (
+        <div>
+          <div className="llm-section-title">
+            <Users className="w-4 h-4" /> Customers
+            <span className="llm-section-count">{r.customers.length}</span>
+          </div>
+          <div className="llm-table-wrap inline">
+            <table className="llm-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>
+                    <span className="inline-flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> Phone
+                    </span>
+                  </th>
+                  <th>Orders</th>
+                  <th>Spend</th>
+                  <th>Distance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.customers.slice(0, 12).map((c, i) => (
+                  <tr key={i}>
+                    <td className="strong">{c.name || '—'}</td>
+                    <td className="mono">{c.phone || '—'}</td>
+                    <td>{c.orders ?? '—'}</td>
+                    <td>
+                      {c.spend != null ? `₹${Number(c.spend).toLocaleString('en-IN')}` : '—'}
+                    </td>
+                    <td>{c.distanceKm != null ? `${c.distanceKm} km` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {r.customers.length > 12 && (
+            <button type="button" className="llm-link-btn" onClick={() => onOpenStudio(r)}>
+              Open full list in studio →
+            </button>
+          )}
+        </div>
+      )}
+
       {r.sources?.length > 0 && (
         <div className="llm-panel">
-          <div className="llm-section-title">Sources measured</div>
+          <div className="llm-section-title">Sources</div>
           <ul className="llm-source-list">
             {r.sources.map((s, i) => (
               <li key={i}>
                 <span className="llm-source-kind">{s.kind || 'data'}</span>
                 <strong>{s.name}</strong>
                 {s.detail && <span className="llm-muted"> — {s.detail}</span>}
-                {s.freshness && <em className="llm-source-fresh">{s.freshness}</em>}
               </li>
             ))}
           </ul>
@@ -1053,62 +1637,6 @@ function AnswerCard({ turn }) {
         </div>
       )}
 
-      {r.products?.length > 0 && (
-        <div>
-          <div className="llm-section-title">
-            <BarChart3 className="w-4 h-4" /> Top products
-          </div>
-          <table className="llm-table">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Units</th>
-                <th>Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.products.map((p, i) => (
-                <tr key={i}>
-                  <td>{p.name || '—'}</td>
-                  <td>{p.units ?? p.orders}</td>
-                  <td>₹{Number(p.revenue || 0).toLocaleString('en-IN')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {r.customers?.length > 0 && (
-        <div>
-          <div className="llm-section-title">
-            <Users className="w-4 h-4" /> Sample customers
-          </div>
-          <table className="llm-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Orders</th>
-                <th>Spend</th>
-                <th>Distance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.customers.slice(0, 15).map((c, i) => (
-                <tr key={i}>
-                  <td>{c.name || '—'}</td>
-                  <td>{c.orders ?? '—'}</td>
-                  <td>
-                    {c.spend != null ? `₹${Number(c.spend).toLocaleString('en-IN')}` : '—'}
-                  </td>
-                  <td>{c.distanceKm != null ? `${c.distanceKm} km` : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {r.calculationSteps?.length > 0 && (
         <details className="llm-calc">
           <summary>
@@ -1122,24 +1650,9 @@ function AnswerCard({ turn }) {
         </details>
       )}
 
-      {r.definitions?.length > 0 && (
-        <details className="llm-calc">
-          <summary>
-            <RefreshCw className="w-4 h-4" /> Definitions
-          </summary>
-          <ul>
-            {r.definitions.map((d, i) => (
-              <li key={i}>
-                <strong>{d.id}:</strong> {d.text}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
       {r.confidence?.overall != null && (
         <p className="llm-meta">
-          Confidence: {Math.round(r.confidence.overall * 100)}%
+          Confidence {Math.round(r.confidence.overall * 100)}%
           {r.confidence.product != null &&
             ` · Product match ${Math.round(r.confidence.product * 100)}%`}
         </p>
@@ -1149,216 +1662,374 @@ function AnswerCard({ turn }) {
 }
 
 const LLM_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
   :root {
-    --llm-ink: #1a1612;
-    --llm-muted: #6b6258;
-    --llm-bg0: #f7f2ea;
-    --llm-bg1: #efe6d8;
-    --llm-card: rgba(255, 252, 247, 0.92);
-    --llm-line: rgba(40, 32, 24, 0.1);
-    --llm-accent: #c45c26;
-    --llm-accent-deep: #9a3f12;
+    --llm-ink: #0f172a;
+    --llm-muted: #64748b;
+    --llm-bg: #f8fafc;
+    --llm-bg-soft: #f1f5f9;
+    --llm-card: #ffffff;
+    --llm-line: #e2e8f0;
+    --llm-line-strong: #cbd5e1;
+    --llm-blue: #2563eb;
+    --llm-blue-deep: #1d4ed8;
+    --llm-blue-soft: #eff6ff;
+    --llm-blue-mid: #dbeafe;
+    --llm-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+    --llm-shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.08);
+    --llm-radius: 14px;
   }
+
   .llm-root {
-    font-family: "Segoe UI", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
     color: var(--llm-ink);
     background:
-      radial-gradient(1200px 600px at 10% -10%, #f3e2c8 0%, transparent 55%),
-      radial-gradient(900px 500px at 100% 0%, #e8d5c0 0%, transparent 50%),
-      linear-gradient(165deg, var(--llm-bg0) 0%, var(--llm-bg1) 48%, #e7dfd2 100%);
+      radial-gradient(900px 420px at 0% 0%, rgba(37, 99, 235, 0.07) 0%, transparent 55%),
+      radial-gradient(700px 380px at 100% 0%, rgba(148, 163, 184, 0.18) 0%, transparent 50%),
+      linear-gradient(180deg, #ffffff 0%, var(--llm-bg) 40%, var(--llm-bg-soft) 100%);
   }
+
   .llm-header {
     display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-    padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--llm-line);
-    backdrop-filter: blur(10px); background: rgba(247, 242, 234, 0.8);
-    position: sticky; top: 0; z-index: 10; flex-wrap: wrap;
+    padding: 0.75rem 1.15rem; border-bottom: 1px solid var(--llm-line);
+    background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 20; flex-wrap: wrap;
   }
-  .llm-header-title { font-size: 1.05rem; font-weight: 650; letter-spacing: -0.02em; }
-  .llm-header-sub { font-size: 0.75rem; color: var(--llm-muted); }
+  .llm-header-title {
+    font-size: 0.98rem; font-weight: 700; letter-spacing: -0.025em; color: var(--llm-ink);
+  }
+  .llm-header-sub { font-size: 0.72rem; color: var(--llm-muted); }
   .llm-brand-mark {
-    width: 2.75rem; height: 2.75rem; border-radius: 0.85rem; display: grid; place-items: center;
-    color: #fff; background: linear-gradient(145deg, var(--llm-accent), var(--llm-accent-deep));
-    box-shadow: 0 8px 24px rgba(196, 92, 38, 0.28);
+    width: 2.6rem; height: 2.6rem; border-radius: 12px; display: grid; place-items: center;
+    color: #fff;
+    background: linear-gradient(145deg, var(--llm-blue) 0%, var(--llm-blue-deep) 100%);
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
   }
-  .llm-brand-mark.sm { width: 2.1rem; height: 2.1rem; border-radius: 0.65rem; }
+  .llm-brand-mark.sm { width: 2rem; height: 2rem; border-radius: 10px; }
+
   .llm-tabs {
     display: inline-flex; border: 1px solid var(--llm-line); border-radius: 999px; overflow: hidden;
-    background: rgba(255,252,247,0.7);
+    background: var(--llm-bg);
   }
+  .llm-tabs.sm button { padding: 0.3rem 0.65rem; font-size: 0.72rem; gap: 0.3rem; display: inline-flex; align-items: center; }
   .llm-tabs button {
-    border: 0; background: transparent; padding: 0.35rem 0.9rem; font-size: 0.8rem; cursor: pointer;
-    color: var(--llm-muted);
+    border: 0; background: transparent; padding: 0.35rem 0.85rem; font-size: 0.8rem;
+    cursor: pointer; color: var(--llm-muted); font-weight: 500; font-family: inherit;
   }
   .llm-tabs button.on {
-    background: linear-gradient(145deg, var(--llm-accent), var(--llm-accent-deep)); color: #fff;
+    background: var(--llm-blue); color: #fff; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
   }
+
   .llm-pin-card {
-    background: var(--llm-card); border: 1px solid var(--llm-line); border-radius: 1.25rem;
-    padding: 2rem 1.5rem; box-shadow: 0 20px 50px rgba(40, 28, 16, 0.08); text-align: center;
-    animation: llm-in 0.45s ease both;
+    background: var(--llm-card); border: 1px solid var(--llm-line); border-radius: 20px;
+    padding: 2rem 1.5rem; box-shadow: var(--llm-shadow-lg); text-align: center;
+    animation: llm-in 0.4s ease both;
   }
   .llm-pin-card .llm-brand-mark { margin: 0 auto 1rem; }
-  .llm-pin-title { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.03em; }
-  .llm-pin-sub { color: var(--llm-muted); font-size: 0.9rem; margin: 0.4rem 0 1.25rem; }
+  .llm-pin-title { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.03em; }
+  .llm-pin-sub { color: var(--llm-muted); font-size: 0.9rem; margin: 0.4rem 0 1.25rem; line-height: 1.5; }
+
   .llm-input, .llm-textarea {
-    width: 100%; border: 1px solid var(--llm-line); background: #fffcf7; border-radius: 0.85rem;
-    padding: 0.75rem 0.9rem; font: inherit; color: var(--llm-ink); outline: none;
+    width: 100%; border: 1px solid var(--llm-line); background: #fff; border-radius: 12px;
+    padding: 0.72rem 0.9rem; font: inherit; color: var(--llm-ink); outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
   .llm-input:focus, .llm-textarea:focus {
-    border-color: rgba(196, 92, 38, 0.45); box-shadow: 0 0 0 3px rgba(196, 92, 38, 0.12);
+    border-color: rgba(37, 99, 235, 0.55);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
   }
+
   .llm-btn-primary {
     display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-    background: linear-gradient(145deg, var(--llm-accent), var(--llm-accent-deep));
-    color: #fff; border: none; border-radius: 0.85rem; padding: 0.75rem 1rem; font-weight: 600; cursor: pointer;
+    background: linear-gradient(145deg, var(--llm-blue), var(--llm-blue-deep));
+    color: #fff; border: none; border-radius: 12px; padding: 0.72rem 1rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; box-shadow: 0 6px 16px rgba(37, 99, 235, 0.22);
   }
-  .llm-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .llm-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
   .llm-btn-ghost {
-    display: inline-flex; align-items: center; gap: 0.35rem; background: transparent;
-    border: 1px solid var(--llm-line); border-radius: 999px; padding: 0.4rem 0.75rem;
-    font-size: 0.8rem; color: var(--llm-muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.35rem; background: #fff;
+    border: 1px solid var(--llm-line); border-radius: 999px; padding: 0.38rem 0.75rem;
+    font-size: 0.78rem; color: var(--llm-muted); cursor: pointer; font-family: inherit; font-weight: 500;
   }
+  .llm-btn-ghost:hover { border-color: var(--llm-line-strong); color: var(--llm-ink); background: var(--llm-bg); }
+  .llm-btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+  .llm-btn-ghost.sm { padding: 0.28rem 0.55rem; font-size: 0.72rem; }
+
   .llm-card {
-    background: var(--llm-card); border: 1px solid var(--llm-line); border-radius: 1rem; padding: 1.1rem 1.2rem;
+    background: var(--llm-card); border: 1px solid var(--llm-line); border-radius: var(--llm-radius);
+    padding: 1.1rem 1.2rem; box-shadow: var(--llm-shadow);
   }
   .llm-section-h {
-    display: flex; align-items: center; gap: 0.4rem; font-size: 1rem; font-weight: 650; margin-bottom: 0.35rem;
+    display: flex; align-items: center; gap: 0.45rem; font-size: 1rem; font-weight: 650; margin-bottom: 0.35rem;
+    color: var(--llm-ink);
   }
-  .llm-muted { color: var(--llm-muted); font-size: 0.9rem; }
+  .llm-muted { color: var(--llm-muted); font-size: 0.9rem; line-height: 1.5; }
   .llm-tag-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .llm-tag {
     font-size: 0.75rem; border: 1px solid var(--llm-line); border-radius: 999px; padding: 0.25rem 0.6rem;
-    background: rgba(255,255,255,0.5);
+    background: var(--llm-bg);
   }
   .llm-tag em { font-style: normal; opacity: 0.55; margin-left: 0.35rem; font-size: 0.65rem; }
-  .llm-tag.muted { opacity: 0.85; }
-  .llm-hint-list { margin: 0.75rem 0 0; padding: 0; list-style: none; }
-  .llm-hint-list li {
-    border-top: 1px solid var(--llm-line); padding: 0.5rem 0; font-size: 0.85rem; display: grid; gap: 0.15rem;
-  }
-  .llm-hint-list span { color: var(--llm-muted); }
   .llm-banner {
     display: flex; align-items: flex-start; gap: 0.5rem; text-align: left; width: 100%;
-    border: 1px solid rgba(196, 92, 38, 0.25); background: rgba(196, 92, 38, 0.08);
-    border-radius: 0.85rem; padding: 0.75rem 0.9rem; font-size: 0.85rem; margin-bottom: 0.75rem; cursor: pointer;
+    border: 1px solid var(--llm-blue-mid); background: var(--llm-blue-soft);
+    border-radius: 12px; padding: 0.75rem 0.9rem; font-size: 0.85rem; margin-bottom: 0.75rem; cursor: pointer;
+    color: #1e3a8a;
   }
-  .llm-hero { padding: 1.5rem 0.25rem 1rem; }
+
+  .llm-workspace {
+    flex: 1; display: flex; min-height: 0; overflow: hidden;
+  }
+  .llm-chat-pane {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    max-width: 820px; width: 100%; margin: 0 auto; padding: 1rem 1.15rem 1rem;
+  }
+  .llm-chat-scroll {
+    flex: 1; overflow-y: auto; space-y: 0; display: flex; flex-direction: column; gap: 1rem;
+    padding-bottom: 0.5rem; scroll-behavior: smooth;
+  }
+
+  .llm-hero { padding: 1.75rem 0.25rem 1rem; }
+  .llm-eyebrow {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--llm-blue); margin-bottom: 0.55rem;
+  }
   .llm-hero-title {
-    font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.15;
+    font-size: clamp(1.55rem, 3.5vw, 2.05rem); font-weight: 700; letter-spacing: -0.035em; line-height: 1.15;
   }
-  .llm-hero-sub { color: var(--llm-muted); margin-top: 0.55rem; max-width: 36rem; }
-  .llm-suggestions { margin-top: 1.4rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .llm-hero-sub { color: var(--llm-muted); margin-top: 0.55rem; max-width: 34rem; line-height: 1.55; font-size: 0.95rem; }
+  .llm-suggestions { margin-top: 1.35rem; display: flex; flex-direction: column; gap: 0.45rem; }
   .llm-chip {
-    display: flex; align-items: flex-start; gap: 0.5rem; text-align: left; padding: 0.75rem 0.9rem;
-    border-radius: 0.9rem; border: 1px solid var(--llm-line); background: rgba(255, 252, 247, 0.7);
-    font-size: 0.9rem; color: var(--llm-ink); cursor: pointer;
+    display: flex; align-items: flex-start; gap: 0.5rem; text-align: left; padding: 0.8rem 0.95rem;
+    border-radius: 14px; border: 1px solid var(--llm-line); background: #fff;
+    font-size: 0.88rem; color: var(--llm-ink); cursor: pointer; box-shadow: var(--llm-shadow);
+    transition: border-color 0.15s, transform 0.15s;
   }
-  .llm-chip:hover { border-color: rgba(196, 92, 38, 0.35); }
+  .llm-chip:hover { border-color: var(--llm-blue-mid); transform: translateY(-1px); }
+
   .llm-bubble-user {
-    margin-left: auto; max-width: 90%;
-    background: linear-gradient(145deg, var(--llm-accent), var(--llm-accent-deep));
-    color: #fff; padding: 0.85rem 1rem; border-radius: 1rem 1rem 0.3rem 1rem;
-    animation: llm-in 0.3s ease both;
+    margin-left: auto; max-width: min(92%, 560px);
+    background: linear-gradient(145deg, var(--llm-blue), var(--llm-blue-deep));
+    color: #fff; padding: 0.85rem 1.05rem; border-radius: 16px 16px 4px 16px;
+    animation: llm-in 0.28s ease both; font-size: 0.95rem; line-height: 1.45;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.2);
   }
   .llm-bubble-ai {
-    max-width: 100%; background: var(--llm-card); border: 1px solid var(--llm-line);
-    padding: 1rem 1.1rem; border-radius: 1rem 1rem 1rem 0.3rem; animation: llm-in 0.35s ease both;
+    max-width: 100%; background: #fff; border: 1px solid var(--llm-line);
+    padding: 1.1rem 1.2rem; border-radius: 16px 16px 16px 4px;
+    animation: llm-in 0.32s ease both; box-shadow: var(--llm-shadow);
+  }
+
+  .llm-ai-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;
+  }
+  .llm-ai-badge {
+    display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--llm-blue);
+    background: var(--llm-blue-soft); border: 1px solid var(--llm-blue-mid);
+    padding: 0.25rem 0.55rem; border-radius: 999px;
+  }
+  .llm-ai-tools { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+  .llm-hero-metric {
+    padding: 0.85rem 1rem; border-radius: 14px;
+    background: linear-gradient(135deg, var(--llm-blue-soft), #fff 60%);
+    border: 1px solid var(--llm-blue-mid);
   }
   .llm-answer-label {
-    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--llm-muted);
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--llm-muted); font-weight: 600;
   }
   .llm-answer-value {
-    font-size: clamp(1.8rem, 5vw, 2.4rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-top: 0.2rem;
+    font-size: clamp(1.85rem, 4.5vw, 2.45rem); font-weight: 700; letter-spacing: -0.035em;
+    line-height: 1.1; margin-top: 0.15rem; color: var(--llm-ink);
   }
-  .llm-narrative { margin-top: 0.5rem; color: var(--llm-muted); font-size: 0.95rem; }
-  .llm-meta { margin-top: 0.4rem; font-size: 0.75rem; color: var(--llm-muted); }
+  .llm-answer-value.chat {
+    font-size: clamp(1.15rem, 2.5vw, 1.35rem); font-weight: 650; letter-spacing: -0.02em; line-height: 1.35;
+  }
+  .llm-narrative {
+    margin-top: 0.15rem; color: #475569; font-size: 0.94rem; line-height: 1.6; white-space: pre-wrap;
+  }
+  .llm-narrative.soft { color: var(--llm-muted); font-size: 0.88rem; }
+  .llm-meta { margin-top: 0.35rem; font-size: 0.75rem; color: var(--llm-muted); }
+
   .llm-metrics-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.5rem;
   }
   .llm-metric {
-    border: 1px solid var(--llm-line); border-radius: 0.75rem; padding: 0.6rem 0.75rem; background: rgba(255,255,255,0.45);
+    border: 1px solid var(--llm-line); border-radius: 12px; padding: 0.65rem 0.75rem; background: var(--llm-bg);
   }
-  .llm-metric-label { font-size: 0.7rem; color: var(--llm-muted); }
-  .llm-metric-value { font-size: 1.1rem; font-weight: 650; }
+  .llm-metric-label { font-size: 0.68rem; color: var(--llm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .llm-metric-value { font-size: 1.08rem; font-weight: 700; margin-top: 0.15rem; }
+
   .llm-section-title {
-    display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem;
+    display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 650;
+    margin-bottom: 0.45rem; color: var(--llm-ink);
   }
-  .llm-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .llm-section-count {
+    margin-left: auto; font-size: 0.7rem; font-weight: 600; color: var(--llm-blue);
+    background: var(--llm-blue-soft); padding: 0.15rem 0.45rem; border-radius: 999px;
+  }
+
+  .llm-table-wrap {
+    border: 1px solid var(--llm-line); border-radius: 12px; overflow: auto; background: #fff;
+    max-height: 100%;
+  }
+  .llm-table-wrap.inline { max-height: 280px; }
+  .llm-table-wrap.compact .llm-table td,
+  .llm-table-wrap.compact .llm-table th { padding: 0.28rem 0.45rem; font-size: 0.78rem; }
+  .llm-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  .llm-table.sticky-head thead th { position: sticky; top: 0; background: var(--llm-bg); z-index: 1; }
   .llm-table th {
-    text-align: left; font-weight: 600; color: var(--llm-muted); font-size: 0.7rem;
-    text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--llm-line);
+    text-align: left; font-weight: 650; color: var(--llm-muted); font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.04em; padding: 0.55rem 0.65rem;
+    border-bottom: 1px solid var(--llm-line); white-space: nowrap;
   }
-  .llm-table td { padding: 0.4rem; border-bottom: 1px solid var(--llm-line); }
-  .llm-calc { border-top: 1px solid var(--llm-line); padding-top: 0.6rem; font-size: 0.85rem; }
+  .llm-table td {
+    padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--llm-line); vertical-align: middle;
+  }
+  .llm-table tr:last-child td { border-bottom: 0; }
+  .llm-table tr:hover td { background: var(--llm-blue-soft); }
+  .llm-table td.strong { font-weight: 600; }
+  .llm-table td.mono, .llm-table .mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.78rem;
+  }
+  .llm-table td.muted, .llm-table .muted { color: var(--llm-muted); }
+
+  .llm-link-btn {
+    margin-top: 0.45rem; border: 0; background: none; color: var(--llm-blue); font-weight: 600;
+    font-size: 0.82rem; cursor: pointer; font-family: inherit; padding: 0;
+  }
+  .llm-link-btn:hover { text-decoration: underline; }
+
+  .llm-calc { border-top: 1px solid var(--llm-line); padding-top: 0.65rem; font-size: 0.85rem; }
   .llm-calc summary {
     display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-weight: 600; list-style: none;
   }
   .llm-calc summary::-webkit-details-marker { display: none; }
   .llm-calc ol, .llm-calc ul { margin: 0.5rem 0 0 1.1rem; color: var(--llm-muted); }
+
   .llm-clarify {
-    border: 1px solid rgba(196, 92, 38, 0.25); background: rgba(196, 92, 38, 0.06);
-    border-radius: 0.85rem; padding: 0.75rem;
+    border: 1px solid var(--llm-blue-mid); background: var(--llm-blue-soft);
+    border-radius: 12px; padding: 0.75rem;
   }
   .llm-status {
-    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.85rem;
-    border-radius: 999px; border: 1px solid var(--llm-line); background: rgba(255,252,247,0.9);
-    font-size: 0.85rem; color: var(--llm-muted);
+    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem;
+    border-radius: 999px; border: 1px solid var(--llm-line); background: #fff;
+    font-size: 0.85rem; color: var(--llm-muted); box-shadow: var(--llm-shadow); width: fit-content;
   }
   .llm-error { display: flex; align-items: center; gap: 0.4rem; color: #b91c1c; font-size: 0.9rem; }
+
   .llm-composer {
-    display: grid; grid-template-columns: 1fr auto; gap: 0.6rem; align-items: end;
-    position: sticky; bottom: 0; padding-top: 0.5rem;
-    background: linear-gradient(to top, var(--llm-bg1) 70%, transparent);
+    display: grid; grid-template-columns: 1fr auto; gap: 0.55rem; align-items: end;
+    padding-top: 0.65rem; background: linear-gradient(to top, var(--llm-bg) 65%, transparent);
   }
-  .llm-send { width: 3rem; height: 3rem; padding: 0; border-radius: 0.9rem; }
+  .llm-send { width: 3rem; height: 3rem; padding: 0; border-radius: 14px; }
+
   .llm-pre {
     max-height: 28rem; overflow: auto; font-size: 0.78rem; line-height: 1.45;
-    background: rgba(28, 22, 16, 0.04); border: 1px solid var(--llm-line);
-    border-radius: 0.75rem; padding: 0.85rem 1rem; white-space: pre-wrap; word-break: break-word;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--llm-bg); border: 1px solid var(--llm-line);
+    border-radius: 12px; padding: 0.85rem 1rem; white-space: pre-wrap; word-break: break-word;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
   }
   .llm-param {
-    border: 1px solid var(--llm-line); border-radius: 0.75rem; padding: 0.65rem 0.8rem;
-    background: rgba(255,255,255,0.45);
+    border: 1px solid var(--llm-line); border-radius: 12px; padding: 0.65rem 0.8rem; background: var(--llm-bg);
   }
   .llm-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
   .llm-pill {
     font-size: 0.7rem; border: 1px solid var(--llm-line); border-radius: 999px;
-    padding: 0.2rem 0.55rem; color: var(--llm-muted); background: rgba(255,255,255,0.55);
+    padding: 0.22rem 0.55rem; color: var(--llm-muted); background: var(--llm-bg); font-weight: 500;
   }
   .llm-pill.strong {
-    border-color: rgba(196, 92, 38, 0.35); color: var(--llm-accent-deep);
-    background: rgba(196, 92, 38, 0.08);
+    border-color: var(--llm-blue-mid); color: var(--llm-blue-deep); background: var(--llm-blue-soft);
   }
   .llm-panel {
-    border: 1px solid var(--llm-line); border-radius: 0.85rem; padding: 0.75rem 0.9rem;
-    background: rgba(255,255,255,0.4);
+    border: 1px solid var(--llm-line); border-radius: 12px; padding: 0.75rem 0.9rem; background: var(--llm-bg);
   }
-  .llm-source-list { list-style: none; margin: 0.4rem 0 0; padding: 0; font-size: 0.85rem; }
+  .llm-source-list { list-style: none; margin: 0.35rem 0 0; padding: 0; font-size: 0.85rem; }
   .llm-source-list li {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem;
     padding: 0.3rem 0; border-top: 1px solid var(--llm-line);
   }
   .llm-source-list li:first-child { border-top: 0; }
   .llm-source-kind {
-    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--llm-muted); min-width: 3.5rem;
+    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--llm-muted); min-width: 3.2rem; font-weight: 600;
   }
-  .llm-source-fresh { margin-left: auto; font-size: 0.7rem; opacity: 0.65; font-style: normal; }
   .llm-dim-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.45rem; margin-top: 0.4rem;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.45rem; margin-top: 0.35rem;
   }
   .llm-dim {
-    border: 1px solid var(--llm-line); border-radius: 0.65rem; padding: 0.45rem 0.55rem;
-    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--llm-line); border-radius: 10px; padding: 0.45rem 0.55rem; background: #fff;
   }
-  .llm-dim-k { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--llm-muted); }
+  .llm-dim-k { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--llm-muted); font-weight: 600; }
   .llm-dim-v { font-size: 0.82rem; font-weight: 600; margin-top: 0.1rem; word-break: break-word; }
+
+  /* ── Data studio (right panel) ─────────────────────────────── */
+  .llm-studio {
+    position: relative; display: flex; flex-direction: column;
+    border-left: 1px solid var(--llm-line); background: #fff;
+    box-shadow: -8px 0 32px rgba(15, 23, 42, 0.04);
+    min-height: 0; flex-shrink: 0;
+    animation: llm-slide 0.28s ease both;
+  }
+  .llm-studio.expanded {
+    position: absolute; inset: 0; top: 0; z-index: 30; width: 100% !important;
+    border-left: 0; animation: llm-in 0.25s ease both;
+  }
+  .llm-expanded .llm-workspace { position: relative; }
+  .llm-studio-resizer {
+    position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
+  }
+  .llm-studio-resizer:hover { background: rgba(37, 99, 235, 0.15); }
+  .llm-studio-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem;
+    padding: 0.85rem 1rem; border-bottom: 1px solid var(--llm-line); background: linear-gradient(180deg, #fff, var(--llm-bg));
+  }
+  .llm-studio-title { font-size: 0.92rem; font-weight: 700; letter-spacing: -0.02em; }
+  .llm-studio-sub { font-size: 0.72rem; color: var(--llm-muted); margin-top: 0.15rem; }
+  .llm-studio-actions { display: flex; gap: 0.3rem; }
+  .llm-icon-btn {
+    width: 2rem; height: 2rem; border-radius: 8px; border: 1px solid var(--llm-line);
+    background: #fff; display: grid; place-items: center; cursor: pointer; color: var(--llm-muted);
+  }
+  .llm-icon-btn:hover { color: var(--llm-ink); border-color: var(--llm-line-strong); }
+  .llm-studio-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
+    padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--llm-line); background: #fff;
+  }
+  .llm-check {
+    display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--llm-muted);
+    cursor: pointer; user-select: none;
+  }
+  .llm-studio-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .llm-studio-empty {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.75rem; padding: 2rem; text-align: center; color: var(--llm-muted); font-size: 0.88rem;
+  }
+  .llm-studio-editor {
+    flex: 1; width: 100%; border: 0; resize: none; padding: 1rem 1.1rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.8rem; line-height: 1.55;
+    color: var(--llm-ink); background: #fafbfc; outline: none;
+  }
+  .llm-studio .llm-table-wrap { border: 0; border-radius: 0; flex: 1; }
+
   @keyframes llm-in {
     from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes llm-slide {
+    from { opacity: 0.6; transform: translateX(12px); }
     to { opacity: 1; transform: none; }
   }
   .animate-llm-in { animation: llm-in 0.4s ease both; }
   @keyframes llm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
   .animate-llm-pulse { animation: llm-pulse 1.4s ease infinite; }
+
+  @media (max-width: 860px) {
+    .llm-studio:not(.expanded) {
+      position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; width: min(100vw, 420px) !important;
+      box-shadow: -12px 0 40px rgba(15, 23, 42, 0.12);
+    }
+  }
 `;

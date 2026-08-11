@@ -1,53 +1,74 @@
-/** Mask PII before anything reaches Cohere or the public answer surface. */
+/**
+ * Data hygiene for company-owned ops console.
+ * Customer identity (name, phone, email, address) is intentionally fully visible —
+ * this surface is for the business operators, not public end-users.
+ * Only credentials / secrets stay redacted.
+ */
 
 export function maskPhone(phone) {
-  if (!phone || typeof phone !== 'string') return phone ?? null;
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 4) return '****';
-  return `${digits.slice(0, 2)}${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-2)}`;
+  // Pass-through for company console (kept for callers that import the name).
+  return phone == null ? null : String(phone);
 }
 
 export function maskEmail(email) {
-  if (!email || typeof email !== 'string') return email ?? null;
-  const [user, domain] = email.split('@');
-  if (!domain) return '***';
-  const visible = user.slice(0, 1);
-  return `${visible}***@${domain}`;
+  return email == null ? null : String(email);
 }
 
 export function maskName(name) {
-  if (!name || typeof name !== 'string') return name ?? '';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) {
-    return parts[0].length <= 1 ? '*' : `${parts[0][0]}***`;
-  }
-  return `${parts[0][0]}*** ${parts[parts.length - 1][0]}***`;
+  return name == null ? '' : String(name);
 }
 
+/** Normalize a customer row for tools, answers, and export — full identity fields. */
 export function sanitizeCustomerRow(row = {}) {
-  return {
-    customerId: row.customerId ?? row._id ?? row.userId ?? null,
-    name: maskName(row.name || row.customerName || ''),
-    phone: maskPhone(row.phone),
-    email: row.email ? maskEmail(row.email) : undefined,
+  const id = row.customerId ?? row._id ?? row.userId ?? null;
+  const out = {
+    customerId: id != null ? String(id) : null,
+    name: row.name || row.customerName || row.fullname || '',
+    phone: row.phone ?? row.mobile ?? row.contact ?? null,
+    email: row.email ?? null,
     orders: row.orders ?? row.orderCount ?? undefined,
-    spend: row.spend ?? row.totalSpend ?? undefined,
+    spend: row.spend ?? row.totalSpend ?? row.revenue ?? undefined,
     lastOrder: row.lastOrder ?? row.lastOrderAt ?? undefined,
     distanceKm: row.distanceKm ?? row.distance ?? undefined,
   };
+
+  if (row.address != null) out.address = row.address;
+  if (row.pin != null || row.pincode != null || row.postalCode != null) {
+    out.pincode = row.pin ?? row.pincode ?? row.postalCode;
+  }
+  if (row.city != null) out.city = row.city;
+  if (row.lat != null || row.lng != null) {
+    out.lat = row.lat;
+    out.lng = row.lng;
+  }
+
+  // Drop undefined keys so export columns stay clean
+  for (const k of Object.keys(out)) {
+    if (out[k] === undefined) delete out[k];
+  }
+  return out;
 }
 
+/**
+ * Deep clean: keep contact fields; redact only secrets / connection material.
+ */
 export function stripPiiDeep(value) {
   if (Array.isArray(value)) return value.map(stripPiiDeep);
   if (value && typeof value === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(value)) {
       const key = k.toLowerCase();
-      if (key === 'phone' || key === 'mobile') out[k] = maskPhone(String(v ?? ''));
-      else if (key === 'email') out[k] = maskEmail(String(v ?? ''));
-      else if (key === 'name' || key === 'customername' || key === 'fullname') {
-        out[k] = maskName(String(v ?? ''));
-      } else if (key.includes('password') || key.includes('uri') || key.includes('secret') || key.includes('apikey')) {
+      if (
+        key.includes('password') ||
+        key.includes('secret') ||
+        key.includes('apikey') ||
+        key.includes('api_key') ||
+        key === 'uri' ||
+        key === 'connectionstring' ||
+        key === 'connection_string' ||
+        key === 'token' ||
+        key === 'authorization'
+      ) {
         out[k] = '[redacted]';
       } else {
         out[k] = stripPiiDeep(v);
