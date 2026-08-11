@@ -10,6 +10,12 @@ import {
 import { clampDays, clampLimit, clampRadiusKm } from '../query/validator.js';
 import { stripPiiDeep, sanitizeCustomerRow } from '../pii.js';
 import { STORE_LOCATION, GLOSSARY } from '../semantic/picosoModel.js';
+import { getToolContext } from './context.js';
+import {
+  executeSemanticQuery,
+  executeModelMetric,
+  sampleCollection,
+} from '../query/semanticExecutor.js';
 
 function scoreProductName(query, name) {
   const q = String(query || '')
@@ -134,7 +140,10 @@ async function count_unique_product_buyers(input = {}) {
       error: 'product_id or product_name is required — call resolve_product first',
     };
   }
-  const days = clampDays(input.days ?? 90, 90);
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
   const radiusKm =
     input.radius_km != null || input.radiusKm != null
       ? clampRadiusKm(input.radius_km ?? input.radiusKm, 2)
@@ -144,14 +153,18 @@ async function count_unique_product_buyers(input = {}) {
   const raw = await executeProductBuyers({
     productId,
     productName,
-    days,
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
     radiusKm,
     listLimit,
   });
   const totalProductOrders = await executeOrderCountForProduct(
     productId,
-    days,
-    productName
+    fromDate || toDate ? undefined : days,
+    productName,
+    fromDate,
+    toDate
   );
 
   return stripPiiDeep({
@@ -172,7 +185,10 @@ async function count_unique_product_buyers(input = {}) {
     filters: {
       productId: productId ? String(productId) : null,
       productName: productName || null,
-      days,
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
       radiusKm,
       center: radiusKm != null ? STORE_LOCATION : undefined,
     },
@@ -286,9 +302,17 @@ async function get_repeat_customers(input = {}) {
 }
 
 async function calculate_revenue(input = {}) {
-  const days = clampDays(input.days ?? 90, 90);
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
   const productId = input.product_id || input.productId || undefined;
-  const raw = await executeRevenue({ days, productId });
+  const raw = await executeRevenue({
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
+    productId,
+  });
   return {
     type: 'metric_result',
     metric: 'revenue',
@@ -299,16 +323,30 @@ async function calculate_revenue(input = {}) {
       unique_customers: raw.unique_customers,
       aov: raw.aov,
     },
-    filters: { days, productId: productId || null },
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      productId: productId || null,
+    },
     source: raw.source,
     definition: GLOSSARY.revenue,
   };
 }
 
 async function count_orders(input = {}) {
-  const days = clampDays(input.days ?? 90, 90);
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
   const productId = input.product_id || input.productId || undefined;
-  const raw = await executeRevenue({ days, productId });
+  const raw = await executeRevenue({
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
+    productId,
+  });
   return {
     type: 'metric_result',
     metric: 'orders',
@@ -319,15 +357,29 @@ async function count_orders(input = {}) {
       unique_customers: raw.unique_customers,
       aov: raw.aov,
     },
-    filters: { days, productId: productId || null },
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      productId: productId || null,
+    },
     source: raw.source,
   };
 }
 
 async function get_aov(input = {}) {
-  const days = clampDays(input.days ?? 90, 90);
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
   const productId = input.product_id || input.productId || undefined;
-  const raw = await executeRevenue({ days, productId });
+  const raw = await executeRevenue({
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
+    productId,
+  });
   return {
     type: 'metric_result',
     metric: 'aov',
@@ -337,21 +389,41 @@ async function get_aov(input = {}) {
       revenue: raw.revenue,
       orders: raw.orders,
     },
-    filters: { days, productId: productId || null },
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      productId: productId || null,
+    },
     source: raw.source,
     definition: GLOSSARY.aov,
   };
 }
 
 async function top_products(input = {}) {
-  const days = clampDays(input.days ?? 90, 90);
+  const days = input.days != null ? clampDays(input.days, 90) : 90;
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
   const limit = clampLimit(input.limit ?? 10, 10);
-  const raw = await executeTopProducts({ days, limit });
+  const raw = await executeTopProducts({
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
+    limit,
+  });
   return {
     type: 'list_result',
     metric: 'top_products',
     products: raw.products,
-    filters: { days, limit },
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      limit,
+    },
     source: raw.source,
   };
 }
@@ -386,12 +458,182 @@ async function get_store_info() {
   };
 }
 
+// ── Schema-driven / trained-model tools ─────────────────────────────────────
+
+async function list_schema(_input = {}) {
+  const { model } = getToolContext();
+  if (!model) {
+    return {
+      type: 'schema',
+      trained: false,
+      message:
+        'No trained semantic model yet. Ask the user to open Train, connect MongoDB, discover samples, and activate a model. Built-in Picoso tools still work.',
+    };
+  }
+  return {
+    type: 'schema',
+    trained: true,
+    name: model.name,
+    entities: model.entities,
+    metrics: (model.metrics || []).map((m) => ({
+      id: m.id,
+      name: m.name,
+      aggregation: m.aggregation,
+      entity: m.entity,
+      field: m.field,
+      description: m.description,
+    })),
+    dimensions: model.dimensions,
+    relationships: model.relationships,
+    glossary: model.glossary,
+  };
+}
+
+async function list_metrics() {
+  const { model } = getToolContext();
+  if (!model) {
+    return {
+      type: 'list',
+      trained: false,
+      metrics: [
+        'revenue',
+        'orders',
+        'aov',
+        'unique product buyers',
+        'repeat customers',
+        'inactive customers',
+        'top products',
+      ],
+    };
+  }
+  return {
+    type: 'list',
+    trained: true,
+    metrics: model.metrics || [],
+  };
+}
+
+async function run_metric(input = {}) {
+  const { workspaceId, model } = getToolContext();
+  if (!model || !workspaceId) {
+    return {
+      type: 'error',
+      error: 'No active trained model. Use built-in tools or train first.',
+    };
+  }
+  const metricId = input.metric_id || input.metricId || input.id;
+  if (!metricId) return { type: 'error', error: 'metric_id required' };
+  return executeModelMetric(workspaceId, model, metricId, {
+    fromDate: input.fromDate || input.from_date,
+    toDate: input.toDate || input.to_date,
+    dateField: input.date_field || input.dateField || 'createdAt',
+    groupBy: input.group_by || input.groupBy,
+    filters: input.filters || [],
+  });
+}
+
+async function semantic_query(input = {}) {
+  const { workspaceId, model } = getToolContext();
+  if (!workspaceId) return { type: 'error', error: 'No workspace' };
+  return executeSemanticQuery(
+    workspaceId,
+    {
+      collection: input.collection || input.entity,
+      aggregation: input.aggregation || 'count',
+      field: input.field,
+      filters: input.filters || [],
+      fromDate: input.fromDate || input.from_date,
+      toDate: input.toDate || input.to_date,
+      dateField: input.date_field || input.dateField || 'createdAt',
+      groupBy: input.group_by || input.groupBy,
+      limit: input.limit,
+      metricId: input.metric_id,
+    },
+    model
+  );
+}
+
+async function sample_collection(input = {}) {
+  const { workspaceId } = getToolContext();
+  const collection = input.collection;
+  if (!collection) return { type: 'error', error: 'collection required' };
+  const rows = await sampleCollection(
+    workspaceId,
+    collection,
+    Math.min(Number(input.limit) || 5, 10)
+  );
+  return { type: 'sample', collection, rows };
+}
+
 /** Tool definitions for Cohere */
 export const TOOL_DEFINITIONS = [
   {
+    name: 'list_schema',
+    description:
+      'List the trained business brain: entities, metrics, dimensions, glossary. Call this first for open-ended questions when a model is trained.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'list_metrics',
+    description: 'List available named metrics (trained model and/or built-ins).',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'run_metric',
+    description:
+      'Run a named metric from the trained semantic model by metric_id (e.g. revenue, orders). Preferred for trained models.',
+    parameters: {
+      type: 'object',
+      properties: {
+        metric_id: { type: 'string' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        group_by: { type: 'string' },
+      },
+      required: ['metric_id'],
+    },
+  },
+  {
+    name: 'semantic_query',
+    description:
+      'Flexible analytics: count/sum/avg on any trained collection + field. Prefer run_metric when a named metric exists.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        aggregation: {
+          type: 'string',
+          description: 'count | count_distinct | sum | avg | min | max',
+        },
+        field: { type: 'string' },
+        group_by: { type: 'string' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        date_field: { type: 'string' },
+        filters: {
+          type: 'array',
+          description: '[{ field, op, value }] op: eq|in|gte|lte|regex',
+        },
+      },
+      required: ['collection', 'aggregation'],
+    },
+  },
+  {
+    name: 'sample_collection',
+    description: 'Return a few sample documents from a collection (for exploration).',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      required: ['collection'],
+    },
+  },
+  {
     name: 'resolve_product',
     description:
-      'Resolve a product name (e.g. Paneer Tikka Rice) to a product_id. Call this before product analytics.',
+      'Resolve a product name (e.g. Paneer Tikka Rice) to a product_id. Call this before product analytics on food menus.',
     parameters: {
       type: 'object',
       properties: {
@@ -422,30 +664,22 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'count_unique_product_buyers',
     description:
-      'Count unique customers who bought a product. USE THIS after resolve_product for any "how many customers ordered X" question. Optional radius_km for geo. Always returns unique_customers, orders, revenue, repeat_customers. Pass product_id from resolve_product and product_name as backup.',
+      'Count unique customers who bought a product (Picoso food ops). USE after resolve_product for geo+product questions.',
     parameters: {
       type: 'object',
       properties: {
-        product_id: { type: 'string', description: 'Bowl/product id from resolve_product' },
-        product_name: {
-          type: 'string',
-          description: 'Product name fallback match from resolve_product.match.name',
-        },
-        days: { type: 'number', description: 'Lookback days default 90' },
-        radius_km: {
-          type: 'number',
-          description:
-            'Optional geo filter in km from store. Pass when user says "2 km", "nearby", "andar".',
-        },
-        limit: { type: 'number', description: 'Sample customers to return' },
+        product_id: { type: 'string' },
+        product_name: { type: 'string' },
+        days: { type: 'number' },
+        radius_km: { type: 'number' },
+        limit: { type: 'number' },
       },
       required: [],
     },
   },
   {
     name: 'get_repeat_customers',
-    description:
-      'Count repeat customers (2+ completed orders). Optional product_id and radius_km.',
+    description: 'Count repeat customers (2+ completed orders). Optional product_id and radius_km.',
     parameters: {
       type: 'object',
       properties: {
@@ -464,6 +698,8 @@ export const TOOL_DEFINITIONS = [
       properties: {
         days: { type: 'number' },
         product_id: { type: 'string' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
       },
       required: [],
     },
@@ -476,6 +712,8 @@ export const TOOL_DEFINITIONS = [
       properties: {
         days: { type: 'number' },
         product_id: { type: 'string' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
       },
       required: [],
     },
@@ -488,6 +726,8 @@ export const TOOL_DEFINITIONS = [
       properties: {
         days: { type: 'number' },
         product_id: { type: 'string' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
       },
       required: [],
     },
@@ -500,6 +740,8 @@ export const TOOL_DEFINITIONS = [
       properties: {
         days: { type: 'number' },
         limit: { type: 'number' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
       },
       required: [],
     },
@@ -522,8 +764,13 @@ export const TOOL_DEFINITIONS = [
 ];
 
 const EXECUTORS = {
+  list_schema,
+  list_metrics,
+  run_metric,
+  semantic_query,
+  sample_collection,
   resolve_product,
-  get_store_info: get_store_info,
+  get_store_info,
   find_customers_within_radius,
   count_unique_product_buyers,
   get_repeat_customers,

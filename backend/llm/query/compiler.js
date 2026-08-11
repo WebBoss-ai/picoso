@@ -56,7 +56,7 @@ export function compileOrderBaseMatch({
     match.createdAt = {};
     if (fromDate) match.createdAt.$gte = new Date(fromDate);
     if (toDate) match.createdAt.$lte = new Date(toDate);
-    if (!fromDate && !toDate && days) {
+    if (!fromDate && !toDate && days != null) {
       const d = clampDays(days, 90);
       match.createdAt.$gte = new Date(Date.now() - d * 24 * 60 * 60 * 1000);
     }
@@ -117,13 +117,17 @@ export function compileProductBuyerPipeline({
   productId,
   productName,
   days = 90,
+  fromDate = null,
+  toDate = null,
   radiusKm = null,
   center = null,
   requireGeo = false,
   limitCustomers = 0,
 } = {}) {
   const base = compileOrderBaseMatch({
-    days,
+    days: fromDate || toDate ? undefined : days,
+    fromDate: fromDate || undefined,
+    toDate: toDate || undefined,
     productId: productId || undefined,
     productName: productName || undefined,
   });
@@ -147,8 +151,6 @@ export function compileProductBuyerPipeline({
   let geoMeta = null;
   if (requireGeo && radiusKm != null) {
     geoMeta = compileGeoBboxMatch(radiusKm, center);
-    // Soft geo: only filter if coords exist in bbox; orders with no coords
-    // are kept for optional secondary distance from user later (executor).
     pipeline.push({
       $match: {
         $or: [
@@ -216,8 +218,17 @@ export function compileRevenuePipeline(filters = {}) {
   ];
 }
 
-export function compileTopProductsPipeline({ days = 90, limit = 10 } = {}) {
-  const base = compileOrderBaseMatch({ days });
+export function compileTopProductsPipeline({
+  days = 90,
+  fromDate = null,
+  toDate = null,
+  limit = 10,
+} = {}) {
+  const base = compileOrderBaseMatch({
+    days: fromDate || toDate ? undefined : days,
+    fromDate: fromDate || undefined,
+    toDate: toDate || undefined,
+  });
   return [
     { $match: base },
     { $unwind: '$items' },

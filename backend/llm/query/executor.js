@@ -80,17 +80,20 @@ export async function executeProductBuyers({
   productId = null,
   productName = null,
   days = 90,
+  fromDate = null,
+  toDate = null,
   radiusKm = null,
   center = null,
   listLimit = 0,
 } = {}) {
-  const c = storeCoords(center);
+  const c = storeCoords(center ?? undefined);
 
-  // 1) All product buyers (no geo gate) — primary factual count
   const { pipeline } = compileProductBuyerPipeline({
     productId: productId || undefined,
     productName: productName || undefined,
-    days,
+    days: fromDate || toDate ? undefined : days,
+    fromDate: fromDate || undefined,
+    toDate: toDate || undefined,
     radiusKm: null,
     requireGeo: false,
   });
@@ -99,15 +102,18 @@ export async function executeProductBuyers({
   try {
     rows = await runAggregation(pipeline);
   } catch (err) {
-    // Fallback: simpler query by name only
     if (productName || productId) {
+      const createdAt = {};
+      if (fromDate) createdAt.$gte = new Date(fromDate);
+      if (toDate) createdAt.$lte = new Date(toDate);
+      if (!fromDate && !toDate) {
+        createdAt.$gte = new Date(Date.now() - Number(days || 90) * 24 * 60 * 60 * 1000);
+      }
       const simple = [
         {
           $match: {
             status: { $in: COMPLETED_ORDER_STATUSES },
-            createdAt: {
-              $gte: new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000),
-            },
+            createdAt,
             ...(productName
               ? { 'items.name': { $regex: productName, $options: 'i' } }
               : {}),
@@ -192,7 +198,6 @@ export async function executeProductBuyers({
     repeatCustomers,
     repeatRate: Math.round(repeatRate * 10000) / 10000,
     customers: sample,
-    // Always expose totals so "0 in radius" still explains the business
     totalsWithoutRadius: {
       uniqueCustomers: totalUnique,
       orders: totalOrders,
@@ -203,7 +208,9 @@ export async function executeProductBuyers({
     filters: {
       productId: productId || null,
       productName: productName || null,
-      days,
+      days: fromDate || toDate ? null : days,
+      fromDate: fromDate || null,
+      toDate: toDate || null,
       radiusKm: appliedRadius,
       center: c,
     },
@@ -212,21 +219,44 @@ export async function executeProductBuyers({
 }
 
 export async function executeRevenue(filters = {}) {
-  const pipeline = compileRevenuePipeline(filters);
+  const { days, fromDate, toDate, productId, productName } = filters;
+  const pipeline = compileRevenuePipeline({
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
+    productId,
+    productName,
+  });
   const [row] = await runAggregation(pipeline);
   return {
     orders: row?.orders || 0,
     revenue: Math.round((row?.revenue || 0) * 100) / 100,
     unique_customers: row?.unique_customers || 0,
     aov: Math.round((row?.aov || 0) * 100) / 100,
-    filters,
+    filters: {
+      days: fromDate || toDate ? null : days,
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      productId: productId || null,
+    },
     source: { dataset: 'orders', freshness: 'live' },
   };
 }
 
 export async function executeTopProducts(filters = {}) {
-  const pipeline = compileTopProductsPipeline(filters);
-  const rows = await runAggregation(pipeline);
+  const { days, fromDate, toDate, limit = 10 } = filters;
+  const pipeline = compileTopProductsPipeline({
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
+    limit,
+  });
+  // compileTopProductsPipeline may not support fromDate yet — patch compiler
+  const rows = await runAggregation(
+    pipeline.length
+      ? pipeline
+      : compileTopProductsPipeline({ days: days || 90, limit })
+  );
   return {
     products: rows.map((r) => ({
       ...r,
@@ -312,9 +342,20 @@ export async function executeCustomersInRadius({
   };
 }
 
-export async function executeOrderCountForProduct(productId, days = 90, productName = null) {
+export async function executeOrderCountForProduct(
+  productId,
+  days = 90,
+  productName = null,
+  fromDate = null,
+  toDate = null
+) {
   if (!productId && !productName) return 0;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const createdAt = {};
+  if (fromDate) createdAt.$gte = new Date(fromDate);
+  if (toDate) createdAt.$lte = new Date(toDate);
+  if (!fromDate && !toDate) {
+    createdAt.$gte = new Date(Date.now() - (days || 90) * 24 * 60 * 60 * 1000);
+  }
   const or = [];
   if (productId && mongoose.Types.ObjectId.isValid(String(productId))) {
     or.push({ 'items.bowlId': new mongoose.Types.ObjectId(String(productId)) });
@@ -326,7 +367,7 @@ export async function executeOrderCountForProduct(productId, days = 90, productN
   if (!or.length) return 0;
   return Order.countDocuments({
     status: { $in: COMPLETED_ORDER_STATUSES },
-    createdAt: { $gte: since },
+    createdAt,
     $or: or,
   });
 }

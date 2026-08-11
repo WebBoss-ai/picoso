@@ -9,6 +9,7 @@ import { requireAdmin2Pin } from '../middleware/admin2Auth.js';
 import * as marketing from '../controllers/marketingController.js';
 import { uploadToS3 } from '../utils/s3.js';
 import llmRouter from '../llm/routes.js';
+import platformRouter from '../llm/routes/platform.js';
 
 const router = express.Router();
 
@@ -209,5 +210,6 @@ router.get('/marketing/stats',              requireMarketingPin, marketing.getSt
 
 // ── Picoso Intelligence (/llm console) — self-contained module ───────────────
 router.use('/llm', llmRouter);
+router.use('/llm', platformRouter);
 
 export default router;

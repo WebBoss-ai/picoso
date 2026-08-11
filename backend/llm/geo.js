@@ -19,10 +19,16 @@ export function haversineKm(lat1, lng1, lat2, lng2) {
   return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function storeCoords(overrides = {}) {
+export function storeCoords(overrides) {
+  const o =
+    overrides && typeof overrides === 'object' && !Array.isArray(overrides)
+      ? overrides
+      : {};
+  const lat = Number(o.lat ?? STORE_LOCATION.lat);
+  const lng = Number(o.lng ?? STORE_LOCATION.lng);
   return {
-    lat: Number(overrides.lat ?? STORE_LOCATION.lat),
-    lng: Number(overrides.lng ?? STORE_LOCATION.lng),
+    lat: Number.isFinite(lat) ? lat : STORE_LOCATION.lat,
+    lng: Number.isFinite(lng) ? lng : STORE_LOCATION.lng,
   };
 }
 
