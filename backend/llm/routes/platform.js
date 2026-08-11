@@ -6,6 +6,8 @@ import {
   upsertExternalConnection,
   runTrainingDiscover,
   runUnstructuredTrain,
+  exploreMongoCollections,
+  previewMongoCollection,
   getActiveModel,
   getLatestDraftOrActive,
   updateSemanticModel,
@@ -52,13 +54,14 @@ router.get('/workspace', async (_req, res) => {
             domain: brain.corpus.domain,
           }
         : null,
+      history: brain.history || [],
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Workspace error' });
   }
 });
 
-/** Full trained brain for inspection (JSON + text) */
+/** Full trained brain for inspection (JSON + text + learning history) */
 router.get('/brain', async (_req, res) => {
   try {
     const ws = await getOrCreateDefaultWorkspace();
@@ -66,6 +69,37 @@ router.get('/brain', async (_req, res) => {
     res.json(pack);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Brain load failed' });
+  }
+});
+
+/** Browse Mongo catalogs (all collections + counts + samples) */
+router.get('/explore/collections', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const catalog = await exploreMongoCollections(ws._id, {
+      connectionId: req.query.connectionId,
+      includeEmpty: req.query.includeEmpty !== '0' && req.query.includeEmpty !== 'false',
+      withSamples: req.query.withSamples !== '0' && req.query.withSamples !== 'false',
+      sampleSize: Number(req.query.sampleSize) || 2,
+    });
+    res.json(catalog);
+  } catch (err) {
+    console.error('[llm] explore collections', err);
+    res.status(500).json({ error: err.message || 'Could not list collections' });
+  }
+});
+
+/** Preview sample docs from one collection */
+router.get('/explore/collections/:name', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const preview = await previewMongoCollection(ws._id, req.params.name, {
+      connectionId: req.query.connectionId,
+      limit: Number(req.query.limit) || 5,
+    });
+    res.json(preview);
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Preview failed' });
   }
 });
 
@@ -87,12 +121,22 @@ router.post('/connections', async (req, res) => {
 
 /**
  * TRAIN from unorganized paste (order admin dumps, notes, JSON).
- * Primary path for "any messy data".
+ * Primary path for "any messy data". Merges prior brain by default.
  */
 router.post('/train/unstructured', async (req, res) => {
   try {
     const ws = await getOrCreateDefaultWorkspace();
-    const { text, raw, label, businessContext, modelName, activate } = req.body || {};
+    const {
+      text,
+      raw,
+      label,
+      businessContext,
+      modelName,
+      activate,
+      mergeLearning,
+      collections,
+      sampleSize,
+    } = req.body || {};
     const payload = text || raw;
     if (!payload || String(payload).trim().length < 20) {
       return res.status(400).json({
@@ -105,6 +149,9 @@ router.post('/train/unstructured', async (req, res) => {
       label: label || 'Operations paste',
       businessContext,
       modelName,
+      mergeLearning: mergeLearning !== false,
+      collections: Array.isArray(collections) ? collections : null,
+      sampleSize,
     });
 
     if (activate) {
@@ -120,7 +167,7 @@ router.post('/train/unstructured', async (req, res) => {
   }
 });
 
-/** Discover schema from Mongo samples + draft semantic model */
+/** Discover schema from selected Mongo collections + draft semantic model (merge by default) */
 router.post('/train/discover', async (req, res) => {
   try {
     const ws = await getOrCreateDefaultWorkspace();
@@ -131,6 +178,8 @@ router.post('/train/discover', async (req, res) => {
       collections,
       businessContext,
       modelName,
+      mergeLearning,
+      skipEmpty,
     } = req.body || {};
 
     const result = await runTrainingDiscover(ws._id, {
@@ -140,6 +189,8 @@ router.post('/train/discover', async (req, res) => {
       collections,
       businessContext,
       modelName,
+      mergeLearning: mergeLearning !== false,
+      skipEmpty,
     });
     res.json(result);
   } catch (err) {

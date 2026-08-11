@@ -51,11 +51,13 @@ function flatten(obj, prefix = '', out = {}, depth = 0) {
 /**
  * Discover collections + field stats from a Mongo db handle.
  * Samples up to maxCollections × sampleSize documents.
+ * When `collections` allowlist is set, those names are preferred (up to 120).
  */
 export async function discoverSchema(db, options = {}) {
   const sampleSize = Math.min(Number(options.sampleSize) || 40, 100);
-  const maxCollections = Math.min(Number(options.maxCollections) || 40, 80);
+  const maxCollections = Math.min(Number(options.maxCollections) || 40, 120);
   const only = options.collections || null;
+  const skipEmpty = options.skipEmpty === true;
 
   let names = await db.listCollections().toArray();
   names = names
@@ -65,9 +67,13 @@ export async function discoverSchema(db, options = {}) {
     .sort();
 
   if (only?.length) {
-    names = names.filter((n) => only.includes(n));
+    const wanted = new Set(only.map(String));
+    names = names.filter((n) => wanted.has(n));
+    // respect explicit selection fully (cap at 120 for safety)
+    names = names.slice(0, 120);
+  } else {
+    names = names.slice(0, maxCollections);
   }
-  names = names.slice(0, maxCollections);
 
   const collections = [];
 
@@ -79,6 +85,7 @@ export async function discoverSchema(db, options = {}) {
     } catch {
       estimatedCount = 0;
     }
+    if (skipEmpty && estimatedCount === 0) continue;
 
     let samples = [];
     try {
@@ -160,6 +167,79 @@ export async function discoverSchema(db, options = {}) {
   return {
     collections,
     relationships,
+    discoveredAt: new Date(),
+  };
+}
+
+/**
+ * Lightweight catalog of ALL user collections (counts + optional sample docs).
+ * Used by Train UI to let operators pick what to include.
+ */
+export async function listMongoCatalog(db, options = {}) {
+  const includeEmpty = options.includeEmpty !== false;
+  const withSamples = options.withSamples !== false;
+  const sampleSize = Math.min(Number(options.sampleSize) || 2, 5);
+  const maxNames = Math.min(Number(options.maxNames) || 200, 300);
+
+  let names = await db.listCollections().toArray();
+  names = names
+    .map((c) => c.name)
+    .filter((n) => !n.startsWith('system.'))
+    .filter((n) => !/^llm/i.test(n))
+    .sort()
+    .slice(0, maxNames);
+
+  const collections = [];
+  for (const name of names) {
+    const col = db.collection(name);
+    let estimatedCount = 0;
+    try {
+      estimatedCount = await col.estimatedDocumentCount();
+    } catch {
+      estimatedCount = 0;
+    }
+    if (!includeEmpty && estimatedCount === 0) continue;
+
+    let sampleDocs = [];
+    let fieldPaths = [];
+    if (withSamples && estimatedCount > 0) {
+      try {
+        const samples = await col.aggregate([{ $sample: { size: sampleSize } }]).toArray();
+        sampleDocs = samples.map(sanitizeSampleDoc);
+        const pathSet = new Set();
+        for (const doc of samples) {
+          Object.keys(flatten(doc)).forEach((p) => pathSet.add(p));
+        }
+        fieldPaths = [...pathSet].sort().slice(0, 40);
+      } catch {
+        try {
+          const samples = await col.find({}).limit(sampleSize).toArray();
+          sampleDocs = samples.map(sanitizeSampleDoc);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    collections.push({
+      name,
+      estimatedCount,
+      hasData: estimatedCount > 0,
+      fieldPaths,
+      sampleDocs,
+    });
+  }
+
+  // with data first, then by name
+  collections.sort((a, b) => {
+    if (a.hasData !== b.hasData) return a.hasData ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return {
+    collections,
+    total: collections.length,
+    withData: collections.filter((c) => c.hasData).length,
     discoveredAt: new Date(),
   };
 }

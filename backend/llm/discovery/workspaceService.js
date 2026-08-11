@@ -7,7 +7,7 @@ import {
 } from '../models/llmModels.js';
 import { encryptSecret, hostFromUri } from '../security/secrets.js';
 import { getDataConnection } from './connection.js';
-import { discoverSchema, draftSemanticModel } from './engine.js';
+import { discoverSchema, draftSemanticModel, listMongoCatalog } from './engine.js';
 import {
   trainFromUnstructuredText,
   queryTrainedRecords,
@@ -17,6 +17,12 @@ import {
   buildLiveQueryPlanText,
   buildQueryPlan,
 } from './liveMap.js';
+import {
+  mergePriorBrain,
+  mergeCorpusRecords,
+  appendLearningSession,
+  mergeTextBrain,
+} from './mergeBrain.js';
 
 export async function getOrCreateDefaultWorkspace() {
   let ws = await LlmWorkspace.findOne({ slug: 'default' });
@@ -100,12 +106,9 @@ export async function upsertExternalConnection(workspaceId, { name, uri }) {
 }
 
 /**
- * Run discovery and create draft semantic model.
+ * Browse Mongo: list every collection with counts + optional sample docs.
  */
-export async function runTrainingDiscover(workspaceId, options = {}) {
-  const workspace = await LlmWorkspace.findById(workspaceId);
-  if (!workspace) throw new Error('Workspace not found');
-
+export async function exploreMongoCollections(workspaceId, options = {}) {
   let connection;
   if (options.connectionId) {
     connection = await LlmConnection.findById(options.connectionId);
@@ -116,10 +119,122 @@ export async function runTrainingDiscover(workspaceId, options = {}) {
 
   const data = await getDataConnection(connection);
   try {
+    const catalog = await listMongoCatalog(data.db, {
+      includeEmpty: options.includeEmpty !== false,
+      withSamples: options.withSamples !== false,
+      sampleSize: options.sampleSize || 2,
+    });
+
+    connection.meta = {
+      ...(connection.meta || {}),
+      host: data.host || connection.meta?.host || '',
+      dbName: data.dbName || connection.meta?.dbName || '',
+      collectionsCount: catalog.total,
+    };
+    connection.status = 'connected';
+    connection.lastError = null;
+    await connection.save().catch(() => {});
+
+    return {
+      connection: sanitizeConnection(connection),
+      dbName: data.dbName || connection.meta?.dbName || '',
+      host: data.host || '',
+      ...catalog,
+    };
+  } catch (err) {
+    connection.status = 'error';
+    connection.lastError = err.message;
+    await connection.save().catch(() => {});
+    throw err;
+  } finally {
+    await data.release();
+  }
+}
+
+/**
+ * Sample one collection for preview in Train UI.
+ */
+export async function previewMongoCollection(workspaceId, collectionName, options = {}) {
+  const name = String(collectionName || '').trim();
+  if (!name) throw new Error('collection name required');
+  if (name.startsWith('system.') || /^llm/i.test(name)) {
+    throw new Error('Collection not allowed');
+  }
+
+  let connection;
+  if (options.connectionId) {
+    connection = await LlmConnection.findById(options.connectionId);
+  } else {
+    connection = await getOrCreateSelfConnection(workspaceId);
+  }
+  const data = await getDataConnection(connection);
+  try {
+    const col = data.db.collection(name);
+    let estimatedCount = 0;
+    try {
+      estimatedCount = await col.estimatedDocumentCount();
+    } catch {
+      estimatedCount = 0;
+    }
+    const limit = Math.min(Number(options.limit) || 5, 20);
+    let docs = [];
+    try {
+      docs = await col.aggregate([{ $sample: { size: limit } }]).toArray();
+    } catch {
+      docs = await col.find({}).limit(limit).toArray();
+    }
+    // local sanitize (avoid secrets)
+    const sampleDocs = docs.map((doc) => {
+      const out = {};
+      for (const [k, v] of Object.entries(doc || {})) {
+        if (k === 'password' || /secret|token|hash/i.test(k)) out[k] = '[redacted]';
+        else if (v && typeof v === 'object' && v._bsontype) out[k] = String(v);
+        else if (v instanceof Date) out[k] = v.toISOString();
+        else if (typeof v === 'string' && v.length > 200) out[k] = `${v.slice(0, 197)}…`;
+        else if (v && typeof v === 'object') {
+          try {
+            out[k] = JSON.parse(JSON.stringify(v));
+          } catch {
+            out[k] = String(v);
+          }
+        } else out[k] = v;
+      }
+      return out;
+    });
+    return { name, estimatedCount, sampleDocs, limit };
+  } finally {
+    await data.release();
+  }
+}
+
+/**
+ * Run discovery and create draft semantic model (merges with prior brain by default).
+ */
+export async function runTrainingDiscover(workspaceId, options = {}) {
+  const workspace = await LlmWorkspace.findById(workspaceId);
+  if (!workspace) throw new Error('Workspace not found');
+  const mergeLearning = options.mergeLearning !== false;
+
+  let connection;
+  if (options.connectionId) {
+    connection = await LlmConnection.findById(options.connectionId);
+  } else {
+    connection = await getOrCreateSelfConnection(workspaceId);
+  }
+  if (!connection) throw new Error('Connection not found');
+
+  const selected =
+    Array.isArray(options.collections) && options.collections.length
+      ? options.collections.map(String)
+      : null;
+
+  const data = await getDataConnection(connection);
+  try {
     const discovery = await discoverSchema(data.db, {
       sampleSize: options.sampleSize || 40,
-      maxCollections: options.maxCollections || 35,
-      collections: options.collections || null,
+      maxCollections: options.maxCollections || (selected ? 120 : 40),
+      collections: selected,
+      skipEmpty: options.skipEmpty === true,
     });
 
     connection.meta = {
@@ -146,23 +261,68 @@ export async function runTrainingDiscover(workspaceId, options = {}) {
       discoveredAt: new Date(),
     });
 
-    const draft = draftSemanticModel(discovery, {
+    const base = mergeLearning ? await getLatestDraftOrActive(workspaceId) : null;
+    const priorVersion = base?.version || 0;
+
+    let draft = draftSemanticModel(discovery, {
       businessName: workspace.name,
-      modelName: options.modelName || `${workspace.name} brain v${version}`,
+      modelName:
+        options.modelName ||
+        `${workspace.name} brain v${Math.max(version, priorVersion + 1)}`,
       businessContext: options.businessContext,
     });
+
+    draft = {
+      ...draft,
+      sessionLabel: options.modelName || `Mongo · ${discovery.collections.length} collections`,
+      source: 'mongodb',
+      businessContext: options.businessContext || draft.businessContext || '',
+    };
+
+    if (base) {
+      draft = mergePriorBrain(base, draft);
+    }
+
+    const modelVersion =
+      ((await LlmSemanticModel.findOne({ workspaceId }).sort({ version: -1 }).lean())
+        ?.version || 0) + 1;
+
+    const extractionMeta = appendLearningSession(base?.extractionMeta, {
+      source: 'mongodb',
+      label: options.modelName || `Discover ${discovery.collections.length} cols`,
+      collections: discovery.collections.map((c) => c.name),
+      recordCount: 0,
+      versionAfter: modelVersion,
+      note: mergeLearning && base ? 'Merged with prior brain' : 'Fresh train',
+      patch: {
+        includedCollections: discovery.collections.map((c) => c.name),
+        discoveryVersion: version,
+      },
+    });
+
+    // Prefer carrying prior corpus forward when merging
+    let corpusId = base?.corpusId || null;
+    if (mergeLearning && base?.corpusId) {
+      corpusId = base.corpusId;
+    }
 
     const model = await LlmSemanticModel.create({
       workspaceId,
       schemaSnapshotId: snapshot._id,
-      version,
+      version: modelVersion,
+      name: options.modelName || draft.name || `${workspace.name} brain v${modelVersion}`,
       ...draft,
+      corpusId,
+      trainingHints: draft.trainingHints || base?.trainingHints || [],
+      extractionMeta,
       status: 'draft',
       updatedAt: new Date(),
     });
 
     return {
       connection: sanitizeConnection(connection),
+      merged: Boolean(base),
+      priorModelId: base ? String(base._id) : null,
       snapshot: {
         id: snapshot._id,
         version: snapshot.version,
@@ -283,17 +443,23 @@ export async function addTrainingHint(modelId, question, answer) {
 /**
  * Train from unorganized paste (order cards, notes, JSON, dumps).
  * Samples teach structure → brain + liveFieldMap; ops answers scan live Mongo.
+ * By default MERGES into prior brain (keeps entities, corpus, hints, maps).
  */
 export async function runUnstructuredTrain(workspaceId, options = {}) {
   const workspace = await LlmWorkspace.findById(workspaceId);
   if (!workspace) throw new Error('Workspace not found');
+  const mergeLearning = options.mergeLearning !== false;
 
   const result = await trainFromUnstructuredText(options.text || options.raw || '', {
     label: options.label || 'Operations paste',
     businessContext: options.businessContext || '',
   });
 
-  // Optional live schema discovery (non-fatal) — enriches field map
+  const selected =
+    Array.isArray(options.collections) && options.collections.length
+      ? options.collections.map(String)
+      : null;
+
   let discovery = null;
   let discoveryError = null;
   let snapshotId = null;
@@ -306,7 +472,9 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
       }
       discovery = await discoverSchema(data.db, {
         sampleSize: Math.min(Number(options.sampleSize) || 20, 40),
-        maxCollections: 25,
+        maxCollections: selected ? 120 : 30,
+        collections: selected,
+        skipEmpty: options.skipEmpty === true,
       });
       connection.meta = {
         host: data.host || 'self',
@@ -345,7 +513,7 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
     discovery,
   });
   const queryPlan = buildQueryPlan(liveFieldMap);
-  const textBrain =
+  const sessionText =
     result.textBrain +
     buildLiveQueryPlanText(liveFieldMap) +
     (discoveryError
@@ -354,7 +522,6 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
         ? `\n\n## Live discovery\nSampled ${discovery.collections.length} collections from app Mongo and bound concepts to real field paths.`
         : '');
 
-  // Entities: live collections first + sample corpus
   const liveEntities = [
     {
       id: 'orders',
@@ -388,6 +555,22 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
       confirmed: true,
     },
   ];
+
+  if (discovery?.collections?.length) {
+    for (const c of discovery.collections) {
+      if (['orders', 'bowls', 'users'].includes(c.name)) continue;
+      liveEntities.push({
+        id: `col_${c.name}`,
+        name: c.name,
+        collectionName: c.name,
+        description: `Live Mongo collection · ~${c.estimatedCount} docs · ${c.fields?.length || 0} fields`,
+        primaryKey: '_id',
+        labelField: null,
+        role: 'other',
+        confirmed: false,
+      });
+    }
+  }
 
   const liveMetrics = [
     {
@@ -443,7 +626,7 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
         'Full orders/products/users in MongoDB. Sample paste only teaches field meanings; use live tools for real answers.',
     },
     {
-      term: 'customer',
+      term: 'geo',
       definition:
         'Order deliveryAddress.lat / deliveryAddress.lng or user.location.coordinates; distance via haversine from store.',
     },
@@ -454,29 +637,24 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
     },
   ];
 
+  const base = mergeLearning ? await getLatestDraftOrActive(workspaceId) : null;
   const last = await LlmSemanticModel.findOne({ workspaceId }).sort({ version: -1 }).lean();
   const version = (last?.version || 0) + 1;
 
-  const corpus = await LlmTrainingCorpus.create({
-    workspaceId,
-    label: result.label,
-    source: 'paste',
-    domain: result.domain,
-    records: result.records,
-    recordCount: result.recordCount,
-    jsonSchema: result.jsonSchema,
-    textBrain,
-    parameters: result.parameters,
-    rawPreview: result.rawPreview,
-    updatedAt: new Date(),
-  });
+  let priorRecords = [];
+  let priorCorpus = null;
+  if (base?.corpusId) {
+    priorCorpus = await LlmTrainingCorpus.findById(base.corpusId);
+    priorRecords = priorCorpus?.records || [];
+  }
+  const mergedRecords = mergeLearning
+    ? mergeCorpusRecords(priorRecords, result.records)
+    : result.records;
+  const recordCount = mergedRecords.length;
 
-  const model = await LlmSemanticModel.create({
-    workspaceId,
-    schemaSnapshotId: snapshotId,
-    version,
+  let draftBrain = {
     name: options.modelName || `${result.label} · brain v${version}`,
-    status: 'draft',
+    sessionLabel: result.label || 'Paste train',
     source: discovery ? 'hybrid' : 'unstructured',
     domain: result.domain,
     businessContext: options.businessContext || '',
@@ -486,17 +664,81 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
     relationships: result.draft.relationships || [],
     glossary,
     jsonSchema: result.jsonSchema,
-    textBrain,
+    textBrain: sessionText,
     parameters: result.parameters,
     liveFieldMap,
     queryPlan,
-    corpusId: corpus._id,
-    extractionMeta: {
-      ...result.extraction,
+    trainingHints: [],
+  };
+
+  if (base) {
+    draftBrain = mergePriorBrain(base, draftBrain);
+    draftBrain.textBrain = mergeTextBrain(
+      base.textBrain,
+      sessionText,
+      result.label || 'Paste train'
+    );
+  }
+
+  const corpus = await LlmTrainingCorpus.create({
+    workspaceId,
+    label:
+      mergeLearning && priorCorpus
+        ? `${priorCorpus.label || 'Corpus'} + ${result.label}`
+        : result.label,
+    source: 'paste',
+    domain: result.domain || priorCorpus?.domain || '',
+    records: mergedRecords,
+    recordCount,
+    jsonSchema: draftBrain.jsonSchema,
+    textBrain: draftBrain.textBrain,
+    parameters: draftBrain.parameters,
+    rawPreview: result.rawPreview,
+    updatedAt: new Date(),
+  });
+
+  const extractionMeta = appendLearningSession(base?.extractionMeta, {
+    source: discovery ? 'hybrid_paste' : 'paste',
+    label: result.label || 'Paste train',
+    recordCount: result.recordCount,
+    cumulativeRecords: recordCount,
+    collections: discovery?.collections?.map((c) => c.name) || selected || [],
+    versionAfter: version,
+    note:
+      mergeLearning && base
+        ? `Merged +${result.recordCount} paste records (kept prior learning)`
+        : 'Fresh train',
+    patch: {
       discoveryError,
       liveCollections: discovery?.collections?.length || 0,
       mode: 'live_first',
+      includedCollections:
+        selected || discovery?.collections?.map((c) => c.name) || [],
     },
+  });
+
+  const model = await LlmSemanticModel.create({
+    workspaceId,
+    schemaSnapshotId: snapshotId || base?.schemaSnapshotId || null,
+    version,
+    name: draftBrain.name,
+    status: 'draft',
+    source: draftBrain.source,
+    domain: draftBrain.domain,
+    businessContext: draftBrain.businessContext,
+    entities: draftBrain.entities,
+    metrics: draftBrain.metrics,
+    dimensions: draftBrain.dimensions,
+    relationships: draftBrain.relationships,
+    glossary: draftBrain.glossary,
+    jsonSchema: draftBrain.jsonSchema,
+    textBrain: draftBrain.textBrain,
+    parameters: draftBrain.parameters,
+    liveFieldMap: draftBrain.liveFieldMap,
+    queryPlan: draftBrain.queryPlan,
+    trainingHints: draftBrain.trainingHints || [],
+    corpusId: corpus._id,
+    extractionMeta,
     updatedAt: new Date(),
   });
 
@@ -506,16 +748,19 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
   return {
     model: sanitizeModel(model),
     corpus: sanitizeCorpus(corpus, { includeRecords: true, recordLimit: 50 }),
+    merged: Boolean(base),
+    priorModelId: base ? String(base._id) : null,
     brain: {
-      jsonSchema: result.jsonSchema,
-      textBrain,
-      parameters: result.parameters,
-      domain: result.domain,
-      recordCount: result.recordCount,
-      extraction: { ...result.extraction, discoveryError },
-      liveFieldMap,
-      queryPlan,
+      jsonSchema: draftBrain.jsonSchema,
+      textBrain: draftBrain.textBrain,
+      parameters: draftBrain.parameters,
+      domain: draftBrain.domain,
+      recordCount,
+      extraction: extractionMeta,
+      liveFieldMap: draftBrain.liveFieldMap,
+      queryPlan: draftBrain.queryPlan,
       mode: 'live_first',
+      learningSessions: extractionMeta.learningSessions || [],
     },
     discovery: discovery
       ? {
@@ -531,6 +776,7 @@ export async function runUnstructuredTrain(workspaceId, options = {}) {
   };
 }
 
+
 export async function getCorpusForModel(model) {
   if (!model) return null;
   if (model.corpusId) {
@@ -545,10 +791,21 @@ export async function getCorpusForModel(model) {
 export async function getBrainPackage(workspaceId) {
   const model = await getLatestDraftOrActive(workspaceId);
   if (!model) {
-    return { trained: false, model: null, corpus: null, brain: null };
+    return { trained: false, model: null, corpus: null, brain: null, history: [] };
   }
   const corpus = await getCorpusForModel(model);
   const o = model.toObject?.() || model;
+  const history =
+    o.extractionMeta?.learningSessions ||
+    o.extractionMeta?.sessions ||
+    [];
+  // Also surface recent model versions for the UI
+  const recentModels = await LlmSemanticModel.find({ workspaceId })
+    .sort({ version: -1 })
+    .limit(12)
+    .select('version name status source domain createdAt updatedAt extractionMeta corpusId')
+    .lean();
+
   return {
     trained: o.status === 'active',
     model: sanitizeModel(model),
@@ -566,7 +823,22 @@ export async function getBrainPackage(workspaceId) {
       liveFieldMap: o.liveFieldMap || null,
       queryPlan: o.queryPlan || null,
       mode: o.queryPlan?.priority || (o.liveFieldMap ? 'live_first' : null),
+      learningSessions: history,
+      entities: o.entities || [],
+      metrics: o.metrics || [],
+      glossary: o.glossary || [],
     },
+    history: recentModels.map((m) => ({
+      id: String(m._id),
+      version: m.version,
+      name: m.name,
+      status: m.status,
+      source: m.source,
+      domain: m.domain,
+      sessions: m.extractionMeta?.learningSessions?.length || 0,
+      createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
+    })),
   };
 }
 

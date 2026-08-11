@@ -30,6 +30,8 @@ import {
   Copy,
   Check,
   X,
+  Eye,
+  Layers,
 } from 'lucide-react';
 
 const PIN_KEY = 'picoso_llm_pin';
@@ -279,6 +281,15 @@ export default function LlmPage() {
   const [businessContext, setBusinessContext] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [pasteLabel, setPasteLabel] = useState('Order ops paste');
+  const [mergeLearning, setMergeLearning] = useState(true);
+  const [mongoCatalog, setMongoCatalog] = useState(null);
+  const [selectedCols, setSelectedCols] = useState({});
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [includeEmpty, setIncludeEmpty] = useState(true);
+  const [previewName, setPreviewName] = useState(null);
+  const [previewDocs, setPreviewDocs] = useState(null);
+  const [trainNote, setTrainNote] = useState('');
+  const [catalogFilter, setCatalogFilter] = useState('');
 
   useEffect(() => {
     const saved = getPin();
@@ -449,10 +460,87 @@ export default function LlmPage() {
     }
   }
 
-  async function runDiscover() {
-    setTrainBusy(true);
+  async function loadMongoCatalog() {
+    setCatalogBusy(true);
     setTrainError('');
     try {
+      const q = new URLSearchParams({
+        includeEmpty: includeEmpty ? '1' : '0',
+        withSamples: '1',
+      });
+      const res = await fetch(`${API_BASE}/llm/explore/collections?${q}`, {
+        headers: apiHeaders(pin, false),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not list collections');
+      setMongoCatalog(data);
+      // Default-select collections that have data (or all if empty filter)
+      const next = {};
+      for (const c of data.collections || []) {
+        next[c.name] = c.hasData !== false && (c.estimatedCount || 0) > 0;
+      }
+      // if nothing selected (all empty), select none so user chooses
+      const any = Object.values(next).some(Boolean);
+      if (!any) {
+        for (const c of data.collections || []) next[c.name] = false;
+      }
+      setSelectedCols(next);
+      setTrainNote(
+        `Loaded ${data.total || 0} collections (${data.withData || 0} with data) from ${data.dbName || 'Mongo'}`
+      );
+    } catch (e) {
+      setTrainError(e.message);
+    } finally {
+      setCatalogBusy(false);
+    }
+  }
+
+  function selectedCollectionNames() {
+    return Object.entries(selectedCols)
+      .filter(([, on]) => on)
+      .map(([name]) => name);
+  }
+
+  function toggleCol(name) {
+    setSelectedCols((s) => ({ ...s, [name]: !s[name] }));
+  }
+
+  function selectAllCols(onlyWithData = false) {
+    const next = {};
+    for (const c of mongoCatalog?.collections || []) {
+      next[c.name] = onlyWithData ? Boolean(c.hasData) : true;
+    }
+    setSelectedCols(next);
+  }
+
+  function clearCols() {
+    const next = {};
+    for (const c of mongoCatalog?.collections || []) next[c.name] = false;
+    setSelectedCols(next);
+  }
+
+  async function previewCollection(name) {
+    setPreviewName(name);
+    setPreviewDocs(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/llm/explore/collections/${encodeURIComponent(name)}?limit=4`,
+        { headers: apiHeaders(pin, false) }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Preview failed');
+      setPreviewDocs(data.sampleDocs || []);
+    } catch (e) {
+      setPreviewDocs([{ error: e.message }]);
+    }
+  }
+
+  async function runDiscover(forceAll = false) {
+    setTrainBusy(true);
+    setTrainError('');
+    setTrainNote('');
+    try {
+      const collections = forceAll ? [] : selectedCollectionNames();
       const res = await fetch(`${API_BASE}/llm/train/discover`, {
         method: 'POST',
         headers: apiHeaders(pin),
@@ -462,12 +550,20 @@ export default function LlmPage() {
             businessContext ||
             'Food delivery / commerce. Prefer customers, orders, products when present.',
           modelName: 'Business brain',
+          mergeLearning,
+          collections: collections.length ? collections : undefined,
+          skipEmpty: !includeEmpty,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Discovery failed');
       setSnapshot(data.snapshot);
       setDraftModel(data.model);
+      setTrainNote(
+        data.merged
+          ? `Merged Mongo training into brain v${data.model?.version} (prior learning kept). ${collections.length || 'default'} collection(s).`
+          : `Draft brain v${data.model?.version} from Mongo discovery.`
+      );
       await loadWorkspace();
       await loadBrain();
     } catch (e) {
@@ -484,7 +580,9 @@ export default function LlmPage() {
     }
     setTrainBusy(true);
     setTrainError('');
+    setTrainNote('');
     try {
+      const collections = selectedCollectionNames();
       const res = await fetch(`${API_BASE}/llm/train/unstructured`, {
         method: 'POST',
         headers: apiHeaders(pin),
@@ -496,6 +594,8 @@ export default function LlmPage() {
             'Picoso food delivery ops. Order cards show status, COD, distance, items, totals, customer pin.',
           modelName: pasteLabel || 'Ops paste brain',
           activate: andActivate,
+          mergeLearning,
+          collections: collections.length ? collections : undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -506,11 +606,17 @@ export default function LlmPage() {
         model: data.model,
         corpus: data.corpus,
         brain: data.brain,
+        history: data.history,
       });
+      setTrainNote(
+        data.merged
+          ? `Merged training — prior learning kept · ${data.brain?.recordCount ?? '—'} cumulative records · v${data.model?.version}`
+          : `New draft brain v${data.model?.version}`
+      );
       await loadWorkspace();
       await loadBrain();
       setTab('brain');
-      setBrainView('text');
+      setBrainView('history');
     } catch (e) {
       setTrainError(e.message);
     } finally {
@@ -862,14 +968,205 @@ export default function LlmPage() {
       </header>
 
       {tab === 'train' ? (
-        <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-5 space-y-5 overflow-y-auto">
+        <div className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 space-y-5 overflow-y-auto">
           <section className="llm-card">
             <h2 className="llm-section-h">
-              <Brain className="w-4 h-4" /> 1. Paste unorganized data
+              <Layers className="w-4 h-4" /> Continuous learning
             </h2>
             <p className="llm-muted">
-              Drop order dumps, notes, CSV, or JSON. Structure maps to live Mongo so answers use
-              real orders. Names and phones are full company-visible fields.
+              Each train session adds to the brain — entities, parameters, glossary, corpus, and
+              session history stay intact. Uncheck only if you want a fresh brain.
+            </p>
+            <label className="llm-check mt-3" style={{ display: 'inline-flex' }}>
+              <input
+                type="checkbox"
+                checked={mergeLearning}
+                onChange={(e) => setMergeLearning(e.target.checked)}
+              />
+              Merge into existing brain (recommended)
+            </label>
+            {trainNote && <p className="llm-meta mt-2" style={{ color: 'var(--llm-blue)' }}>{trainNote}</p>}
+          </section>
+
+          <section className="llm-card">
+            <h2 className="llm-section-h">
+              <Database className="w-4 h-4" /> 1. Browse Mongo & choose collections
+            </h2>
+            <p className="llm-muted">
+              Load the full database catalog, preview sample documents, and pick exactly which
+              collections to include in training.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button
+                type="button"
+                className="llm-btn-primary"
+                disabled={trainBusy || catalogBusy}
+                onClick={loadMongoCatalog}
+              >
+                {catalogBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Database className="w-4 h-4" />
+                )}
+                Load catalog
+              </button>
+              <button type="button" className="llm-btn-ghost" disabled={trainBusy} onClick={connectSelf}>
+                <Link2 className="w-4 h-4" /> Use app database
+              </button>
+              <label className="llm-check">
+                <input
+                  type="checkbox"
+                  checked={includeEmpty}
+                  onChange={(e) => setIncludeEmpty(e.target.checked)}
+                />
+                Show empty
+              </label>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+              <input
+                className="llm-input"
+                placeholder="mongodb+srv://… (optional external)"
+                value={externalUri}
+                onChange={(e) => setExternalUri(e.target.value)}
+              />
+              <button
+                type="button"
+                className="llm-btn-ghost"
+                disabled={trainBusy || !externalUri.trim()}
+                onClick={connectExternal}
+              >
+                Connect external
+              </button>
+            </div>
+
+            {workspace?.primaryConnection && (
+              <p className="llm-meta mt-2">
+                Connection: {workspace.primaryConnection.mode} ·{' '}
+                {workspace.primaryConnection.meta?.dbName ||
+                  workspace.primaryConnection.meta?.host ||
+                  '—'}{' '}
+                · {workspace.primaryConnection.status}
+              </p>
+            )}
+
+            {mongoCatalog && (
+              <div className="llm-catalog mt-4">
+                <div className="llm-catalog-bar">
+                  <input
+                    className="llm-input"
+                    placeholder="Filter collections…"
+                    value={catalogFilter}
+                    onChange={(e) => setCatalogFilter(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button" className="llm-btn-ghost sm" onClick={() => selectAllCols(false)}>
+                      All
+                    </button>
+                    <button type="button" className="llm-btn-ghost sm" onClick={() => selectAllCols(true)}>
+                      With data
+                    </button>
+                    <button type="button" className="llm-btn-ghost sm" onClick={clearCols}>
+                      None
+                    </button>
+                  </div>
+                </div>
+                <p className="llm-meta mt-2">
+                  {mongoCatalog.dbName || 'Database'} · {mongoCatalog.total} collections ·{' '}
+                  {selectedCollectionNames().length} selected · {mongoCatalog.withData} with data
+                </p>
+                <div className="llm-catalog-list">
+                  {(mongoCatalog.collections || [])
+                    .filter((c) =>
+                      !catalogFilter.trim()
+                        ? true
+                        : c.name.toLowerCase().includes(catalogFilter.trim().toLowerCase())
+                    )
+                    .map((c) => (
+                      <div
+                        key={c.name}
+                        className={`llm-catalog-row ${selectedCols[c.name] ? 'on' : ''} ${!c.hasData ? 'empty' : ''}`}
+                      >
+                        <label className="llm-catalog-check">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selectedCols[c.name])}
+                            onChange={() => toggleCol(c.name)}
+                          />
+                          <span className="name">{c.name}</span>
+                        </label>
+                        <span className="count">
+                          {(c.estimatedCount || 0).toLocaleString()} docs
+                        </span>
+                        <button
+                          type="button"
+                          className="llm-icon-btn"
+                          title="Preview"
+                          onClick={() => previewCollection(c.name)}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+                {previewName && (
+                  <div className="llm-preview mt-3">
+                    <div className="llm-section-title">
+                      Preview · {previewName}
+                      <button
+                        type="button"
+                        className="llm-btn-ghost sm"
+                        style={{ marginLeft: 'auto' }}
+                        onClick={() => {
+                          setPreviewName(null);
+                          setPreviewDocs(null);
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <pre className="llm-pre">
+                      {previewDocs
+                        ? JSON.stringify(previewDocs, null, 2)
+                        : 'Loading samples…'}
+                    </pre>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    type="button"
+                    className="llm-btn-primary"
+                    disabled={trainBusy || selectedCollectionNames().length === 0}
+                    onClick={() => runDiscover(false)}
+                  >
+                    {trainBusy ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                    Train on selected ({selectedCollectionNames().length})
+                  </button>
+                  <button
+                    type="button"
+                    className="llm-btn-ghost"
+                    disabled={trainBusy}
+                    onClick={() => runDiscover(true)}
+                    title="Sample default collections without selection filter"
+                  >
+                    Discover default set
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="llm-card">
+            <h2 className="llm-section-h">
+              <Brain className="w-4 h-4" /> 2. Paste unorganized data
+            </h2>
+            <p className="llm-muted">
+              Drop order dumps, notes, CSV, or JSON. New knowledge merges into the brain. If you
+              selected Mongo collections above, live mapping uses only those.
             </p>
             <input
               className="llm-input mt-3"
@@ -886,7 +1183,7 @@ export default function LlmPage() {
             />
             <textarea
               className="llm-textarea mt-2 font-mono text-sm"
-              rows={12}
+              rows={10}
               placeholder={`Paste like:\n#A47C9AFD\ndelivered\nCOD\n…`}
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
@@ -903,7 +1200,7 @@ export default function LlmPage() {
                 ) : (
                   <Play className="w-4 h-4" />
                 )}
-                Extract & draft brain
+                {mergeLearning ? 'Merge & draft' : 'Extract & draft'}
               </button>
               <button
                 type="button"
@@ -916,45 +1213,6 @@ export default function LlmPage() {
             </div>
           </section>
 
-          <section className="llm-card">
-            <h2 className="llm-section-h">
-              <Database className="w-4 h-4" /> 2. MongoDB sample train
-            </h2>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <button type="button" className="llm-btn-ghost" disabled={trainBusy} onClick={connectSelf}>
-                <Link2 className="w-4 h-4" /> Use app database
-              </button>
-              <button type="button" className="llm-btn-ghost" disabled={trainBusy} onClick={runDiscover}>
-                Discover Mongo schema
-              </button>
-            </div>
-            <div className="mt-3 grid gap-2">
-              <input
-                className="llm-input"
-                placeholder="mongodb+srv://… (optional external)"
-                value={externalUri}
-                onChange={(e) => setExternalUri(e.target.value)}
-              />
-              <button
-                type="button"
-                className="llm-btn-ghost"
-                disabled={trainBusy || !externalUri.trim()}
-                onClick={connectExternal}
-              >
-                Connect external
-              </button>
-            </div>
-            {workspace?.primaryConnection && (
-              <p className="llm-meta mt-2">
-                Connection: {workspace.primaryConnection.mode} ·{' '}
-                {workspace.primaryConnection.meta?.dbName ||
-                  workspace.primaryConnection.meta?.host ||
-                  '—'}{' '}
-                · {workspace.primaryConnection.status}
-              </p>
-            )}
-          </section>
-
           {(snapshot || draftModel) && (
             <section className="llm-card">
               <h2 className="llm-section-h">
@@ -964,17 +1222,23 @@ export default function LlmPage() {
                 <>
                   <p className="llm-meta">
                     {draftModel.source || 'model'} · v{draftModel.version} ·{' '}
-                    {(draftModel.parameters || []).length} params
+                    {(draftModel.parameters || []).length} params ·{' '}
+                    {(draftModel.entities || []).length} entities
                   </p>
                   <div className="llm-tag-row mt-3">
-                    {(draftModel.entities || []).slice(0, 12).map((e) => (
-                      <span key={e.id} className="llm-tag">
+                    {(draftModel.entities || []).slice(0, 16).map((e) => (
+                      <span key={e.id || e.name} className="llm-tag">
                         {e.name}
                         <em>{e.role}</em>
                       </span>
                     ))}
                   </div>
                 </>
+              )}
+              {snapshot?.collections?.length > 0 && (
+                <p className="llm-meta mt-2">
+                  Snapshot: {snapshot.collections.length} collections sampled
+                </p>
               )}
               <div className="flex flex-wrap gap-2 mt-4">
                 <button
@@ -1028,13 +1292,18 @@ export default function LlmPage() {
           )}
         </div>
       ) : tab === 'brain' ? (
-        <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-5 space-y-4 overflow-y-auto">
+        <div className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 space-y-4 overflow-y-auto">
           <section className="llm-card">
             <h2 className="llm-section-h">
               <Brain className="w-4 h-4" /> Trained brain
             </h2>
-            <div className="llm-tabs mt-3" style={{ display: 'inline-flex' }}>
+            <p className="llm-muted">
+              Accumulated learning across every train session — history is append-only while merge
+              is on.
+            </p>
+            <div className="llm-tabs mt-3" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>
               {[
+                ['history', 'Learning'],
                 ['text', 'Text'],
                 ['json', 'JSON schema'],
                 ['live', 'Live map'],
@@ -1055,7 +1324,86 @@ export default function LlmPage() {
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
             {!brain && !draftModel && (
-              <p className="llm-muted mt-4">No brain yet — train from paste first.</p>
+              <p className="llm-muted mt-4">No brain yet — train from paste or Mongo first.</p>
+            )}
+            {brainView === 'history' && (
+              <div className="mt-3 space-y-3">
+                <div className="llm-metrics-grid">
+                  <div className="llm-metric">
+                    <div className="llm-metric-label">Version</div>
+                    <div className="llm-metric-value">{draftModel?.version || brainPack?.model?.version || '—'}</div>
+                  </div>
+                  <div className="llm-metric">
+                    <div className="llm-metric-label">Status</div>
+                    <div className="llm-metric-value" style={{ fontSize: '1rem' }}>
+                      {draftModel?.status || brainPack?.model?.status || '—'}
+                    </div>
+                  </div>
+                  <div className="llm-metric">
+                    <div className="llm-metric-label">Records</div>
+                    <div className="llm-metric-value">
+                      {brain?.recordCount ?? corpusRecords.length ?? '—'}
+                    </div>
+                  </div>
+                  <div className="llm-metric">
+                    <div className="llm-metric-label">Entities</div>
+                    <div className="llm-metric-value">
+                      {(brain?.entities || draftModel?.entities || []).length}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="llm-section-title">Training sessions</div>
+                {(brain?.learningSessions || brainPack?.brain?.learningSessions || []).length ? (
+                  <ul className="llm-session-list">
+                    {[...(brain?.learningSessions || brainPack?.brain?.learningSessions || [])]
+                      .slice()
+                      .reverse()
+                      .map((s, i) => (
+                        <li key={i}>
+                          <strong>{s.label || s.source || 'Session'}</strong>
+                          <span className="llm-muted">
+                            {s.at ? new Date(s.at).toLocaleString() : ''}
+                            {s.note ? ` · ${s.note}` : ''}
+                            {s.recordCount != null ? ` · +${s.recordCount} records` : ''}
+                            {s.cumulativeRecords != null
+                              ? ` · ${s.cumulativeRecords} total`
+                              : ''}
+                          </span>
+                          {s.collections?.length > 0 && (
+                            <div className="llm-tag-row mt-1">
+                              {s.collections.slice(0, 12).map((n) => (
+                                <span key={n} className="llm-tag">
+                                  {n}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="llm-muted">No sessions logged yet — train to grow the history.</p>
+                )}
+
+                {(brainPack?.history || []).length > 0 && (
+                  <>
+                    <div className="llm-section-title mt-3">Brain versions</div>
+                    <ul className="llm-session-list">
+                      {brainPack.history.map((h) => (
+                        <li key={h.id}>
+                          <strong>
+                            v{h.version} · {h.name}
+                          </strong>
+                          <span className="llm-muted">
+                            {h.status} · {h.source} · {h.sessions || 0} sessions
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
             )}
             {brainView === 'text' && (
               <pre className="llm-pre mt-3">{brain?.textBrain || draftModel?.textBrain || '—'}</pre>
@@ -1071,7 +1419,7 @@ export default function LlmPage() {
                   brain?.liveFieldMap ||
                     draftModel?.liveFieldMap ||
                     brain?.queryPlan ||
-                    { note: 'Train from paste to build field map' },
+                    { note: 'Train from paste / Mongo to build field map' },
                   null,
                   2
                 )}
@@ -2013,6 +2361,41 @@ const LLM_CSS = `
     color: var(--llm-ink); background: #fafbfc; outline: none;
   }
   .llm-studio .llm-table-wrap { border: 0; border-radius: 0; flex: 1; }
+
+  .llm-catalog-bar {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+  }
+  .llm-catalog-bar .llm-input { flex: 1; min-width: 160px; }
+  .llm-catalog-list {
+    margin-top: 0.65rem; max-height: 320px; overflow: auto;
+    border: 1px solid var(--llm-line); border-radius: 12px; background: var(--llm-bg);
+  }
+  .llm-catalog-row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: center;
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--llm-line); font-size: 0.85rem;
+  }
+  .llm-catalog-row:last-child { border-bottom: 0; }
+  .llm-catalog-row.on { background: var(--llm-blue-soft); }
+  .llm-catalog-row.empty .name { opacity: 0.55; }
+  .llm-catalog-check {
+    display: flex; align-items: center; gap: 0.5rem; cursor: pointer; min-width: 0;
+  }
+  .llm-catalog-check .name {
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .llm-catalog-row .count {
+    font-size: 0.72rem; color: var(--llm-muted); font-variant-numeric: tabular-nums;
+  }
+  .llm-session-list {
+    list-style: none; margin: 0; padding: 0; border: 1px solid var(--llm-line);
+    border-radius: 12px; overflow: hidden;
+  }
+  .llm-session-list li {
+    padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--llm-line);
+    display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.88rem;
+  }
+  .llm-session-list li:last-child { border-bottom: 0; }
+  .llm-preview { border-top: 1px solid var(--llm-line); padding-top: 0.75rem; }
 
   @keyframes llm-in {
     from { opacity: 0; transform: translateY(8px); }
