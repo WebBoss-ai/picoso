@@ -360,27 +360,41 @@ async function get_repeat_customers(input = {}) {
  * Examples: more than 5 times, exactly 1 order, top spenders among frequent buyers.
  */
 async function query_customers(input = {}) {
-  const { Order } = await import('../../models/Model.js');
+  const { Order, User } = await import('../../models/Model.js');
   const { COMPLETED_ORDER_STATUSES } = await import('../semantic/picosoModel.js');
+  const { haversineKm, storeCoords } = await import('../geo.js');
   const minOrders = Math.max(1, Number(input.min_orders ?? input.minOrders ?? 1) || 1);
   const maxOrders =
     input.max_orders != null || input.maxOrders != null
       ? Number(input.max_orders ?? input.maxOrders)
       : null;
-  const days = input.days != null ? clampDays(input.days, 90) : 90;
-  const fromDate = input.fromDate || input.from_date || null;
-  const toDate = input.toDate || input.to_date || null;
+  const allTime =
+    input.all_time === true ||
+    input.allTime === true ||
+    (input.days == null &&
+      !input.fromDate &&
+      !input.from_date &&
+      !input.toDate &&
+      !input.to_date);
+  const days =
+    !allTime && input.days != null ? clampDays(input.days, 90) : allTime ? null : 90;
+  const fromDate = allTime ? null : input.fromDate || input.from_date || null;
+  const toDate = allTime ? null : input.toDate || input.to_date || null;
   const statuses = normalizeStatuses(input.statuses || input.status) || COMPLETED_ORDER_STATUSES;
   const limit = clampLimit(input.limit ?? 200, 200);
   const sortBy = String(input.sort_by || input.sortBy || 'orderCount');
-  const periodLabel = input.periodLabel || input.period_label || null;
+  const periodLabel =
+    input.periodLabel ||
+    input.period_label ||
+    (allTime ? 'All time' : days != null ? `Last ${days} days` : null);
+  const center = storeCoords();
 
   const match = { status: { $in: statuses } };
   if (fromDate || toDate) {
     match.createdAt = {};
     if (fromDate) match.createdAt.$gte = new Date(fromDate);
     if (toDate) match.createdAt.$lte = new Date(toDate);
-  } else {
+  } else if (days != null) {
     match.createdAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
   }
 
@@ -403,6 +417,8 @@ async function query_customers(input = {}) {
         revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
         name: { $last: '$customerName' },
         phone: { $last: '$phone' },
+        lat: { $last: '$deliveryAddress.lat' },
+        lng: { $last: '$deliveryAddress.lng' },
       },
     },
     { $match: qtyMatch },
@@ -423,42 +439,87 @@ async function query_customers(input = {}) {
   ]);
   const count = totalSeg[0]?.n || 0;
 
+  const ids = rows
+    .map((r) => r._id)
+    .filter((id) => id && mongoose.Types.ObjectId.isValid(String(id)));
+  const users = ids.length
+    ? await User.find({ _id: { $in: ids } })
+        .select('_id name phone email location.coordinates savedAddresses')
+        .lean()
+        .catch(() => [])
+    : [];
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  const customers = rows.map((r) => {
+    const u = byId.get(String(r._id));
+    let lat = r.lat != null ? Number(r.lat) : null;
+    let lng = r.lng != null ? Number(r.lng) : null;
+    if ((lat == null || lng == null) && u) {
+      lat = u.location?.coordinates?.lat ?? lat;
+      lng = u.location?.coordinates?.lng ?? lng;
+      if (lat == null || lng == null) {
+        const addr =
+          (u.savedAddresses || []).find((a) => a.isDefault && a.lat != null) ||
+          (u.savedAddresses || []).find((a) => a.lat != null);
+        if (addr) {
+          lat = addr.lat;
+          lng = addr.lng;
+        }
+      }
+    }
+    let distanceKm = null;
+    if (lat != null && lng != null) {
+      distanceKm = haversineKm(center.lat, center.lng, lat, lng);
+      if (distanceKm != null) distanceKm = Math.round(distanceKm * 1000) / 1000;
+    }
+    return sanitizeCustomerRow({
+      customerId: r._id,
+      orders: r.orderCount,
+      spend: r.revenue,
+      name: r.name || u?.name || '',
+      phone: r.phone || u?.phone || null,
+      email: u?.email || null,
+      distanceKm,
+      lat,
+      lng,
+    });
+  });
+
   return stripPiiDeep({
     type: 'metric_result',
     metric: 'segment_customers',
     value: count,
     unit: 'customers',
+    preferMetric: 'segment_customers',
     related: {
       min_orders: minOrders,
       max_orders: maxOrders,
-      sample_size: rows.length,
+      sample_size: customers.length,
     },
-    customers: rows.map((r) =>
-      sanitizeCustomerRow({
-        customerId: r._id,
-        orders: r.orderCount,
-        spend: r.revenue,
-        name: r.name,
-        phone: r.phone,
-      })
-    ),
+    relatedLabels: {
+      min_orders: 'Min orders',
+      sample_size: 'Rows returned',
+    },
+    customers,
     filters: {
-      days: fromDate || toDate ? null : days,
+      days,
       fromDate,
       toDate,
       periodLabel,
       min_orders: minOrders,
       max_orders: maxOrders,
       statuses,
+      statusLabel: 'completed (non-cancelled)',
+      allTime: Boolean(allTime && !fromDate && !toDate && days == null),
     },
     source: {
-      dataset: 'orders',
+      dataset: 'orders+users',
       freshness: 'live',
       collection: 'orders',
       match: { status: statuses, min_orders: minOrders, max_orders: maxOrders },
     },
-    definition: `Customers with order count in [${minOrders}, ${maxOrders ?? '∞'}] in period.`,
-    calculationNote: `Grouped live orders by userId; filter orderCount ≥ ${minOrders}${maxOrders != null ? ` ≤ ${maxOrders}` : ''}`,
+    definition: `Live customers with ≥${minOrders} completed orders (${periodLabel || 'window'}). Full name & phone.`,
+    calculationNote: `Grouped live orders by userId; filter orderCount ≥ ${minOrders}; returned ${customers.length} rows.`,
   });
 }
 

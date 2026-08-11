@@ -80,6 +80,43 @@ function looksLikePrivacyRefusal(text = '') {
   );
 }
 
+/** Detect hallucinated markdown tables / pipe dumps the model invents without tools. */
+function looksLikeMarkdownTable(text = '') {
+  const t = String(text || '');
+  if (!t) return false;
+  if (/\|[-:\s|]+\|/.test(t)) return true;
+  const pipes = (t.match(/\|/g) || []).length;
+  return pipes >= 8 && t.includes('|');
+}
+
+function hasStructuredOpsData(answer) {
+  if (!answer) return false;
+  return Boolean(
+    (answer.customers && answer.customers.length) ||
+      (answer.products && answer.products.length) ||
+      (answer.metrics && answer.metrics.length) ||
+      answer.primaryMetric != null ||
+      (answer.clarification?.candidates && answer.clarification.candidates.length)
+  );
+}
+
+/** Never treat model-fabricated markdown table prose as the answer. */
+function cleanLlmProse(text = '') {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  if (looksLikeMarkdownTable(t) || looksLikePrivacyRefusal(t)) return '';
+  // First sentence / line only, strip ** and links noise
+  const line = t
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith('|') && !/^[-*_]{3,}$/.test(l));
+  if (!line) return '';
+  return line
+    .replace(/\*\*/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .slice(0, 280);
+}
+
 /**
  * @param {object} opts
  * @param {string} opts.message
@@ -333,21 +370,38 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
       userMessage: message,
     });
 
-    // Pure chat path — only if NOT analytics and NOT a privacy refusal hallucination
-    if (!hasMetricResult(collectedToolResults) && lastText && !isUsefulAnswer(answer)) {
-      if (
-        !isAnalyticsIntent(message) &&
-        !looksLikePrivacyRefusal(lastText) &&
-        !/\b(export|list|phone|registered|signup)\b/i.test(message)
-      ) {
+    // Analytics MUST use tools. Ignore markdown/table hallucinations as "chat".
+    const needsLiveData =
+      isAnalyticsIntent(message) ||
+      /\b(export|list|phone|registered|signup|platform users?|more than|at least)\b/i.test(
+        message
+      ) ||
+      looksLikePrivacyRefusal(lastText) ||
+      looksLikeMarkdownTable(lastText);
+
+    if (
+      needsLiveData &&
+      !hasStructuredOpsData(answer) &&
+      !hasMetricResult(collectedToolResults)
+    ) {
+      emit('status', { stage: 'recovery_tools', runId });
+      answer = await runDeterministicFallback(message, emit);
+    } else if (
+      !hasMetricResult(collectedToolResults) &&
+      lastText &&
+      !needsLiveData &&
+      !hasStructuredOpsData(answer)
+    ) {
+      const cleaned = cleanLlmProse(lastText);
+      if (cleaned) {
         answer = {
           kind: 'chat',
-          headline: lastText.slice(0, 400),
-          narrative: lastText,
-          explanation: lastText,
+          headline: cleaned,
+          narrative: cleaned,
+          explanation: cleaned,
           metrics: [],
           definitions: [],
-          calculationSteps: ['LLM direct response (no analytics tools)'],
+          calculationSteps: ['Chat response'],
           sources: [],
           dimensions: {},
           confidence: { overall: 0.85 },
@@ -355,26 +409,21 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
           freshness: 'live',
           period: null,
         };
-      } else if (looksLikePrivacyRefusal(lastText)) {
-        // Drop refusal text — recovery tools will run for analytics intents
-        answer = {
-          headline: 'Running live data query…',
-          metrics: [],
-          confidence: { overall: 0.1 },
-          incomplete: true,
-        };
       }
     }
 
-    // Recovery for analytics / export / registered-users still empty
-    if (
-      !isUsefulAnswer(answer) &&
-      (isAnalyticsIntent(message) ||
-        /\b(export|list|phone|registered|signup|platform users?)\b/i.test(message) ||
-        looksLikePrivacyRefusal(lastText))
-    ) {
-      emit('status', { stage: 'recovery_tools', runId });
-      answer = await runDeterministicFallback(message, emit);
+    // Scrub any leftover table markdown if we got real rows later
+    if (hasStructuredOpsData(answer)) {
+      if (looksLikeMarkdownTable(answer.headline) || (answer.headline || '').length > 220) {
+        if (answer.primaryMetric) {
+          answer.headline = formatHeadline(answer.primaryMetric);
+        } else if (answer.customers?.length) {
+          answer.headline = `${answer.customers.length} customers`;
+        }
+      }
+      if (looksLikeMarkdownTable(answer.narrative || '')) {
+        answer.narrative = answer.explanation;
+      }
     }
 
     const validation = validateMetricResult(answer);
@@ -392,10 +441,26 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
         started,
         errors: ['incomplete_answer'],
       });
+      // Still emit clean error card (not markdown dump)
+      const cleanFail = {
+        ...answer,
+        headline:
+          cleanLlmProse(answer.headline) ||
+          'Could not finish that live query. Try again with a clearer filter.',
+        narrative: answer.explanation || null,
+        explanation: answer.explanation || null,
+      };
+      emit('result', cleanFail);
+      emit('complete', {
+        conversationId: String(conversation._id),
+        runId,
+        durationMs: Date.now() - started,
+        failed: true,
+      });
       return {
         conversationId: conversation._id,
         runId,
-        result: answer,
+        result: cleanFail,
         incomplete: true,
       };
     }
@@ -532,18 +597,22 @@ export function isUsefulAnswer(answer) {
   if (answer.incomplete) return false;
   const blob = `${answer.headline || ''} ${answer.narrative || ''} ${answer.explanation || ''}`;
   if (looksLikePrivacyRefusal(blob)) return false;
+  // Never accept markdown tables as a finished answer without real customer/product rows
+  if (looksLikeMarkdownTable(blob) && !(answer.customers?.length || answer.products?.length)) {
+    return false;
+  }
   if (answer.kind === 'greeting') return true;
   if (answer.customers?.length > 0) return true;
-  if (answer.kind === 'chat' && (answer.headline || answer.narrative)?.length > 8) {
-    // Chat is only useful if it's not a refusal disguised as help
-    if (looksLikePrivacyRefusal(answer.headline || answer.narrative || '')) return false;
-    return true;
-  }
-  if (answer.clarification?.candidates?.length) return true;
-  if (answer.error === 'fallback_no_match') return false;
   if (answer.products?.length > 0) return true;
   if (answer.metrics?.length > 0) return true;
   if (answer.primaryMetric != null) return true;
+  if (answer.clarification?.candidates?.length) return true;
+  if (answer.error === 'fallback_no_match') return false;
+  if (answer.kind === 'chat') {
+    const text = answer.headline || answer.narrative || '';
+    if (looksLikePrivacyRefusal(text) || looksLikeMarkdownTable(text)) return false;
+    return text.length > 8 && text.length < 600 && !text.includes('|---');
+  }
   const h = String(answer.headline || '').toLowerCase();
   if (
     h.includes('analysis complete') ||
@@ -552,11 +621,12 @@ export function isUsefulAnswer(answer) {
     h.includes('no metric query ran') ||
     h.includes('could not map that') ||
     h.includes('try again') ||
-    h.includes('running live data')
+    h.includes('running live data') ||
+    h.includes('no live metric')
   ) {
     return false;
   }
-  if (answer.headline && answer.headline.length > 12) return true;
+  // Do NOT treat bare long headlines as useful — that was the hallucination path
   return false;
 }
 
@@ -857,16 +927,16 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
   let headline;
   if (primary) {
     headline = formatHeadline(primary);
+  } else if (customers.length) {
+    headline = `${customers.length} customers`;
   } else if (products.length) {
     headline = `Top ${products.length} products`;
   } else if (toolErrors.length) {
     headline = `Query failed: ${toolErrors[0]}`;
-  } else if (llmText && !/^analysis complete\.?$/i.test(llmText)) {
-    headline = llmText;
-  } else if (filters.product) {
-    headline = `Could not load metrics for “${filters.product}”.`;
   } else {
-    headline = 'No metrics returned for this question.';
+    // Never paste model markdown tables as the headline (hallucination)
+    const cleaned = cleanLlmProse(llmText);
+    headline = cleaned || 'No live metrics returned for this question.';
   }
 
   for (const m of deduped) {
@@ -875,7 +945,7 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     }
   }
 
-  const hasData = deduped.length > 0 || products.length > 0;
+  const hasData = deduped.length > 0 || products.length > 0 || customers.length > 0;
   const overall = hasData
     ? productConfidence != null
       ? Math.min(0.99, 0.75 + productConfidence * 0.24)
@@ -899,23 +969,37 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     }
   }
 
+  if (primary?.id === 'segment_customers' || primary?.id === 'export_customers') {
+    const n = customers.length || primary.value;
+    const minO = filters.min_orders;
+    headline =
+      minO != null
+        ? `${n} customers with ≥${minO} orders`
+        : `${n} customers`;
+  }
+
   // Dimensions used in the query
   const dimensions = {
     metric: primary?.id || null,
-    status: filters.statusLabel || statusHint?.label || null,
-    statuses: filters.statuses || statusHint?.statuses || null,
+    status: filters.statusLabel || (hasData ? statusHint?.label || null : null),
+    statuses: filters.statuses || (hasData ? statusHint?.statuses || null : null),
     product: filters.product || filters.productName || null,
     productId: filters.productId || null,
     radius_km: filters.radiusKm ?? null,
-    period: filters.periodLabel || (filters.days != null ? `Last ${filters.days} days` : null),
+    period:
+      filters.periodLabel ||
+      (filters.days != null ? `Last ${filters.days} days` : filters.allTime ? 'All time' : null),
     fromDate: filters.fromDate || null,
     toDate: filters.toDate || null,
+    min_orders: filters.min_orders ?? null,
     currency: 'INR',
     store_origin:
-      filters.radiusKm != null
+      filters.radiusKm != null || customers.some((c) => c.distanceKm != null)
         ? { lat: STORE_LOCATION.lat, lng: STORE_LOCATION.lng }
         : null,
-    dataset: 'live MongoDB · orders',
+    dataset: customers.length
+      ? 'live MongoDB · orders + users'
+      : 'live MongoDB · orders',
   };
 
   // Short human explanation of what we measured
@@ -933,10 +1017,17 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
   if (!narrative) narrative = explanation;
   else narrative = `${explanation}\n${narrative}`;
 
-  if (llmText && primary && !llmText.includes(String(primary.value))) {
-    // ignore pure "Analysis complete"
-    if (!/^analysis complete\.?$/i.test(llmText)) {
-      narrative = [narrative, llmText].filter(Boolean).join('\n');
+  // Never append hallucinated markdown tables from the model
+  const llmClean = cleanLlmProse(llmText);
+  if (
+    llmClean &&
+    primary &&
+    !llmClean.includes(String(primary.value)) &&
+    !/^analysis complete\.?$/i.test(llmClean)
+  ) {
+    // Only short clarifying phrases, not tables
+    if (llmClean.length < 180) {
+      narrative = [narrative, llmClean].filter(Boolean).join(' ');
     }
   }
 
@@ -952,14 +1043,14 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
   if (!dedupeSources.length && hasData) {
     dedupeSources.push({
       kind: 'mongo',
-      name: 'orders',
+      name: customers.length ? 'orders + users' : 'orders',
       freshness: 'live',
       detail: 'Live aggregation on app MongoDB',
     });
   }
 
   return {
-    headline: String(headline).slice(0, 2000),
+    headline: String(headline).slice(0, 240),
     explanation,
     metrics: deduped,
     primaryMetric: primary || null,
@@ -986,13 +1077,27 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
     period:
       filters.periodLabel ||
       (filters.days != null ? `Last ${filters.days} days` : null) ||
-      (hasData ? 'Last 90 days (default)' : null),
+      (filters.allTime ? 'All time' : null) ||
+      (hasData && !filters.fromDate ? null : null),
     narrative,
   };
 }
 
 function buildExplanation({ primary, filters, dimensions, productConfidence, customers, userMessage }) {
   const bits = [];
+  if (customers?.length) {
+    const minO = filters.min_orders;
+    bits.push(
+      minO != null
+        ? `Listed ${customers.length} live customers with ≥${minO} completed orders (name & phone included).`
+        : `Listed ${customers.length} live customers with name and phone.`
+    );
+    if (filters.periodLabel) bits.push(`Window: ${filters.periodLabel}.`);
+    else if (filters.allTime) bits.push('Window: all-time orders.');
+    else if (filters.days != null) bits.push(`Window: last ${filters.days} days.`);
+    bits.push('Use Studio or CSV to export the full table.');
+    return bits.join(' ');
+  }
   if (dimensions.product) {
     bits.push(
       `Measured live buyers of “${dimensions.product}”` +
@@ -1005,30 +1110,21 @@ function buildExplanation({ primary, filters, dimensions, productConfidence, cus
     );
   } else if (primary?.id === 'revenue' || primary?.id === 'cancelled_order_value') {
     bits.push(`Summed totalPrice on live orders (${dimensions.status || 'completed'}).`);
+  } else if (primary?.id === 'registered_users') {
+    bits.push('Counted documents in the live users collection (platform registrations).');
   } else if (primary) {
-    bits.push(`Computed ${labelForMetric(primary.id)} from live Mongo orders.`);
+    bits.push(`Computed ${labelForMetric(primary.id)} from live Mongo.`);
   } else {
     bits.push('No live metric rows returned for this question.');
   }
 
   if (dimensions.period) bits.push(`Window: ${dimensions.period}.`);
-  if (filters.statusLabel || dimensions.statuses) {
-    bits.push(
-      `Status filter is required for cancelled vs delivered — they are separate Mongo status values.`
-    );
-  }
   if (productConfidence != null && dimensions.product) {
     bits.push(`Product match confidence ${Math.round(productConfidence * 100)}%.`);
-  }
-  if (customers?.length) {
-    bits.push(
-      `Showing ${customers.length} customer rows with full contact details (exportable from the studio).`
-    );
   }
   if (userMessage && /repeat/i.test(userMessage) && dimensions.product) {
     bits.push('Repeat = 2+ completed product orders for that buyer in the window.');
   }
-  bits.push('Training paste is structure-only; this number is from live data.');
   return bits.join(' ');
 }
 
@@ -1210,12 +1306,24 @@ export async function runDeterministicFallback(message, emit = () => {}) {
       const n = lower.match(/(\d+)\s*(?:times|orders?)/);
       if (n) minOrders = Number(n[1]);
     }
+    // Also treat "more than 5 orders" loosely as ≥5 when phrasing is "with more than N order"
+    // Keep strict more-than as N+1; for "5+ orders" style:
+    const plus = lower.match(/(\d+)\+\s*(?:orders?|times)/);
+    if (plus) minOrders = Number(plus[1]);
+
+    const hasExplicitWindow =
+      /\b(last|yesterday|today|this\s+month|previous|week|din|days?|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(
+        lower
+      );
+
     emit('status', { stage: 'querying', tool: 'query_customers' });
     const r = await executeTool('query_customers', {
-      ...dateArgs,
+      ...(hasExplicitWindow ? dateArgs : {}),
+      all_time: !hasExplicitWindow,
       min_orders: minOrders,
       statuses: status.statuses,
-      limit: 100,
+      limit: 200,
+      periodLabel: hasExplicitWindow ? dateArgs.periodLabel : 'All time',
     });
     return buildStructuredAnswer({
       text: '',

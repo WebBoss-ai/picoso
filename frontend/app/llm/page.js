@@ -197,14 +197,29 @@ function exportResult(result, format = 'json') {
 function buildReportText(result) {
   if (!result) return '';
   const lines = [];
-  lines.push(result.headline || 'Analysis');
+  const head = String(result.headline || 'Analysis')
+    .replace(/\*\*/g, '')
+    .split('\n')[0]
+    .slice(0, 200);
+  if (head.includes('|---') || ((head.match(/\|/g) || []).length >= 4)) {
+    lines.push(
+      result.primaryMetric
+        ? `${result.primaryMetric.label || result.primaryMetric.id}: ${formatMetricValue(result.primaryMetric)}`
+        : 'Analysis'
+    );
+  } else {
+    lines.push(head);
+  }
   lines.push('');
-  if (result.explanation || result.narrative) {
-    lines.push(result.explanation || result.narrative);
+  const expl = String(result.explanation || '').trim();
+  if (expl && !expl.includes('|---') && (expl.match(/\|/g) || []).length < 4) {
+    lines.push(expl);
     lines.push('');
   }
   if (result.primaryMetric) {
-    lines.push(`Primary: ${result.primaryMetric.label || result.primaryMetric.id} = ${formatMetricValue(result.primaryMetric)}`);
+    lines.push(
+      `Primary: ${result.primaryMetric.label || result.primaryMetric.id} = ${formatMetricValue(result.primaryMetric)}`
+    );
   }
   if (result.metrics?.length) {
     lines.push('');
@@ -218,7 +233,7 @@ function buildReportText(result) {
     lines.push(`Customers (${result.customers.length})`);
     result.customers.forEach((c, i) => {
       lines.push(
-        `${i + 1}. ${c.name || '—'} | ${c.phone || '—'} | orders ${c.orders ?? '—'} | spend ${c.spend != null ? c.spend : '—'}`
+        `${i + 1}. ${c.name || '—'} | ${c.phone || '—'} | orders ${c.orders ?? '—'} | spend ${c.spend != null ? c.spend : '—'} | ${c.distanceKm != null ? c.distanceKm + ' km' : '—'}`
       );
     });
   }
@@ -1812,10 +1827,23 @@ function StudioTable({ result, compact }) {
   );
 }
 
+function cleanDisplayText(text) {
+  if (!text) return '';
+  const t = String(text);
+  // Hide raw markdown tables / pipe dumps
+  if (/\|[-:\s|]+\|/.test(t) || ((t.match(/\|/g) || []).length >= 8 && t.includes('|'))) {
+    return '';
+  }
+  return t
+    .replace(/\*\*/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .trim();
+}
+
 function AnswerCard({ turn, onOpenStudio, onExport }) {
   const r = turn.result;
   if (turn.error || !r) {
-    return <p className={turn.error ? 'text-red-600' : ''}>{turn.content}</p>;
+    return <p className={turn.error ? 'text-red-600' : ''}>{cleanDisplayText(turn.content)}</p>;
   }
 
   const primary = r.primaryMetric || r.metrics?.[0];
@@ -1827,6 +1855,9 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
   const hasExport =
     (r.customers?.length || 0) + (r.products?.length || 0) + (r.metrics?.length || 0) > 0;
   const isChat = r.kind === 'chat' || r.kind === 'greeting';
+  const customers = r.customers || [];
+  const narrative = cleanDisplayText(r.explanation || r.narrative || '');
+  const headlineClean = cleanDisplayText(r.headline || '');
 
   return (
     <div className="space-y-4">
@@ -1856,34 +1887,28 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
         </div>
       )}
 
-      {(isChat || !primary) && (
-        <div className="llm-answer-value chat">{r.headline}</div>
+      {(isChat || !primary) && headlineClean && (
+        <div className="llm-answer-value chat">{headlineClean}</div>
       )}
 
-      {(r.explanation || r.narrative) && (
-        <p className="llm-narrative">{r.explanation || r.narrative}</p>
-      )}
-
-      {!isChat && primary && r.headline && r.headline !== formatMetricValue(primary) && (
-        <p className="llm-narrative soft">{r.headline}</p>
-      )}
+      {narrative && <p className="llm-narrative">{narrative}</p>}
 
       <div className="llm-chip-row">
         {r.period && <span className="llm-pill">Period · {r.period}</span>}
-        <span className="llm-pill">Data · {r.freshness || 'live'}</span>
-        {dims.status && <span className="llm-pill strong">Status · {dims.status}</span>}
-        {dims.product && <span className="llm-pill">Product · {dims.product}</span>}
-        {dims.radius_km != null && (
-          <span className="llm-pill">Radius · {dims.radius_km} km</span>
+        {r.freshness && <span className="llm-pill">Data · {r.freshness}</span>}
+        {dims.min_orders != null && (
+          <span className="llm-pill strong">Min orders · {dims.min_orders}</span>
         )}
-        {r.customers?.length > 0 && (
-          <span className="llm-pill strong">{r.customers.length} customers</span>
+        {dims.status && <span className="llm-pill">Status · {dims.status}</span>}
+        {dims.product && <span className="llm-pill">Product · {dims.product}</span>}
+        {customers.length > 0 && (
+          <span className="llm-pill strong">{customers.length} customers</span>
         )}
       </div>
 
       {r.clarification?.candidates?.length > 0 && (
         <div className="llm-clarify">
-          <p className="font-medium mb-2">{r.headline}</p>
+          <p className="font-medium mb-2">{headlineClean || r.headline}</p>
           <ul className="space-y-1">
             {r.clarification.candidates.map((c) => (
               <li key={c.productId} className="llm-clarify-item">
@@ -1899,12 +1924,14 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
 
       {others.length > 0 && (
         <div className="llm-metrics-grid">
-          {others.map((m) => (
-            <div key={m.id} className="llm-metric">
-              <div className="llm-metric-label">{m.label || m.id}</div>
-              <div className="llm-metric-value">{formatMetricValue(m)}</div>
-            </div>
-          ))}
+          {others
+            .filter((m) => !['min_orders', 'max_orders', 'sample_size'].includes(m.id))
+            .map((m) => (
+              <div key={m.id} className="llm-metric">
+                <div className="llm-metric-label">{m.label || m.id}</div>
+                <div className="llm-metric-value">{formatMetricValue(m)}</div>
+              </div>
+            ))}
         </div>
       )}
 
@@ -1942,11 +1969,11 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
         </div>
       )}
 
-      {r.customers?.length > 0 && (
+      {customers.length > 0 && (
         <div>
           <div className="llm-section-title">
             <Users className="w-4 h-4" /> Customers
-            <span className="llm-section-count">{r.customers.length}</span>
+            <span className="llm-section-count">{customers.length}</span>
           </div>
           <div className="llm-table-wrap inline">
             <table className="llm-table">
@@ -1964,7 +1991,7 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
                 </tr>
               </thead>
               <tbody>
-                {r.customers.slice(0, 12).map((c, i) => (
+                {customers.slice(0, 20).map((c, i) => (
                   <tr key={i}>
                     <td className="strong">{c.name || '—'}</td>
                     <td className="mono">{c.phone || '—'}</td>
@@ -1978,9 +2005,9 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
               </tbody>
             </table>
           </div>
-          {r.customers.length > 12 && (
+          {customers.length > 20 && (
             <button type="button" className="llm-link-btn" onClick={() => onOpenStudio(r)}>
-              Open full list in studio →
+              Open full list in studio ({customers.length}) →
             </button>
           )}
         </div>
