@@ -6,6 +6,7 @@ import {
   executeTopProducts,
   executeInactiveCustomers,
   executeCustomersInRadius,
+  executeOrdersInRadius,
   executeOrderCountForProduct,
 } from '../query/executor.js';
 import { clampDays, clampLimit, clampRadiusKm } from '../query/validator.js';
@@ -114,9 +115,21 @@ async function resolve_product(input = {}) {
 
 async function find_customers_within_radius(input = {}) {
   const radiusKm = clampRadiusKm(input.radius_km ?? input.radiusKm ?? 2, 2);
-  const days = clampDays(input.days ?? 90, 90);
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
+  const days =
+    fromDate || toDate
+      ? null
+      : clampDays(input.days ?? 90, 90);
   const limit = clampLimit(input.limit ?? 100, 100);
-  const raw = await executeCustomersInRadius({ radiusKm, days, limit });
+  const raw = await executeCustomersInRadius({
+    radiusKm,
+    days,
+    fromDate,
+    toDate,
+    limit,
+  });
   return stripPiiDeep({
     type: 'metric_result',
     metric: 'unique_customers',
@@ -129,12 +142,90 @@ async function find_customers_within_radius(input = {}) {
     customers: (raw.customers || []).map(sanitizeCustomerRow),
     filters: {
       radiusKm,
-      days,
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
       center: STORE_LOCATION,
     },
     source: raw.source,
     definition: GLOSSARY.distance_from_store,
+    calculationNote: periodLabel
+      ? `Unique customers with delivery within ${radiusKm} km · ${periodLabel}`
+      : `Unique customers with delivery within ${radiusKm} km`,
   });
+}
+
+async function count_orders_in_radius(input = {}) {
+  const radiusKm = clampRadiusKm(input.radius_km ?? input.radiusKm ?? 2, 2);
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
+  const days =
+    fromDate || toDate
+      ? null
+      : clampDays(input.days ?? 90, 90);
+  const statuses = normalizeStatuses(input.statuses || input.status);
+  const statusLabel =
+    input.statusLabel || input.status_label || 'completed (non-cancelled)';
+  const preferMetric =
+    input.prefer_metric || input.preferMetric || input.preferred_metric || 'orders';
+
+  const raw = await executeOrdersInRadius({
+    radiusKm,
+    days,
+    fromDate,
+    toDate,
+    statuses,
+    periodLabel,
+  });
+
+  const cancelled = isCancelledStatuses(statuses);
+  const primaryMetric = preferMetric === 'revenue' ? 'revenue' : 'orders';
+  const primaryValue = primaryMetric === 'revenue' ? raw.revenue : raw.orders;
+
+  return {
+    type: 'metric_result',
+    metric: primaryMetric,
+    preferMetric: primaryMetric,
+    value: primaryValue,
+    unit: primaryMetric === 'revenue' ? 'INR' : 'orders',
+    related: {
+      [primaryMetric === 'revenue' ? 'orders' : cancelled ? 'cancelled_order_value' : 'revenue']:
+        primaryMetric === 'revenue' ? raw.orders : raw.revenue,
+      unique_customers: raw.uniqueCustomers,
+      aov: raw.aov,
+    },
+    relatedLabels: {
+      revenue: cancelled ? 'Cancelled order value (nominal)' : 'Revenue',
+      unique_customers: 'Unique customers',
+      aov: 'AOV',
+      orders: 'Orders',
+    },
+    filters: {
+      radiusKm,
+      days: fromDate || toDate ? null : days,
+      fromDate,
+      toDate,
+      periodLabel,
+      statuses: statuses || raw.filters?.statuses,
+      statusLabel,
+      center: STORE_LOCATION,
+    },
+    source: raw.source,
+    definition:
+      primaryMetric === 'revenue'
+        ? `Sum of totalPrice for orders delivered within ${radiusKm} km of store (${statusLabel}).`
+        : `Count of orders with deliveryAddress within ${radiusKm} km of store (${statusLabel}).`,
+    calculationNote: [
+      periodLabel ? `Period: ${periodLabel}` : days != null ? `Period: last ${days} days` : null,
+      `Radius ${radiusKm} km · haversine on deliveryAddress.lat/lng`,
+      `Status: ${statusLabel}`,
+      `BBox candidates ${raw.candidatesInBbox ?? '—'} → in-radius ${raw.orders}`,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  };
 }
 
 async function count_unique_product_buyers(input = {}) {
@@ -1397,13 +1488,38 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'find_customers_within_radius',
     description:
-      'Count unique customers who ordered within a km radius of the store (uses delivery coordinates).',
+      'Count unique customers who ordered within a km radius of the store (uses delivery coordinates). Pass fromDate/toDate for last month / named months.',
     parameters: {
       type: 'object',
       properties: {
         radius_km: { type: 'number', description: 'Radius in kilometers (default 2)' },
         days: { type: 'number', description: 'Lookback days (default 90)' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
         limit: { type: 'number', description: 'Max customer samples to return' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'count_orders_in_radius',
+    description:
+      'Count completed orders (or sum revenue) whose delivery pin is within radius_km of the store. REQUIRED when the question mentions km/radius + orders/sales. Pass fromDate/toDate/periodLabel for last month / July.',
+    parameters: {
+      type: 'object',
+      properties: {
+        radius_km: { type: 'number', description: 'Radius in kilometers (default 2)' },
+        days: { type: 'number' },
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        statuses: { type: 'array', items: { type: 'string' } },
+        statusLabel: { type: 'string' },
+        prefer_metric: {
+          type: 'string',
+          description: 'orders | revenue',
+        },
       },
       required: [],
     },
@@ -1620,6 +1736,7 @@ const EXECUTORS = {
   resolve_product,
   get_store_info,
   find_customers_within_radius,
+  count_orders_in_radius,
   count_unique_product_buyers,
   get_repeat_customers,
   query_customers,

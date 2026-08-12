@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Order, User } from '../../models/Model.js';
 import { withTimeout } from './validator.js';
-import { haversineKm, storeCoords } from '../geo.js';
+import { haversineKm, storeCoords, latLngBoundingBox, filterByRadius } from '../geo.js';
 import {
   compileProductBuyerPipeline,
   compileRevenuePipeline,
@@ -332,12 +332,16 @@ export async function executeInactiveCustomers({
 export async function executeCustomersInRadius({
   radiusKm = 2,
   days = 90,
+  fromDate = null,
+  toDate = null,
   limit = 100,
 } = {}) {
   const max = Number(radiusKm);
   const result = await executeProductBuyers({
     productId: null,
-    days,
+    days: fromDate || toDate ? undefined : days,
+    fromDate,
+    toDate,
     radiusKm: max,
     listLimit: limit,
   });
@@ -347,8 +351,96 @@ export async function executeCustomersInRadius({
     revenue: result.revenue,
     customers: result.customers,
     totalsWithoutRadius: result.totalsWithoutRadius,
-    filters: { radiusKm: max, days, center: result.filters.center },
+    filters: {
+      radiusKm: max,
+      days: fromDate || toDate ? null : days,
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      center: result.filters.center,
+    },
     source: result.source,
+  };
+}
+
+/**
+ * Count individual orders (not unique customers) within a delivery radius.
+ * Uses each order's deliveryAddress lat/lng with haversine from store.
+ */
+export async function executeOrdersInRadius({
+  radiusKm = 2,
+  days = 90,
+  fromDate = null,
+  toDate = null,
+  statuses = COMPLETED_ORDER_STATUSES,
+  periodLabel = null,
+} = {}) {
+  const c = storeCoords();
+  const max = Number(radiusKm);
+  const bbox = latLngBoundingBox(c.lat, c.lng, max * 1.2);
+
+  const match = {
+    status: { $in: statuses?.length ? statuses : COMPLETED_ORDER_STATUSES },
+    'deliveryAddress.lat': { $gte: bbox.minLat, $lte: bbox.maxLat },
+    'deliveryAddress.lng': { $gte: bbox.minLng, $lte: bbox.maxLng },
+  };
+
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  } else if (days != null) {
+    match.createdAt = {
+      $gte: new Date(Date.now() - Number(days || 90) * 24 * 60 * 60 * 1000),
+    };
+  }
+
+  const rows = await runAggregation([
+    { $match: match },
+    {
+      $project: {
+        totalPrice: 1,
+        userId: 1,
+        status: 1,
+        createdAt: 1,
+        customerName: 1,
+        phone: 1,
+        lat: '$deliveryAddress.lat',
+        lng: '$deliveryAddress.lng',
+      },
+    },
+  ]);
+
+  const inRadius = filterByRadius(
+    rows,
+    (d) => d.lat,
+    (d) => d.lng,
+    max,
+    c
+  );
+
+  const orders = inRadius.length;
+  const revenue =
+    Math.round(inRadius.reduce((s, o) => s + Number(o.totalPrice || 0), 0) * 100) / 100;
+  const uniqueIds = new Set(
+    inRadius.map((o) => (o.userId != null ? String(o.userId) : null)).filter(Boolean)
+  );
+
+  return {
+    orders,
+    revenue,
+    uniqueCustomers: uniqueIds.size,
+    aov: orders > 0 ? Math.round((revenue / orders) * 100) / 100 : 0,
+    candidatesInBbox: rows.length,
+    filters: {
+      radiusKm: max,
+      days: fromDate || toDate ? null : days,
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      periodLabel: periodLabel || null,
+      statuses,
+      center: c,
+    },
+    source: { dataset: 'orders', freshness: 'live' },
   };
 }
 

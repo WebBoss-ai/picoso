@@ -40,6 +40,7 @@ const EDITOR_W_KEY = 'picoso_llm_editor_w';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
 
 const SUGGESTIONS = [
+  'Total orders last month within 2km radius',
   '2 km ke andar Paneer Tikka Rice kitne customers ne order kiya, aur unmein se kitne repeat customers hain?',
   'Last month total sales',
   'Total orders of yesterday',
@@ -76,10 +77,13 @@ function formatMetricValue(m) {
   return String(m.value ?? '—');
 }
 
-function stageLabel(stage, tool) {
+function stageLabel(stage, tool, data = {}) {
+  if (data.label) return data.label;
   const map = {
     received: 'Received…',
     classifying: 'Understanding…',
+    understanding: 'Understanding…',
+    orchestrating: 'Orchestrating live steps…',
     planning: 'Planning…',
     waiting_for_tool: 'Selecting tools…',
     executing: tool ? `Running ${String(tool).replace(/_/g, ' ')}…` : 'Querying…',
@@ -87,11 +91,11 @@ function stageLabel(stage, tool) {
     answering: 'Writing answer…',
     resolving_product: 'Finding product…',
     querying: 'Analytics query…',
-    understanding: 'Understanding…',
     deterministic_mode: 'Tools engine…',
     tools_engine: 'Completing with tools…',
     fallback: 'Recovering…',
     completing_tools: 'Finishing metrics…',
+    live: 'Exploring live data…',
   };
   return map[stage] || stage || 'Working…';
 }
@@ -267,9 +271,12 @@ export default function LlmPage() {
   const [message, setMessage] = useState('');
   const [conversationId, setConversationId] = useState(null);
   const [status, setStatus] = useState(null);
+  const [liveSteps, setLiveSteps] = useState([]);
+  const [liveNormalized, setLiveNormalized] = useState('');
   const [loading, setLoading] = useState(false);
   const [turns, setTurns] = useState([]);
   const [error, setError] = useState('');
+  const liveStepsRef = useRef([]);
   const listRef = useRef(null);
   const abortRef = useRef(null);
 
@@ -699,7 +706,10 @@ export default function LlmPage() {
 
       setLoading(true);
       setError('');
-      setStatus({ stage: 'received' });
+      setStatus({ stage: 'received', label: 'Received…' });
+      setLiveSteps([{ id: 'received', label: 'Received your question…', at: Date.now() }]);
+      liveStepsRef.current = [{ id: 'received', label: 'Received your question…', at: Date.now() }];
+      setLiveNormalized('');
       setMessage('');
       setTurns((t) => [...t, { role: 'user', content: q }]);
       setTab('ask');
@@ -756,8 +766,28 @@ export default function LlmPage() {
               continue;
             }
 
-            if (event === 'status') setStatus(data);
-            else if (event === 'result') {
+            if (event === 'status') {
+              setStatus(data);
+              if (data.normalized) setLiveNormalized(data.normalized);
+              const label = stageLabel(data.stage, data.tool, data);
+              if (label && !data.pending) {
+                setLiveSteps((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last?.label === label) return prev;
+                  const next = [
+                    ...prev,
+                    {
+                      id: `${data.stage || 's'}_${data.step || data.tool || prev.length}`,
+                      label,
+                      tool: data.tool,
+                      at: Date.now(),
+                    },
+                  ].slice(-14);
+                  liveStepsRef.current = next;
+                  return next;
+                });
+              }
+            } else if (event === 'result') {
               finalResult = data;
               setTurns((t) => [
                 ...t,
@@ -766,6 +796,7 @@ export default function LlmPage() {
                   content: data.headline || data.error || 'Done',
                   result: data,
                   error: Boolean(data.error),
+                  liveSteps: liveStepsRef.current,
                 },
               ]);
               // Auto-open studio when tabular data arrives
@@ -1545,10 +1576,29 @@ export default function LlmPage() {
                   )
                 )}
 
-                {loading && status && (
-                  <div className="llm-status animate-llm-pulse">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{stageLabel(status.stage, status.tool)}</span>
+                {loading && (status || liveSteps.length > 0) && (
+                  <div className="llm-live">
+                    {liveNormalized && (
+                      <div className="llm-live-norm">
+                        <span className="llm-live-norm-k">Understood</span>
+                        <span>{liveNormalized}</span>
+                      </div>
+                    )}
+                    <ul className="llm-live-steps">
+                      {liveSteps.map((s, i) => {
+                        const isLast = i === liveSteps.length - 1;
+                        return (
+                          <li key={s.id || i} className={isLast ? 'active' : 'done'}>
+                            {isLast ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
+                            <span>{s.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
 
@@ -1858,27 +1908,35 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
   const customers = r.customers || [];
   const narrative = cleanDisplayText(r.explanation || r.narrative || '');
   const headlineClean = cleanDisplayText(r.headline || '');
+  const understood = r.understanding?.normalized;
+  const stepsDone = turn.liveSteps || r.understanding?.plan || [];
 
   return (
-    <div className="space-y-4">
+    <div className="llm-answer">
       <div className="llm-ai-head">
         <div className="llm-ai-badge">
-          <Sparkles className="w-3.5 h-3.5" /> Intelligence
+          <Sparkles className="w-3 h-3" /> Answer
         </div>
         {hasExport && (
           <div className="llm-ai-tools">
             <button type="button" className="llm-btn-ghost sm" onClick={() => onOpenStudio(r)}>
-              <PanelRightOpen className="w-3.5 h-3.5" /> Studio
+              <PanelRightOpen className="w-3 h-3" /> Studio
             </button>
             <button type="button" className="llm-btn-ghost sm" onClick={() => onExport('csv')}>
-              <Download className="w-3.5 h-3.5" /> CSV
+              <Download className="w-3 h-3" /> CSV
             </button>
             <button type="button" className="llm-btn-ghost sm" onClick={() => onExport('json')}>
-              <Download className="w-3.5 h-3.5" /> JSON
+              <Download className="w-3 h-3" /> JSON
             </button>
           </div>
         )}
       </div>
+
+      {understood && (
+        <p className="llm-understood">
+          <span>Understood</span> {understood}
+        </p>
+      )}
 
       {!isChat && primary && (
         <div className="llm-hero-metric">
@@ -1895,6 +1953,9 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
 
       <div className="llm-chip-row">
         {r.period && <span className="llm-pill">Period · {r.period}</span>}
+        {dims.radius_km != null && (
+          <span className="llm-pill strong">Radius · {dims.radius_km} km</span>
+        )}
         {r.freshness && <span className="llm-pill">Data · {r.freshness}</span>}
         {dims.min_orders != null && (
           <span className="llm-pill strong">Min orders · {dims.min_orders}</span>
@@ -1923,24 +1984,26 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
       )}
 
       {others.length > 0 && (
-        <div className="llm-metrics-grid">
-          {others
-            .filter((m) => !['min_orders', 'max_orders', 'sample_size'].includes(m.id))
-            .map((m) => (
-              <div key={m.id} className="llm-metric">
-                <div className="llm-metric-label">{m.label || m.id}</div>
-                <div className="llm-metric-value">{formatMetricValue(m)}</div>
-              </div>
-            ))}
-        </div>
+        <details className="llm-fold" open={others.length <= 4}>
+          <summary>Related metrics · {others.length}</summary>
+          <div className="llm-metrics-grid">
+            {others
+              .filter((m) => !['min_orders', 'max_orders', 'sample_size'].includes(m.id))
+              .map((m) => (
+                <div key={m.id} className="llm-metric">
+                  <div className="llm-metric-label">{m.label || m.id}</div>
+                  <div className="llm-metric-value">{formatMetricValue(m)}</div>
+                </div>
+              ))}
+          </div>
+        </details>
       )}
 
       {r.products?.length > 0 && (
-        <div>
-          <div className="llm-section-title">
-            <BarChart3 className="w-4 h-4" /> Top products
-            <span className="llm-section-count">{r.products.length}</span>
-          </div>
+        <details className="llm-fold" open>
+          <summary>
+            <BarChart3 className="w-3.5 h-3.5" /> Top products · {r.products.length}
+          </summary>
           <div className="llm-table-wrap inline">
             <table className="llm-table">
               <thead>
@@ -1966,15 +2029,14 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
               View all {r.products.length} in studio →
             </button>
           )}
-        </div>
+        </details>
       )}
 
       {customers.length > 0 && (
-        <div>
-          <div className="llm-section-title">
-            <Users className="w-4 h-4" /> Customers
-            <span className="llm-section-count">{customers.length}</span>
-          </div>
+        <details className="llm-fold" open>
+          <summary>
+            <Users className="w-3.5 h-3.5" /> Customers · {customers.length}
+          </summary>
           <div className="llm-table-wrap inline">
             <table className="llm-table">
               <thead>
@@ -2010,12 +2072,23 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
               Open full list in studio ({customers.length}) →
             </button>
           )}
-        </div>
+        </details>
+      )}
+
+      {stepsDone.length > 0 && (
+        <details className="llm-fold">
+          <summary>Steps taken · {stepsDone.length}</summary>
+          <ol className="llm-step-list">
+            {stepsDone.map((s, i) => (
+              <li key={i}>{typeof s === 'string' ? s : s.label}</li>
+            ))}
+          </ol>
+        </details>
       )}
 
       {r.sources?.length > 0 && (
-        <div className="llm-panel">
-          <div className="llm-section-title">Sources</div>
+        <details className="llm-fold">
+          <summary>Sources · {r.sources.length}</summary>
           <ul className="llm-source-list">
             {r.sources.map((s, i) => (
               <li key={i}>
@@ -2025,12 +2098,12 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
       {dimEntries.length > 0 && (
-        <div className="llm-panel">
-          <div className="llm-section-title">Dimensions</div>
+        <details className="llm-fold">
+          <summary>Dimensions · {dimEntries.length}</summary>
           <div className="llm-dim-grid">
             {dimEntries.map(([k, v]) => (
               <div key={k} className="llm-dim">
@@ -2041,13 +2114,13 @@ function AnswerCard({ turn, onOpenStudio, onExport }) {
               </div>
             ))}
           </div>
-        </div>
+        </details>
       )}
 
       {r.calculationSteps?.length > 0 && (
-        <details className="llm-calc">
+        <details className="llm-fold">
           <summary>
-            <Calculator className="w-4 h-4" /> How this was calculated
+            <Calculator className="w-3.5 h-3.5" /> How this was calculated
           </summary>
           <ol>
             {r.calculationSteps.map((s, i) => (
@@ -2091,6 +2164,7 @@ const LLM_CSS = `
   .llm-root {
     font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
     color: var(--llm-ink);
+    font-size: 13.5px;
     background:
       radial-gradient(900px 420px at 0% 0%, rgba(37, 99, 235, 0.07) 0%, transparent 55%),
       radial-gradient(700px 380px at 100% 0%, rgba(148, 163, 184, 0.18) 0%, transparent 50%),
@@ -2216,122 +2290,174 @@ const LLM_CSS = `
   .llm-chip:hover { border-color: var(--llm-blue-mid); transform: translateY(-1px); }
 
   .llm-bubble-user {
-    margin-left: auto; max-width: min(92%, 560px);
+    margin-left: auto; max-width: min(92%, 520px);
     background: linear-gradient(145deg, var(--llm-blue), var(--llm-blue-deep));
-    color: #fff; padding: 0.85rem 1.05rem; border-radius: 16px 16px 4px 16px;
-    animation: llm-in 0.28s ease both; font-size: 0.95rem; line-height: 1.45;
+    color: #fff; padding: 0.65rem 0.9rem; border-radius: 14px 14px 4px 14px;
+    animation: llm-in 0.28s ease both; font-size: 0.84rem; line-height: 1.45;
     box-shadow: 0 8px 20px rgba(37, 99, 235, 0.2);
   }
   .llm-bubble-ai {
-    max-width: 100%; background: #fff; border: 1px solid var(--llm-line);
-    padding: 1.1rem 1.2rem; border-radius: 16px 16px 16px 4px;
+    max-width: min(100%, 720px); background: #fff; border: 1px solid var(--llm-line);
+    padding: 0.95rem 1.05rem; border-radius: 14px 14px 14px 4px;
     animation: llm-in 0.32s ease both; box-shadow: var(--llm-shadow);
+  }
+
+  .llm-answer { display: flex; flex-direction: column; gap: 0.7rem; }
+  .llm-understood {
+    margin: 0; font-size: 0.72rem; color: var(--llm-muted); line-height: 1.45;
+    padding: 0.4rem 0.55rem; background: var(--llm-bg); border-radius: 8px;
+    border: 1px dashed var(--llm-line);
+  }
+  .llm-understood span {
+    font-weight: 650; color: var(--llm-blue); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-right: 0.4rem; font-size: 0.64rem;
   }
 
   .llm-ai-head {
     display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;
   }
   .llm-ai-badge {
-    display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; font-weight: 600;
-    letter-spacing: 0.04em; text-transform: uppercase; color: var(--llm-blue);
+    display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.62rem; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--llm-blue);
     background: var(--llm-blue-soft); border: 1px solid var(--llm-blue-mid);
-    padding: 0.25rem 0.55rem; border-radius: 999px;
+    padding: 0.2rem 0.48rem; border-radius: 999px;
   }
-  .llm-ai-tools { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .llm-ai-tools { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
   .llm-hero-metric {
-    padding: 0.85rem 1rem; border-radius: 14px;
+    padding: 0.7rem 0.85rem; border-radius: 12px;
     background: linear-gradient(135deg, var(--llm-blue-soft), #fff 60%);
     border: 1px solid var(--llm-blue-mid);
   }
   .llm-answer-label {
-    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--llm-muted); font-weight: 600;
+    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--llm-muted); font-weight: 600;
   }
   .llm-answer-value {
-    font-size: clamp(1.85rem, 4.5vw, 2.45rem); font-weight: 700; letter-spacing: -0.035em;
-    line-height: 1.1; margin-top: 0.15rem; color: var(--llm-ink);
+    font-size: clamp(1.45rem, 3.2vw, 1.95rem); font-weight: 700; letter-spacing: -0.035em;
+    line-height: 1.1; margin-top: 0.1rem; color: var(--llm-ink);
   }
   .llm-answer-value.chat {
-    font-size: clamp(1.15rem, 2.5vw, 1.35rem); font-weight: 650; letter-spacing: -0.02em; line-height: 1.35;
+    font-size: clamp(0.95rem, 2vw, 1.12rem); font-weight: 650; letter-spacing: -0.02em; line-height: 1.4;
   }
   .llm-narrative {
-    margin-top: 0.15rem; color: #475569; font-size: 0.94rem; line-height: 1.6; white-space: pre-wrap;
+    margin: 0; color: #475569; font-size: 0.8rem; line-height: 1.55; white-space: pre-wrap;
   }
-  .llm-narrative.soft { color: var(--llm-muted); font-size: 0.88rem; }
-  .llm-meta { margin-top: 0.35rem; font-size: 0.75rem; color: var(--llm-muted); }
+  .llm-narrative.soft { color: var(--llm-muted); font-size: 0.76rem; }
+  .llm-meta { margin: 0; font-size: 0.68rem; color: var(--llm-muted); }
+
+  .llm-fold {
+    border: 1px solid var(--llm-line); border-radius: 10px; background: #fff;
+    padding: 0.15rem 0.65rem 0.55rem; font-size: 0.78rem;
+  }
+  .llm-fold > summary {
+    display: flex; align-items: center; gap: 0.35rem; cursor: pointer; list-style: none;
+    font-weight: 600; font-size: 0.74rem; color: var(--llm-ink); padding: 0.45rem 0;
+  }
+  .llm-fold > summary::-webkit-details-marker { display: none; }
+  .llm-fold > summary::before {
+    content: "▸"; color: var(--llm-muted); font-size: 0.7rem; width: 0.7rem;
+  }
+  .llm-fold[open] > summary::before { content: "▾"; }
+  .llm-fold ol, .llm-fold ul { margin: 0.25rem 0 0.35rem 1rem; color: var(--llm-muted); }
+  .llm-fold .llm-metrics-grid { margin-top: 0.25rem; }
+  .llm-step-list { font-size: 0.74rem; line-height: 1.5; }
+
+  .llm-live {
+    max-width: min(100%, 720px); background: #fff; border: 1px solid var(--llm-line);
+    border-radius: 12px; padding: 0.75rem 0.9rem; box-shadow: var(--llm-shadow);
+  }
+  .llm-live-norm {
+    display: flex; gap: 0.45rem; align-items: baseline; flex-wrap: wrap;
+    font-size: 0.74rem; color: var(--llm-ink); margin-bottom: 0.55rem;
+    padding-bottom: 0.5rem; border-bottom: 1px dashed var(--llm-line);
+  }
+  .llm-live-norm-k {
+    font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--llm-blue);
+  }
+  .llm-live-steps {
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  .llm-live-steps li {
+    display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; color: var(--llm-muted);
+  }
+  .llm-live-steps li.done { color: #64748b; }
+  .llm-live-steps li.done svg { color: #22c55e; }
+  .llm-live-steps li.active { color: var(--llm-ink); font-weight: 550; }
+  .llm-live-steps li.active svg { color: var(--llm-blue); }
 
   .llm-metrics-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.5rem;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.4rem;
   }
   .llm-metric {
-    border: 1px solid var(--llm-line); border-radius: 12px; padding: 0.65rem 0.75rem; background: var(--llm-bg);
+    border: 1px solid var(--llm-line); border-radius: 10px; padding: 0.5rem 0.6rem; background: var(--llm-bg);
   }
-  .llm-metric-label { font-size: 0.68rem; color: var(--llm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-  .llm-metric-value { font-size: 1.08rem; font-weight: 700; margin-top: 0.15rem; }
+  .llm-metric-label { font-size: 0.62rem; color: var(--llm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .llm-metric-value { font-size: 0.95rem; font-weight: 700; margin-top: 0.1rem; }
 
   .llm-section-title {
-    display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 650;
-    margin-bottom: 0.45rem; color: var(--llm-ink);
+    display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; font-weight: 650;
+    margin-bottom: 0.4rem; color: var(--llm-ink);
   }
   .llm-section-count {
-    margin-left: auto; font-size: 0.7rem; font-weight: 600; color: var(--llm-blue);
-    background: var(--llm-blue-soft); padding: 0.15rem 0.45rem; border-radius: 999px;
+    margin-left: auto; font-size: 0.64rem; font-weight: 600; color: var(--llm-blue);
+    background: var(--llm-blue-soft); padding: 0.12rem 0.4rem; border-radius: 999px;
   }
 
   .llm-table-wrap {
-    border: 1px solid var(--llm-line); border-radius: 12px; overflow: auto; background: #fff;
+    border: 1px solid var(--llm-line); border-radius: 10px; overflow: auto; background: #fff;
     max-height: 100%;
   }
-  .llm-table-wrap.inline { max-height: 280px; }
+  .llm-table-wrap.inline { max-height: 260px; }
   .llm-table-wrap.compact .llm-table td,
-  .llm-table-wrap.compact .llm-table th { padding: 0.28rem 0.45rem; font-size: 0.78rem; }
-  .llm-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  .llm-table-wrap.compact .llm-table th { padding: 0.25rem 0.4rem; font-size: 0.72rem; }
+  .llm-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
   .llm-table.sticky-head thead th { position: sticky; top: 0; background: var(--llm-bg); z-index: 1; }
   .llm-table th {
-    text-align: left; font-weight: 650; color: var(--llm-muted); font-size: 0.68rem;
-    text-transform: uppercase; letter-spacing: 0.04em; padding: 0.55rem 0.65rem;
+    text-align: left; font-weight: 650; color: var(--llm-muted); font-size: 0.62rem;
+    text-transform: uppercase; letter-spacing: 0.04em; padding: 0.45rem 0.55rem;
     border-bottom: 1px solid var(--llm-line); white-space: nowrap;
   }
   .llm-table td {
-    padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--llm-line); vertical-align: middle;
+    padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--llm-line); vertical-align: middle;
   }
   .llm-table tr:last-child td { border-bottom: 0; }
   .llm-table tr:hover td { background: var(--llm-blue-soft); }
   .llm-table td.strong { font-weight: 600; }
   .llm-table td.mono, .llm-table .mono {
-    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.78rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72rem;
   }
   .llm-table td.muted, .llm-table .muted { color: var(--llm-muted); }
 
   .llm-link-btn {
-    margin-top: 0.45rem; border: 0; background: none; color: var(--llm-blue); font-weight: 600;
-    font-size: 0.82rem; cursor: pointer; font-family: inherit; padding: 0;
+    margin-top: 0.4rem; border: 0; background: none; color: var(--llm-blue); font-weight: 600;
+    font-size: 0.74rem; cursor: pointer; font-family: inherit; padding: 0;
   }
   .llm-link-btn:hover { text-decoration: underline; }
 
-  .llm-calc { border-top: 1px solid var(--llm-line); padding-top: 0.65rem; font-size: 0.85rem; }
+  .llm-calc { border-top: 1px solid var(--llm-line); padding-top: 0.55rem; font-size: 0.76rem; }
   .llm-calc summary {
-    display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-weight: 600; list-style: none;
+    display: flex; align-items: center; gap: 0.35rem; cursor: pointer; font-weight: 600; list-style: none;
   }
   .llm-calc summary::-webkit-details-marker { display: none; }
-  .llm-calc ol, .llm-calc ul { margin: 0.5rem 0 0 1.1rem; color: var(--llm-muted); }
+  .llm-calc ol, .llm-calc ul { margin: 0.4rem 0 0 1.05rem; color: var(--llm-muted); }
 
   .llm-clarify {
     border: 1px solid var(--llm-blue-mid); background: var(--llm-blue-soft);
-    border-radius: 12px; padding: 0.75rem;
+    border-radius: 10px; padding: 0.65rem; font-size: 0.8rem;
   }
   .llm-status {
-    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem;
+    display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.75rem;
     border-radius: 999px; border: 1px solid var(--llm-line); background: #fff;
-    font-size: 0.85rem; color: var(--llm-muted); box-shadow: var(--llm-shadow); width: fit-content;
+    font-size: 0.76rem; color: var(--llm-muted); box-shadow: var(--llm-shadow); width: fit-content;
   }
-  .llm-error { display: flex; align-items: center; gap: 0.4rem; color: #b91c1c; font-size: 0.9rem; }
+  .llm-error { display: flex; align-items: center; gap: 0.4rem; color: #b91c1c; font-size: 0.8rem; }
 
   .llm-composer {
-    display: grid; grid-template-columns: 1fr auto; gap: 0.55rem; align-items: end;
-    padding-top: 0.65rem; background: linear-gradient(to top, var(--llm-bg) 65%, transparent);
+    display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: end;
+    padding-top: 0.55rem; background: linear-gradient(to top, var(--llm-bg) 65%, transparent);
   }
-  .llm-send { width: 3rem; height: 3rem; padding: 0; border-radius: 14px; }
+  .llm-send { width: 2.65rem; height: 2.65rem; padding: 0; border-radius: 12px; }
 
   .llm-pre {
     max-height: 28rem; overflow: auto; font-size: 0.78rem; line-height: 1.45;

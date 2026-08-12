@@ -371,6 +371,27 @@ export function matchTemplate(message = '') {
     return { id: 'get_aov', args: { ...dateArgs, ...statusArgs } };
   }
 
+  // Orders / revenue + radius must use geo tool (never bare count_orders)
+  if (
+    radiusKm != null &&
+    /\b(orders?|order count|revenue|sales|sale\b)\b/i.test(message) &&
+    !/customer/i.test(message) &&
+    !productQuery
+  ) {
+    const preferRevenue =
+      /revenue|sales|kitna sale|kitna kamaya|total sales|sale\b/i.test(message) &&
+      !/\bcancel/i.test(message);
+    return {
+      id: 'count_orders_in_radius',
+      args: {
+        ...dateArgs,
+        ...statusArgs,
+        radius_km: radiusKm,
+        prefer_metric: preferRevenue ? 'revenue' : 'orders',
+      },
+    };
+  }
+
   // Status-specific counts first (cancelled / delivered must never collapse to completed)
   if (
     /\b(cancel+e?d|cancelled|delivered|pending|confirmed|preparing|out[- ]for[- ]delivery)\b/i.test(

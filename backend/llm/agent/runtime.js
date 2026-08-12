@@ -21,6 +21,8 @@ import {
   isAnalyticsIntent,
   extractProductQuery,
   extractStatusFilter,
+  isGreeting,
+  conversationalAnswer,
 } from '../templates.js';
 import { STORE_LOCATION } from '../semantic/picosoModel.js';
 import {
@@ -28,6 +30,8 @@ import {
   getActiveModel,
   modelContextForPrompt,
 } from '../discovery/workspaceService.js';
+import { understandQuery } from './understand.js';
+import { orchestrateQuery } from './orchestrate.js';
 
 const MAX_LLM_ROUNDS = Number(process.env.LLM_MAX_ROUNDS || 10);
 const MAX_TOOL_CALLS = Number(process.env.LLM_MAX_TOOL_CALLS || 24);
@@ -50,13 +54,14 @@ SECURITY (only secrets)
 TOOLS — MANDATORY MAPPING
 1. Time phrases (last month, August, yesterday) → get_clock_context first, pass fromDate/toDate/periodLabel.
 2. Last month total sales / revenue → calculate_revenue (completed statuses by default).
-3. Export / list customers who ordered (names, phones, distances) → export_order_customers (high limit).
-4. Customers ordered N+ times → query_customers.
-5. Registered users / platform signups / users count → count_registered_users or list_registered_users (users collection).
-6. Rankings → top_products.
-7. Repeat rate → get_repeat_customers preferred_metric=repeat_rate.
-8. Product + km → resolve_product then count_unique_product_buyers.
-9. Store location / chat → get_store_info.
+3. Orders OR revenue within N km → count_orders_in_radius (never bare count_orders when radius is mentioned).
+4. Export / list customers who ordered (names, phones, distances) → export_order_customers (high limit).
+5. Customers ordered N+ times → query_customers.
+6. Registered users / platform signups / users count → count_registered_users or list_registered_users (users collection).
+7. Rankings → top_products.
+8. Repeat rate → get_repeat_customers preferred_metric=repeat_rate.
+9. Product + km → resolve_product then count_unique_product_buyers.
+10. Store location / chat → get_store_info.
 
 After tools, headline with the real number/list count. Never claim privacy. Never claim data is unavailable without calling the tool first.
 
@@ -169,6 +174,161 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
 
   await setStatus('CLASSIFYING');
 
+  let collectedToolResults = [];
+  let lastText = '';
+  let clarification = null;
+  let productConfidence = null;
+
+  // Understanding layer — normalize messy NL into a structured plan
+  const understanding = understandQuery(message);
+  emit('status', {
+    stage: 'understanding',
+    runId,
+    label: understanding.normalized
+      ? `Understood: ${understanding.normalized}`
+      : 'Understanding your question…',
+    normalized: understanding.normalized,
+    plan: (understanding.plan || []).map((p) => p.label),
+  });
+
+  // Fast chat / store identity without tools
+  if (understanding.kind === 'chat' || isGreeting(message)) {
+    const chat = conversationalAnswer(message);
+    if (chat) {
+      await setStatus('ANSWERING');
+      await appendTurn(conversation, message, chat.headline, chat);
+      finishRun(runDoc, {
+        status: 'COMPLETED',
+        result: chat,
+        tokenUsage,
+        steps,
+        started,
+      });
+      emit('result', chat);
+      emit('complete', {
+        conversationId: String(conversation._id),
+        runId,
+        durationMs: Date.now() - started,
+      });
+      clearToolContext();
+      return { conversationId: conversation._id, runId, result: chat };
+    }
+  }
+
+  // Orchestration path for analytics — period + radius + metric combined correctly
+  if (understanding.analytics) {
+    try {
+      await setStatus('ORCHESTRATING', {
+        label: 'Orchestrating live data steps…',
+        normalized: understanding.normalized,
+      });
+      const orch = await orchestrateQuery(understanding, { emit, runId });
+
+      if (orch.clarification) {
+        await setStatus('NEEDS_CLARIFICATION');
+        const answer = buildClarificationAnswer(
+          {
+            type: 'product',
+            message: orch.clarification.message,
+            candidates: orch.clarification.candidates || [],
+          },
+          orch.productConfidence
+        );
+        answer.understanding = {
+          normalized: understanding.normalized,
+          plan: (understanding.plan || []).map((p) => p.label),
+        };
+        await appendTurn(conversation, message, answer.headline, answer);
+        finishRun(runDoc, {
+          status: 'NEEDS_CLARIFICATION',
+          result: answer,
+          tokenUsage,
+          steps,
+          started,
+        });
+        emit('result', answer);
+        emit('complete', {
+          conversationId: String(conversation._id),
+          runId,
+          durationMs: Date.now() - started,
+        });
+        clearToolContext();
+        return { conversationId: conversation._id, runId, result: answer };
+      }
+
+      collectedToolResults = orch.toolResults || [];
+      productConfidence = orch.productConfidence ?? productConfidence;
+
+      for (const tr of collectedToolResults) {
+        steps.push({
+          tool: tr.tool,
+          status: tr.result?.type === 'error' ? 'error' : 'success',
+        });
+      }
+
+      await setStatus('VALIDATING');
+      let answer = buildStructuredAnswer({
+        text: '',
+        toolResults: collectedToolResults,
+        productConfidence,
+        userMessage: message,
+      });
+      answer.understanding = {
+        normalized: understanding.normalized,
+        plan: (understanding.plan || []).map((p) => p.label),
+        constraints: {
+          metric: understanding.constraints?.metric,
+          period: understanding.constraints?.period?.label,
+          radiusKm: understanding.constraints?.radiusKm,
+          status: understanding.constraints?.status?.label,
+        },
+      };
+
+      if (isUsefulAnswer(answer) && hasStructuredOpsData(answer)) {
+        const validation = validateMetricResult(answer);
+        if (!validation.ok) answer.warnings = validation.issues;
+
+        await setStatus('ANSWERING');
+        await appendTurn(conversation, message, answer.headline, answer);
+        await learnEpisode({
+          workspaceId: workspace._id,
+          conversationId: conversation._id,
+          userMessage: message,
+          answer,
+          toolsUsed: collectedToolResults.map((t) => t.tool).filter(Boolean),
+        });
+        finishRun(runDoc, {
+          status: 'COMPLETED',
+          result: answer,
+          tokenUsage,
+          steps,
+          started,
+        });
+        emit('result', answer);
+        emit('complete', {
+          conversationId: String(conversation._id),
+          runId,
+          durationMs: Date.now() - started,
+        });
+        clearToolContext();
+        return { conversationId: conversation._id, runId, result: answer };
+      }
+
+      // Fall through to LLM / recovery if orchestration returned empty
+      emit('status', {
+        stage: 'live',
+        runId,
+        label: 'Refining with model tools…',
+      });
+    } catch (orchErr) {
+      emit('status', {
+        stage: 'live',
+        runId,
+        label: `Orchestration retry: ${orchErr.message || 'fallback'}`,
+      });
+    }
+  }
+
   const provider = createLlmProvider();
   const tools = getCohereToolDefs();
 
@@ -184,11 +344,6 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
   }
 
   await setStatus('PLANNING');
-
-  let collectedToolResults = [];
-  let lastText = '';
-  let clarification = null;
-  let productConfidence = null;
 
   try {
     for (let round = 0; round < MAX_LLM_ROUNDS; round++) {
@@ -1194,7 +1349,52 @@ function formatHeadline(metric) {
  * Intentionally flexible tool calls, not a fixed FAQ only.
  */
 export async function runDeterministicFallback(message, emit = () => {}) {
-  emit('status', { stage: 'understanding', mode: 'recovery_tools' });
+  emit('status', {
+    stage: 'understanding',
+    mode: 'recovery_tools',
+    label: 'Understanding your question…',
+  });
+
+  // Prefer the same understanding + orchestration path
+  try {
+    const understanding = understandQuery(message);
+    if (understanding.analytics) {
+      emit('status', {
+        stage: 'understanding',
+        label: understanding.normalized
+          ? `Understood: ${understanding.normalized}`
+          : 'Understood',
+        normalized: understanding.normalized,
+        plan: (understanding.plan || []).map((p) => p.label),
+      });
+      const orch = await orchestrateQuery(understanding, { emit });
+      if (orch.clarification) {
+        return buildClarificationAnswer(
+          {
+            type: 'product',
+            message: orch.clarification.message,
+            candidates: orch.clarification.candidates || [],
+          },
+          orch.productConfidence
+        );
+      }
+      const answer = buildStructuredAnswer({
+        text: '',
+        toolResults: orch.toolResults || [],
+        productConfidence: orch.productConfidence,
+        userMessage: message,
+      });
+      answer.understanding = {
+        normalized: understanding.normalized,
+        plan: (understanding.plan || []).map((p) => p.label),
+      };
+      if (isUsefulAnswer(answer) && hasStructuredOpsData(answer)) {
+        return answer;
+      }
+    }
+  } catch {
+    /* continue legacy recovery */
+  }
 
   const lower = String(message || '').toLowerCase();
   const range = extractDateRange(message);
@@ -1351,6 +1551,26 @@ export async function runDeterministicFallback(message, emit = () => {}) {
   const tmpl = matchTemplate(message);
   const radiusKm = extractRadiusKm(message);
 
+  if (tmpl?.id === 'count_orders_in_radius') {
+    emit('status', {
+      stage: 'live',
+      label: `Counting orders within ${tmpl.args?.radius_km ?? radiusKm} km…`,
+      tool: 'count_orders_in_radius',
+    });
+    const r = await executeTool('count_orders_in_radius', {
+      ...dateArgs,
+      ...(tmpl.args || {}),
+      statuses: tmpl.args?.statuses || status.statuses,
+      statusLabel: tmpl.args?.statusLabel || status.label,
+    });
+    return buildStructuredAnswer({
+      text: '',
+      toolResults: [{ tool: 'count_orders_in_radius', result: r.result }],
+      productConfidence: null,
+      userMessage: message,
+    });
+  }
+
   if (tmpl?.id === 'count_orders') {
     const r = await executeTool('count_orders', {
       ...dateArgs,
@@ -1373,6 +1593,7 @@ export async function runDeterministicFallback(message, emit = () => {}) {
     'get_aov',
     'get_repeat_customers',
     'find_customers_within_radius',
+    'count_orders_in_radius',
   ];
   if (tmpl?.id && earlyTools.includes(tmpl.id)) {
     const r = await executeTool(tmpl.id, { ...dateArgs, ...(tmpl.args || {}) });
