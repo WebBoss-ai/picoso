@@ -132,6 +132,15 @@ export function resolvePeriod(message = '') {
 function detectPrimaryMetric(message = '') {
   const m = String(message).toLowerCase();
 
+  // Complex negated / multi-condition segment → always defer to LLM + execute_pipeline
+  // e.g. "users who joined but didn't order", "customers without orders", "signed up but no purchase"
+  if (
+    /\b(did not|didn'?t|haven'?t|has not|never|not yet|without|no order|but joined|but registered|but signed)\b/i.test(m) &&
+    /\b(user|customer|order|register|join|sign|member|purchase)\b/i.test(m)
+  ) {
+    return null;
+  }
+
   // Referral system (must match before registered_users to avoid mis-routing "referral users")
   if (/\b(referral|refer|referred|friend link|invite link|invit|share link|referral code|referral program|joined.*referral|referral.*joined|referral.*user|how many.*referral|via referral)\b/.test(m)) {
     return 'referral_stats';
@@ -184,7 +193,7 @@ function detectPrimaryMetric(message = '') {
   if (/\baov\b|average order/.test(m)) return 'aov';
   if (/\b(revenue|sales|sale\b|kamaya)\b/.test(m) && !/\bcancel/.test(m)) return 'revenue';
   if (/\binactive\b/.test(m)) return 'inactive_customers';
-  if (/\b(rank|top|best.?sell|most sold)\b/.test(m)) return 'top_products';
+  if (/\b(rank|top|best.?sell|most sold|sell.*most|most.*sell|most popular|popular product|best seller|highest sell|most ordered product|which product|what product|products? sell)\b/i.test(m)) return 'top_products';
   if (/\b(more than|at least|over)\s*\d+\s*(orders?|times)/.test(m)) {
     return 'segment_customers';
   }

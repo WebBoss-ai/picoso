@@ -15,7 +15,7 @@ export function isGreeting(message = '') {
 }
 
 function isAnalyticsIntentQuick(m) {
-  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver|total|referral|refer|agent|campaign|platinum|subscription|feedback|rating|review|expand|expansion|notify|waitlist|invite|link|joined|signed|signup|registered|inactive|reward|commission|membership|meal.?kit|weekly plan|bowl.?plan|free coffee|promo|out.?of.?radius|star|satisfaction)\b/i.test(
+  return /\b(kitne|kitna|how many|count|revenue|sales|sale|repeat|customer|order|products?|sell|selling|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver|total|referral|refer|agent|campaign|platinum|subscription|feedback|rating|review|expand|expansion|notify|waitlist|invite|link|joined|signed|signup|registered|inactive|reward|commission|membership|meal.?kit|weekly plan|bowl.?plan|free coffee|promo|out.?of.?radius|star|satisfaction|popular|best.?sell|top.?sell|rank|spend|spent|revenue|earning|earning|users?|did not|haven'?t|never ordered|first order|new user|no order)\b/i.test(
     m
   );
 }
@@ -535,20 +535,6 @@ export function conversationalAnswer(message = '') {
     };
   }
 
-  return {
-    kind: 'chat',
-    headline: 'Intelligence Partner · analytics on live Picoso orders',
-    narrative:
-      'Ask about customers, products, radius (km), revenue, cancelled vs delivered counts, AOV, or top products. Numbers always come from live Mongo aggregates — training samples only teach field meanings.',
-    metrics: [],
-    definitions: [],
-    calculationSteps: [],
-    sources: [],
-    dimensions: {},
-    explanation: 'General chat — no metric query required.',
-    confidence: { overall: 1 },
-    clarification: null,
-    freshness: 'live',
-    period: null,
-  };
+  // Not a recognised conversational pattern — return null so the LLM handles it via tools
+  return null;
 }
