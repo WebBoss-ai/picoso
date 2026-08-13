@@ -19,6 +19,7 @@ import {
   modelContextForPrompt,
 } from '../discovery/workspaceService.js';
 import { LlmConnection, LlmSchemaSnapshot, LlmSemanticModel } from '../models/llmModels.js';
+import { analyzeAllClusters, analyzeConnection } from '../discovery/clusterAnalyzer.js';
 
 const router = express.Router();
 
@@ -299,6 +300,50 @@ router.post('/models/:id/hints', async (req, res) => {
     res.json({ model: sanitizeModel(model) });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Deep per-cluster analysis for the Train + Brain UI.
+ * Returns, for EVERY connected cluster: collections, full field profiles
+ * (type, semantic role, fill rate, cardinality, numeric/date stats, sample
+ * values), one complete representative sample document per collection,
+ * inferred entity roles, cross-collection relationships, and plain-English
+ * learnings. Fully generic — works for any MongoDB cluster.
+ */
+router.get('/clusters', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const analysis = await analyzeAllClusters(ws._id, {
+      sampleSize: Math.min(Number(req.query.sampleSize) || 60, 120),
+      includeEmpty:
+        req.query.includeEmpty === '1' || req.query.includeEmpty === 'true',
+    });
+    res.json(analysis);
+  } catch (err) {
+    console.error('[llm] clusters analysis', err);
+    res.status(500).json({ error: err.message || 'Cluster analysis failed' });
+  }
+});
+
+/** Analyze a single cluster by connectionId (used after connecting a new one) */
+router.get('/clusters/:connectionId', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const conn = await LlmConnection.findOne({
+      _id: req.params.connectionId,
+      workspaceId: ws._id,
+    });
+    if (!conn) return res.status(404).json({ error: 'Connection not found' });
+    const cluster = await analyzeConnection(conn, {
+      sampleSize: Math.min(Number(req.query.sampleSize) || 60, 120),
+      includeEmpty:
+        req.query.includeEmpty === '1' || req.query.includeEmpty === 'true',
+    });
+    res.json({ cluster });
+  } catch (err) {
+    console.error('[llm] single cluster analysis', err);
+    res.status(500).json({ error: err.message || 'Cluster analysis failed' });
   }
 });
 

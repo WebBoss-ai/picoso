@@ -32,6 +32,20 @@ import {
   X,
   Eye,
   Layers,
+  ChevronDown,
+  Key,
+  Hash,
+  Calendar,
+  MapPin,
+  Server,
+  Boxes,
+  Tag,
+  DollarSign,
+  ToggleLeft,
+  Link as LinkIcon,
+  Mail,
+  Type,
+  ListTree,
 } from 'lucide-react';
 
 const PIN_KEY = 'picoso_llm_pin';
@@ -258,6 +272,313 @@ function buildReportText(result) {
   return lines.join('\n');
 }
 
+// ── Semantic role → icon + color, used across cluster analysis views ──────────
+const ROLE_META = {
+  primary_key:      { icon: Key,        color: '#7c3aed', label: 'Primary key' },
+  foreign_key:      { icon: LinkIcon,   color: '#2563eb', label: 'Reference' },
+  identifier:       { icon: Hash,       color: '#6366f1', label: 'Identifier' },
+  money:            { icon: DollarSign, color: '#059669', label: 'Money' },
+  numeric:          { icon: Hash,       color: '#0891b2', label: 'Number' },
+  quantity:         { icon: Hash,       color: '#0891b2', label: 'Quantity' },
+  timestamp:        { icon: Calendar,   color: '#d97706', label: 'Date/Time' },
+  status:           { icon: Tag,        color: '#db2777', label: 'Status' },
+  category:         { icon: Tag,        color: '#db2777', label: 'Category' },
+  label:            { icon: Type,       color: '#0f172a', label: 'Label' },
+  email:            { icon: Mail,       color: '#0284c7', label: 'Email' },
+  contact_phone:    { icon: Phone,      color: '#0284c7', label: 'Phone' },
+  address:          { icon: MapPin,     color: '#ea580c', label: 'Address' },
+  geo:              { icon: MapPin,     color: '#ea580c', label: 'Geo' },
+  url:              { icon: LinkIcon,   color: '#0284c7', label: 'URL/Media' },
+  boolean_flag:     { icon: ToggleLeft, color: '#65a30d', label: 'Flag' },
+  collection_array: { icon: ListTree,   color: '#9333ea', label: 'List' },
+  embedded_object:  { icon: Boxes,      color: '#9333ea', label: 'Object' },
+  text:             { icon: Type,       color: '#64748b', label: 'Text' },
+  unknown:          { icon: Type,       color: '#94a3b8', label: 'Unknown' },
+};
+
+const ENTITY_ROLE_META = {
+  people:       { color: '#2563eb', label: 'People' },
+  transaction:  { color: '#059669', label: 'Transactions' },
+  catalog:      { color: '#d97706', label: 'Catalog' },
+  ledger:       { color: '#7c3aed', label: 'Ledger' },
+  event:        { color: '#db2777', label: 'Events' },
+  config:       { color: '#64748b', label: 'Config' },
+  other:        { color: '#94a3b8', label: 'General' },
+};
+
+function RoleBadge({ role }) {
+  const meta = ROLE_META[role] || ROLE_META.unknown;
+  const Icon = meta.icon;
+  return (
+    <span className="llm-role-badge" style={{ color: meta.color, background: `${meta.color}14`, borderColor: `${meta.color}33` }}>
+      <Icon className="w-3 h-3" />
+      {meta.label}
+    </span>
+  );
+}
+
+/** One collection card — field profiles + full sample doc + learnings */
+function CollectionCard({ coll }) {
+  const [open, setOpen] = useState(false);
+  const [showDoc, setShowDoc] = useState(false);
+  const entMeta = ENTITY_ROLE_META[coll.entityRole] || ENTITY_ROLE_META.other;
+
+  return (
+    <div className="llm-coll-card">
+      <button type="button" className="llm-coll-head" onClick={() => setOpen((o) => !o)}>
+        <ChevronDown className={`w-4 h-4 llm-coll-chevron ${open ? 'open' : ''}`} />
+        <Table2 className="w-4 h-4 shrink-0" style={{ color: entMeta.color }} />
+        <span className="llm-coll-name">{coll.name}</span>
+        <span className="llm-coll-role" style={{ color: entMeta.color, background: `${entMeta.color}14` }}>
+          {entMeta.label}
+        </span>
+        <span className="llm-coll-meta">
+          {(coll.estimatedCount || 0).toLocaleString()} docs · {coll.fieldCount} fields
+        </span>
+      </button>
+
+      {open && (
+        <div className="llm-coll-body">
+          {coll.entityReason && (
+            <p className="llm-coll-reason">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: entMeta.color }} />
+              {coll.entityReason}
+            </p>
+          )}
+
+          {/* Learnings */}
+          {coll.learnings?.length > 0 && (
+            <ul className="llm-learn-list">
+              {coll.learnings.map((l, i) => (
+                <li key={i}>
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  <span>{l}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Field table */}
+          <div className="llm-field-table">
+            <div className="llm-field-row llm-field-head">
+              <span>Field</span>
+              <span>Role</span>
+              <span>Type</span>
+              <span>Fill</span>
+              <span>Sample values</span>
+            </div>
+            {coll.fields.map((f) => (
+              <div key={f.path} className="llm-field-row">
+                <span className="llm-field-path" title={f.path}>{f.path}</span>
+                <span><RoleBadge role={f.role} /></span>
+                <span className="llm-field-type">{f.type}</span>
+                <span className="llm-field-fill">
+                  <span className="llm-fill-bar">
+                    <span style={{ width: `${Math.round((f.fillRate || 0) * 100)}%` }} />
+                  </span>
+                  {Math.round((f.fillRate || 0) * 100)}%
+                </span>
+                <span className="llm-field-samples">
+                  {f.numeric
+                    ? `min ${f.numeric.min} · max ${f.numeric.max} · avg ${f.numeric.avg}`
+                    : f.dateRange
+                    ? `${String(f.dateRange.earliest).slice(0, 10)} → ${String(f.dateRange.latest).slice(0, 10)}`
+                    : (f.sampleValues || []).slice(0, 4).join('  ·  ') || '—'}
+                  {f.distinctInSample != null && f.distinctInSample > 0 && (
+                    <em className="llm-distinct"> ({f.distinctInSample} distinct)</em>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Full representative document */}
+          {coll.fullSampleDoc && (
+            <div className="llm-sample-doc">
+              <button type="button" className="llm-sample-toggle" onClick={() => setShowDoc((s) => !s)}>
+                <ChevronDown className={`w-3.5 h-3.5 llm-coll-chevron ${showDoc ? 'open' : ''}`} />
+                Complete sample record
+              </button>
+              {showDoc && (
+                <pre className="llm-pre llm-sample-pre">
+                  {JSON.stringify(coll.fullSampleDoc, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One cluster card — summary + collections + relationships */
+function ClusterCard({ cluster, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const roleTally = cluster.summary?.roleTally || {};
+
+  return (
+    <div className="llm-cluster-card">
+      <button type="button" className="llm-cluster-head" onClick={() => setOpen((o) => !o)}>
+        <ChevronDown className={`w-4 h-4 llm-coll-chevron ${open ? 'open' : ''}`} />
+        <Server className="w-4 h-4 shrink-0" style={{ color: 'var(--llm-blue)' }} />
+        <div className="llm-cluster-title">
+          <span className="llm-cluster-name">{cluster.label}</span>
+          <span className="llm-cluster-sub">
+            {cluster.mode === 'self' ? 'app database' : cluster.host || 'external'}
+            {cluster.dbName ? ` · ${cluster.dbName}` : ''}
+          </span>
+        </div>
+        <span className={`llm-cluster-status ${cluster.status === 'error' ? 'err' : 'ok'}`}>
+          {cluster.status === 'error' ? 'error' : 'connected'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="llm-cluster-body">
+          {cluster.error ? (
+            <p className="llm-error-inline">
+              <AlertCircle className="w-4 h-4" /> {cluster.error}
+            </p>
+          ) : (
+            <>
+              <div className="llm-cluster-stats">
+                <div className="llm-cstat">
+                  <span className="llm-cstat-v">{cluster.summary?.collectionCount || 0}</span>
+                  <span className="llm-cstat-l">Collections</span>
+                </div>
+                <div className="llm-cstat">
+                  <span className="llm-cstat-v">
+                    {(cluster.summary?.totalDocuments || 0).toLocaleString()}
+                  </span>
+                  <span className="llm-cstat-l">Documents</span>
+                </div>
+                <div className="llm-cstat">
+                  <span className="llm-cstat-v">{cluster.summary?.relationshipCount || 0}</span>
+                  <span className="llm-cstat-l">Relationships</span>
+                </div>
+              </div>
+
+              {/* Entity role tally */}
+              {Object.keys(roleTally).length > 0 && (
+                <div className="llm-tag-row" style={{ marginBottom: '0.5rem' }}>
+                  {Object.entries(roleTally).map(([role, n]) => {
+                    const m = ENTITY_ROLE_META[role] || ENTITY_ROLE_META.other;
+                    return (
+                      <span key={role} className="llm-role-badge" style={{ color: m.color, background: `${m.color}14`, borderColor: `${m.color}33` }}>
+                        {m.label} · {n}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Relationships */}
+              {cluster.relationships?.length > 0 && (
+                <div className="llm-rel-box">
+                  <div className="llm-section-title">Inferred relationships</div>
+                  {cluster.relationships.map((r, i) => (
+                    <div key={i} className="llm-rel-row">
+                      <code>{r.from}.{r.fromField}</code>
+                      <ChevronRight className="w-3 h-3 opacity-40" />
+                      <code>{r.to}._id</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Collections */}
+              <div className="llm-coll-list">
+                {(cluster.collections || []).map((c) => (
+                  <CollectionCard key={c.name} coll={c} />
+                ))}
+                {(cluster.collections || []).length === 0 && (
+                  <p className="llm-muted">No collections with data in this cluster.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Full clusters analysis panel — reused in Train + Brain tabs */
+function ClusterAnalysisPanel({ clusters, busy, error, steps, onRefresh }) {
+  return (
+    <section className="llm-card">
+      <h2 className="llm-section-h">
+        <Boxes className="w-4 h-4" /> Connected clusters — deep analysis
+        <button
+          type="button"
+          className="llm-btn-ghost sm"
+          style={{ marginLeft: 'auto' }}
+          onClick={onRefresh}
+          disabled={busy}
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          Re-analyze
+        </button>
+      </h2>
+      <p className="llm-muted">
+        Every connected MongoDB cluster is profiled automatically — collections, all fields with
+        inferred roles, real sample records, and relationships. This is exactly what the AI uses to
+        answer questions on live data.
+      </p>
+
+      {busy && (
+        <div className="llm-live" style={{ marginTop: '0.75rem' }}>
+          <ul className="llm-live-steps">
+            {steps.map((s, i) => {
+              const isLast = i === steps.length - 1;
+              return (
+                <li key={i} className={isLast ? 'active' : 'done'}>
+                  {isLast ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                  <span>{s}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {error && (
+        <div className="llm-error" style={{ marginTop: '0.75rem' }}>
+          <AlertCircle className="w-4 h-4" /> {error}
+        </div>
+      )}
+
+      {clusters && !busy && (
+        <>
+          <div className="llm-cluster-topline">
+            <span>
+              <strong>{clusters.clusterCount}</strong> cluster{clusters.clusterCount !== 1 ? 's' : ''}
+            </span>
+            <span>
+              <strong>{clusters.totals?.collections || 0}</strong> collections
+            </span>
+            <span>
+              <strong>{(clusters.totals?.documents || 0).toLocaleString()}</strong> documents
+            </span>
+          </div>
+          <div className="llm-cluster-list">
+            {clusters.clusters.map((c, i) => (
+              <ClusterCard key={c.connectionId} cluster={c} defaultOpen={i === 0} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {!clusters && !busy && !error && (
+        <p className="llm-muted" style={{ marginTop: '0.75rem' }}>
+          No analysis yet — connect a cluster or press Re-analyze.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function LlmPage() {
   const [pin, setPin] = useState('');
   const [pinInput, setPinInput] = useState('');
@@ -265,7 +586,7 @@ export default function LlmPage() {
   const [authing, setAuthing] = useState(false);
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState('ask');
-  const [brainView, setBrainView] = useState('text');
+  const [brainView, setBrainView] = useState('clusters');
   const [brainPack, setBrainPack] = useState(null);
 
   const [message, setMessage] = useState('');
@@ -313,6 +634,12 @@ export default function LlmPage() {
   const [trainNote, setTrainNote] = useState('');
   const [catalogFilter, setCatalogFilter] = useState('');
 
+  // Deep cluster analysis (transparent per-cluster learning)
+  const [clusters, setClusters] = useState(null);
+  const [clustersBusy, setClustersBusy] = useState(false);
+  const [clustersError, setClustersError] = useState('');
+  const [analyzeSteps, setAnalyzeSteps] = useState([]);
+
   useEffect(() => {
     const saved = getPin();
     if (saved) {
@@ -335,6 +662,14 @@ export default function LlmPage() {
       loadBrain(pin);
     }
   }, [ready, pin]);
+
+  // Lazily analyze clusters the first time the operator opens Train or Brain
+  useEffect(() => {
+    if (ready && pin && (tab === 'train' || tab === 'brain') && !clusters && !clustersBusy) {
+      loadClusters(pin);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pin, tab]);
 
   useEffect(() => {
     if (!studioResult) {
@@ -403,6 +738,40 @@ export default function LlmPage() {
     }
   }
 
+  // Deep-analyze every connected cluster with staged live progress
+  async function loadClusters(p = pin) {
+    setClustersBusy(true);
+    setClustersError('');
+    const stages = [
+      'Connecting to clusters…',
+      'Enumerating collections…',
+      'Sampling documents…',
+      'Profiling fields & inferring roles…',
+      'Extracting sample records…',
+      'Composing learnings…',
+    ];
+    setAnalyzeSteps(stages.slice(0, 1));
+    let stageIdx = 0;
+    const ticker = setInterval(() => {
+      stageIdx = Math.min(stageIdx + 1, stages.length - 1);
+      setAnalyzeSteps(stages.slice(0, stageIdx + 1));
+    }, 650);
+    try {
+      const res = await fetch(`${API_BASE}/llm/clusters`, {
+        headers: apiHeaders(p, false),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Cluster analysis failed');
+      setClusters(data);
+    } catch (e) {
+      setClustersError(e.message);
+    } finally {
+      clearInterval(ticker);
+      setAnalyzeSteps([]);
+      setClustersBusy(false);
+    }
+  }
+
   async function verifyPin(value, silent = false) {
     setAuthing(true);
     setPinError('');
@@ -450,6 +819,7 @@ export default function LlmPage() {
         body: JSON.stringify({ mode: 'self' }),
       });
       await loadWorkspace();
+      await loadClusters();
     } catch (e) {
       setTrainError(e.message);
     } finally {
@@ -475,6 +845,7 @@ export default function LlmPage() {
       if (!res.ok) throw new Error(data.error || 'Connect failed');
       setExternalUri('');
       await loadWorkspace();
+      await loadClusters();
     } catch (e) {
       setTrainError(e.message);
     } finally {
@@ -588,6 +959,7 @@ export default function LlmPage() {
       );
       await loadWorkspace();
       await loadBrain();
+      await loadClusters();
     } catch (e) {
       setTrainError(e.message);
     } finally {
@@ -1015,6 +1387,14 @@ export default function LlmPage() {
 
       {tab === 'train' ? (
         <div className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 space-y-5 overflow-y-auto">
+          <ClusterAnalysisPanel
+            clusters={clusters}
+            busy={clustersBusy}
+            error={clustersError}
+            steps={analyzeSteps}
+            onRefresh={() => loadClusters()}
+          />
+
           <section className="llm-card">
             <h2 className="llm-section-h">
               <Layers className="w-4 h-4" /> Continuous learning
@@ -1349,11 +1729,12 @@ export default function LlmPage() {
             </p>
             <div className="llm-tabs mt-3" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>
               {[
+                ['clusters', 'Clusters'],
                 ['history', 'Learning'],
+                ['params', 'Parameters'],
                 ['text', 'Text'],
                 ['json', 'JSON schema'],
                 ['live', 'Live map'],
-                ['params', 'Parameters'],
                 ['records', 'Records'],
               ].map(([id, label]) => (
                 <button
@@ -1366,11 +1747,59 @@ export default function LlmPage() {
                 </button>
               ))}
             </div>
-            <button type="button" className="llm-btn-ghost mt-3 ml-2" onClick={() => loadBrain()}>
+            <button
+              type="button"
+              className="llm-btn-ghost mt-3 ml-2"
+              onClick={() => {
+                loadBrain();
+                loadClusters();
+              }}
+            >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
-            {!brain && !draftModel && (
+            {!brain && !draftModel && brainView !== 'clusters' && (
               <p className="llm-muted mt-4">No brain yet — train from paste or Mongo first.</p>
+            )}
+            {brainView === 'clusters' && (
+              <div className="mt-3">
+                {clustersBusy && (
+                  <div className="llm-live">
+                    <ul className="llm-live-steps">
+                      {analyzeSteps.map((s, i) => {
+                        const isLast = i === analyzeSteps.length - 1;
+                        return (
+                          <li key={i} className={isLast ? 'active' : 'done'}>
+                            {isLast ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                            <span>{s}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+                {clustersError && (
+                  <div className="llm-error">
+                    <AlertCircle className="w-4 h-4" /> {clustersError}
+                  </div>
+                )}
+                {clusters && !clustersBusy && (
+                  <>
+                    <div className="llm-cluster-topline">
+                      <span><strong>{clusters.clusterCount}</strong> clusters</span>
+                      <span><strong>{clusters.totals?.collections || 0}</strong> collections</span>
+                      <span><strong>{(clusters.totals?.documents || 0).toLocaleString()}</strong> documents</span>
+                    </div>
+                    <div className="llm-cluster-list">
+                      {clusters.clusters.map((c, i) => (
+                        <ClusterCard key={c.connectionId} cluster={c} defaultOpen={i === 0} />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {!clusters && !clustersBusy && !clustersError && (
+                  <p className="llm-muted">Open Train or press refresh to analyze connected clusters.</p>
+                )}
+              </div>
             )}
             {brainView === 'history' && (
               <div className="mt-3 space-y-3">
@@ -1504,15 +1933,111 @@ export default function LlmPage() {
               </pre>
             )}
             {brainView === 'params' && (
-              <div className="mt-3 space-y-2">
-                {(brain?.parameters || draftModel?.parameters || []).map((p) => (
-                  <div key={p.name} className="llm-param">
-                    <div className="font-semibold">
-                      {p.name} <em className="opacity-50 font-normal">{p.type}</em>
-                    </div>
-                    <div className="llm-muted text-sm">{p.description}</div>
-                  </div>
-                ))}
+              <div className="mt-3 space-y-4">
+                {(() => {
+                  const m = draftModel || brain || {};
+                  const entities = m.entities || [];
+                  const metrics = m.metrics || [];
+                  const dimensions = m.dimensions || [];
+                  const params = brain?.parameters || draftModel?.parameters || [];
+                  return (
+                    <>
+                      <div className="llm-metrics-grid">
+                        <div className="llm-metric">
+                          <div className="llm-metric-label">Entities</div>
+                          <div className="llm-metric-value">{entities.length}</div>
+                        </div>
+                        <div className="llm-metric">
+                          <div className="llm-metric-label">Metrics</div>
+                          <div className="llm-metric-value">{metrics.length}</div>
+                        </div>
+                        <div className="llm-metric">
+                          <div className="llm-metric-label">Dimensions</div>
+                          <div className="llm-metric-value">{dimensions.length}</div>
+                        </div>
+                        <div className="llm-metric">
+                          <div className="llm-metric-label">Parameters</div>
+                          <div className="llm-metric-value">{params.length}</div>
+                        </div>
+                      </div>
+
+                      {entities.length > 0 && (
+                        <div>
+                          <div className="llm-section-title">Entities the AI recognises</div>
+                          <div className="space-y-2 mt-2">
+                            {entities.map((e) => (
+                              <div key={e.id || e.name} className="llm-param">
+                                <div className="font-semibold">
+                                  {e.name}{' '}
+                                  <em className="opacity-50 font-normal">
+                                    {e.role} · {e.collectionName}
+                                  </em>
+                                </div>
+                                {e.description && <div className="llm-muted text-sm">{e.description}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {metrics.length > 0 && (
+                        <div>
+                          <div className="llm-section-title">Metrics it can compute</div>
+                          <div className="space-y-2 mt-2">
+                            {metrics.map((mt) => (
+                              <div key={mt.id} className="llm-param">
+                                <div className="font-semibold">
+                                  {mt.name}{' '}
+                                  <em className="opacity-50 font-normal">
+                                    {mt.aggregation}
+                                    {mt.field ? `(${mt.field})` : ''} · {mt.entity}
+                                  </em>
+                                </div>
+                                {mt.description && <div className="llm-muted text-sm">{mt.description}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {dimensions.length > 0 && (
+                        <div>
+                          <div className="llm-section-title">Dimensions for grouping / filtering</div>
+                          <div className="llm-tag-row mt-2">
+                            {dimensions.map((d) => (
+                              <span key={d.id} className="llm-tag">
+                                {d.name}
+                                <em>{d.dataType || d.type}</em>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {params.length > 0 && (
+                        <div>
+                          <div className="llm-section-title">Raw parameters</div>
+                          <div className="space-y-2 mt-2">
+                            {params.map((p) => (
+                              <div key={p.name} className="llm-param">
+                                <div className="font-semibold">
+                                  {p.name} <em className="opacity-50 font-normal">{p.type}</em>
+                                </div>
+                                {p.description && <div className="llm-muted text-sm">{p.description}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {entities.length === 0 && metrics.length === 0 && params.length === 0 && (
+                        <p className="llm-muted">
+                          No parameters yet — the Clusters tab shows live field-level detail even before training.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
             {brainView === 'records' && (
@@ -2581,6 +3106,120 @@ const LLM_CSS = `
   }
   .llm-session-list li:last-child { border-bottom: 0; }
   .llm-preview { border-top: 1px solid var(--llm-line); padding-top: 0.75rem; }
+
+  /* ── Cluster analysis ─────────────────────────────────────────────── */
+  .llm-cluster-topline {
+    display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 0.85rem 0 0.35rem;
+    font-size: 0.78rem; color: var(--llm-muted);
+  }
+  .llm-cluster-topline strong { color: var(--llm-ink); font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+  .llm-cluster-list { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 0.65rem; }
+
+  .llm-cluster-card {
+    border: 1px solid var(--llm-line); border-radius: 12px; background: #fff; overflow: hidden;
+  }
+  .llm-cluster-head {
+    display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+    padding: 0.7rem 0.85rem; background: linear-gradient(135deg, var(--llm-blue-soft), #fff 70%);
+    border: 0; cursor: pointer; font-family: inherit;
+  }
+  .llm-cluster-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .llm-cluster-name { font-weight: 700; font-size: 0.9rem; color: var(--llm-ink); }
+  .llm-cluster-sub { font-size: 0.68rem; color: var(--llm-muted); }
+  .llm-cluster-status {
+    font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0.18rem 0.5rem; border-radius: 999px;
+  }
+  .llm-cluster-status.ok { color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; }
+  .llm-cluster-status.err { color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; }
+  .llm-cluster-body { padding: 0.75rem 0.85rem; border-top: 1px solid var(--llm-line); }
+
+  .llm-cluster-stats { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.7rem; }
+  .llm-cstat {
+    flex: 1; min-width: 92px; border: 1px solid var(--llm-line); border-radius: 10px;
+    padding: 0.5rem 0.65rem; background: var(--llm-bg);
+  }
+  .llm-cstat-v { display: block; font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .llm-cstat-l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--llm-muted); }
+
+  .llm-rel-box { margin-bottom: 0.7rem; }
+  .llm-rel-row {
+    display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; padding: 0.15rem 0;
+  }
+  .llm-rel-row code {
+    background: var(--llm-bg); border: 1px solid var(--llm-line); border-radius: 6px;
+    padding: 0.1rem 0.35rem; font-size: 0.68rem;
+  }
+
+  .llm-coll-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .llm-coll-card { border: 1px solid var(--llm-line); border-radius: 10px; overflow: hidden; background: #fff; }
+  .llm-coll-head {
+    display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left;
+    padding: 0.55rem 0.7rem; border: 0; background: var(--llm-bg); cursor: pointer; font-family: inherit;
+  }
+  .llm-coll-chevron { transition: transform 0.18s ease; color: var(--llm-muted); }
+  .llm-coll-chevron.open { transform: rotate(180deg); }
+  .llm-coll-name { font-weight: 650; font-size: 0.82rem; color: var(--llm-ink); }
+  .llm-coll-role {
+    font-size: 0.62rem; font-weight: 600; padding: 0.12rem 0.42rem; border-radius: 999px;
+  }
+  .llm-coll-meta { margin-left: auto; font-size: 0.68rem; color: var(--llm-muted); font-variant-numeric: tabular-nums; }
+  .llm-coll-body { padding: 0.7rem; border-top: 1px solid var(--llm-line); }
+  .llm-coll-reason {
+    display: flex; align-items: flex-start; gap: 0.4rem; font-size: 0.76rem; color: #475569;
+    margin: 0 0 0.6rem; line-height: 1.45;
+  }
+
+  .llm-learn-list { list-style: none; margin: 0 0 0.7rem; padding: 0; display: flex; flex-direction: column; gap: 0.28rem; }
+  .llm-learn-list li {
+    display: flex; align-items: flex-start; gap: 0.4rem; font-size: 0.73rem; color: #334155; line-height: 1.45;
+  }
+  .llm-learn-list li svg { color: #059669; margin-top: 0.15rem; }
+
+  .llm-field-table {
+    border: 1px solid var(--llm-line); border-radius: 8px; overflow: hidden; font-size: 0.72rem;
+  }
+  .llm-field-row {
+    display: grid; grid-template-columns: minmax(90px, 1.4fr) auto 70px 74px minmax(120px, 2fr);
+    gap: 0.5rem; align-items: center; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--llm-line);
+  }
+  .llm-field-row:last-child { border-bottom: 0; }
+  .llm-field-head {
+    background: var(--llm-bg); font-weight: 600; font-size: 0.62rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--llm-muted);
+  }
+  .llm-field-path {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; color: var(--llm-ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem;
+  }
+  .llm-field-type { color: var(--llm-muted); font-size: 0.68rem; }
+  .llm-field-fill { display: flex; align-items: center; gap: 0.35rem; font-size: 0.66rem; color: var(--llm-muted); font-variant-numeric: tabular-nums; }
+  .llm-fill-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--llm-line); overflow: hidden; min-width: 24px; }
+  .llm-fill-bar > span { display: block; height: 100%; background: var(--llm-blue); border-radius: 3px; }
+  .llm-field-samples {
+    color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem;
+  }
+  .llm-distinct { color: var(--llm-muted); font-style: normal; opacity: 0.7; }
+
+  .llm-role-badge {
+    display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.6rem; font-weight: 600;
+    padding: 0.12rem 0.4rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+  }
+
+  .llm-sample-doc { margin-top: 0.6rem; }
+  .llm-sample-toggle {
+    display: inline-flex; align-items: center; gap: 0.35rem; border: 0; background: transparent;
+    color: var(--llm-blue); font-weight: 600; font-size: 0.72rem; cursor: pointer; font-family: inherit; padding: 0;
+  }
+  .llm-sample-pre { max-height: 22rem; margin-top: 0.4rem; }
+  .llm-error-inline { display: flex; align-items: center; gap: 0.4rem; color: #dc2626; font-size: 0.8rem; }
+
+  @media (max-width: 620px) {
+    .llm-field-row { grid-template-columns: 1fr auto; }
+    .llm-field-row > *:nth-child(3), .llm-field-row > *:nth-child(4) { display: none; }
+    .llm-field-samples { grid-column: 1 / -1; white-space: normal; }
+    .llm-field-head { display: none; }
+  }
 
   @keyframes llm-in {
     from { opacity: 0; transform: translateY(8px); }
