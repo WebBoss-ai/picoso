@@ -61,6 +61,71 @@ function mapsRouteUrl(lat, lng) {
   return `https://www.google.com/maps/dir/${STORE_LAT},${STORE_LNG}/${lat},${lng}`;
 }
 
+// Extract best lat/lng from a user object (location.coordinates or first saved address)
+function getUserCoords(u) {
+  if (u.location?.coordinates?.lat && u.location?.coordinates?.lng)
+    return { lat: u.location.coordinates.lat, lng: u.location.coordinates.lng };
+  const addr = u.savedAddresses?.find(a => a.isDefault) || u.savedAddresses?.[0];
+  if (addr?.lat && addr?.lng) return { lat: addr.lat, lng: addr.lng };
+  return null;
+}
+
+const PAGE_SIZE = 50;
+
+// ─── Pagination Bar ───────────────────────────────────────────────────────────
+function PaginationBar({ page, totalPages, total, perPage, onChange }) {
+  const from = Math.min((page - 1) * perPage + 1, total);
+  const to   = Math.min(page * perPage, total);
+
+  const pageNums = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pageNums.push(i);
+  } else {
+    pageNums.push(1);
+    if (page > 3) pageNums.push('…');
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pageNums.push(i);
+    if (page < totalPages - 2) pageNums.push('…');
+    pageNums.push(totalPages);
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-2">
+      <p className="text-xs text-gray-400">{from}–{to} of {total}</p>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 transition-colors"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        {pageNums.map((p, i) =>
+          p === '…' ? (
+            <span key={`ellipsis-${i}`} className="px-1 text-gray-400 text-xs">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onChange(p)}
+              className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors ${
+                p === page ? 'bg-brand-500 text-white' : 'hover:bg-gray-100 text-gray-600'
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 transition-colors"
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const STATUS_OPTIONS = ['pending', 'confirmed', 'preparing', 'out-for-delivery', 'delivered', 'cancelled'];
 const STATUS_COLORS = {
   pending: 'bg-amber-100 text-amber-700',
@@ -849,6 +914,7 @@ function OrdersSection() {
   const [updatingId, setUpdatingId]   = useState(null);
   const [newOrderIds, setNewOrderIds] = useState(new Set());
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const knownIdsRef    = useRef(null); // null = first load
   const filterStatusRef  = useRef(filterStatus);
@@ -868,16 +934,13 @@ function OrdersSection() {
         const incoming = new Set(orders.map(o => o._id));
 
         if (knownIdsRef.current === null) {
-          // First load — seed known IDs silently
           knownIdsRef.current = incoming;
         } else {
-          // Detect genuinely new orders
           const fresh = orders.filter(o => !knownIdsRef.current.has(o._id));
           if (fresh.length > 0) {
             playNotificationSound();
             const freshIds = new Set(fresh.map(o => o._id));
             setNewOrderIds(prev => new Set([...prev, ...freshIds]));
-            // Auto-clear NEW badge after 30 s
             setTimeout(() => {
               setNewOrderIds(prev => {
                 const next = new Set(prev);
@@ -898,11 +961,14 @@ function OrdersSection() {
 
   // Initial load + live polling
   useEffect(() => {
-    knownIdsRef.current = null; // reset on filter change so we don't false-alarm
+    knownIdsRef.current = null;
     fetchOrders(false);
     const timer = setInterval(() => fetchOrders(true), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [filterStatus, filterPayment, fetchOrders]);
+
+  // Reset page when filters/search change
+  useEffect(() => { setCurrentPage(1); }, [search, filterStatus, filterPayment]);
 
   const handleStatusChange = async (id, status) => {
     setUpdatingId(id);
@@ -927,6 +993,8 @@ function OrdersSection() {
   });
 
   const totalRevenue = filtered.reduce((s, o) => s + (o.totalPrice || 0) + (o.deliveryFee || 0), 0);
+  const totalPages   = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated    = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
@@ -934,7 +1002,6 @@ function OrdersSection() {
         <div>
           <div className="flex items-center gap-2.5">
             <h2 className="text-lg font-bold text-gray-900">Orders Management</h2>
-            {/* Live indicator */}
             <span className="flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
               LIVE
@@ -973,23 +1040,34 @@ function OrdersSection() {
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(order => (
-            <OrderCard
-              key={order._id}
-              order={order}
-              onStatusChange={handleStatusChange}
-              updating={updatingId === order._id}
-              isNew={newOrderIds.has(order._id)}
+        <>
+          <div className="space-y-2">
+            {paginated.map(order => (
+              <OrderCard
+                key={order._id}
+                order={order}
+                onStatusChange={handleStatusChange}
+                updating={updatingId === order._id}
+                isNew={newOrderIds.has(order._id)}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <div className="text-center py-12 text-gray-400">
+                <Package size={32} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No orders found</p>
+              </div>
+            )}
+          </div>
+          {totalPages > 1 && (
+            <PaginationBar
+              page={currentPage}
+              totalPages={totalPages}
+              total={filtered.length}
+              perPage={PAGE_SIZE}
+              onChange={setCurrentPage}
             />
-          ))}
-          {filtered.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <Package size={32} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No orders found</p>
-            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -1627,8 +1705,10 @@ function UserRow({ u }) {
     if (!expanded) fetchOrders();
   };
 
-  const cartItems = u.cartSnapshot || [];
-  const isActive  = u.lastActiveAt && (Date.now() - new Date(u.lastActiveAt).getTime()) < 15 * 60 * 1000;
+  const cartItems  = u.cartSnapshot || [];
+  const isActive   = u.lastActiveAt && (Date.now() - new Date(u.lastActiveAt).getTime()) < 15 * 60 * 1000;
+  const userCoords = getUserCoords(u);
+  const distKm     = userCoords ? haversineKm(STORE_LAT, STORE_LNG, userCoords.lat, userCoords.lng) : null;
 
   return (
     <div className="card overflow-hidden">
@@ -1654,6 +1734,18 @@ function UserRow({ u }) {
               {u.role === 'admin' && <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-bold">ADMIN</span>}
               {u.isPlatinum && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><Crown size={8} /> PLT</span>}
               {cartItems.length > 0 && <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full font-bold">{cartItems.length} in cart</span>}
+              {distKm !== null && (
+                <a
+                  href={mapsRouteUrl(userCoords.lat, userCoords.lng)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5 hover:bg-emerald-100 transition-colors"
+                  title="Open route in Google Maps"
+                >
+                  <MapPin size={8} /> {formatDist(distKm)}
+                </a>
+              )}
             </div>
             <p className="text-xs text-gray-500">+91 {u.phone}</p>
           </div>
@@ -1707,6 +1799,19 @@ function UserRow({ u }) {
               )}
               {u.location?.area && (
                 <p><span className="font-semibold text-gray-700">Location: </span>{[u.location.area, u.location.city].filter(Boolean).join(', ')}</p>
+              )}
+              {distKm !== null && (
+                <p className="flex items-center gap-1">
+                  <span className="font-semibold text-gray-700">Distance from store: </span>
+                  <a
+                    href={mapsRouteUrl(userCoords.lat, userCoords.lng)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-600 font-semibold hover:underline flex items-center gap-0.5"
+                  >
+                    <MapPin size={10} /> {formatDist(distKm)} — view route
+                  </a>
+                </p>
               )}
               {u.savedAddresses?.length > 0 && (
                 <p><span className="font-semibold text-gray-700">Saved addresses: </span>{u.savedAddresses.length}</p>
@@ -2654,11 +2759,23 @@ function SubscriptionsSection() {
 }
 
 // ─── Users Section ────────────────────────────────────────────────────────────
+const DISTANCE_OPTIONS = [
+  { value: '',   label: 'All distances' },
+  { value: '1',  label: '0 – 1 km' },
+  { value: '2',  label: '0 – 2 km' },
+  { value: '3',  label: '0 – 3 km' },
+  { value: '5',  label: '0 – 5 km' },
+  { value: '10', label: '0 – 10 km' },
+];
+
 function UsersSection() {
-  const [userList, setUserList] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [search, setSearch]     = useState('');
-  const [filterRole, setFilterRole] = useState('');
+  const [userList, setUserList]         = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState('');
+  const [filterRole, setFilterRole]     = useState('');
+  const [sortBy, setSortBy]             = useState('createdAt'); // 'createdAt' | 'lastActiveAt'
+  const [distanceKm, setDistanceKm]     = useState(''); // '' | '1' | '2' | '3' | '5' | '10'
+  const [currentPage, setCurrentPage]   = useState(1);
 
   useEffect(() => {
     admin.getUsers()
@@ -2667,10 +2784,34 @@ function UsersSection() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = userList.filter(u => {
-    if (filterRole === 'admin'    && u.role !== 'admin')   return false;
-    if (filterRole === 'platinum' && !u.isPlatinum)        return false;
-    if (filterRole === 'active'   && !u.orderCount)        return false;
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setCurrentPage(1); }, [search, filterRole, sortBy, distanceKm]);
+
+  const now = Date.now();
+
+  // Sort
+  const sorted = [...userList].sort((a, b) => {
+    const effectiveSort = filterRole === 'live' ? 'lastActiveAt' : sortBy;
+    if (effectiveSort === 'lastActiveAt') {
+      return (new Date(b.lastActiveAt || 0)) - (new Date(a.lastActiveAt || 0));
+    }
+    return (new Date(b.createdAt || 0)) - (new Date(a.createdAt || 0));
+  });
+
+  // Filter
+  const filtered = sorted.filter(u => {
+    if (filterRole === 'admin'    && u.role !== 'admin')                        return false;
+    if (filterRole === 'platinum' && !u.isPlatinum)                             return false;
+    if (filterRole === 'active'   && !u.orderCount)                             return false;
+    if (filterRole === 'live'     && !(u.lastActiveAt && now - new Date(u.lastActiveAt).getTime() < 15 * 60 * 1000)) return false;
+
+    if (distanceKm) {
+      const coords = getUserCoords(u);
+      if (!coords) return false;
+      const km = haversineKm(STORE_LAT, STORE_LNG, coords.lat, coords.lng);
+      if (km > parseFloat(distanceKm)) return false;
+    }
+
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -2680,9 +2821,13 @@ function UsersSection() {
     );
   });
 
-  const totalSpent   = userList.reduce((s, u) => s + (u.totalSpent || 0), 0);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated  = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const totalSpent    = userList.reduce((s, u) => s + (u.totalSpent || 0), 0);
   const platinumCount = userList.filter(u => u.isPlatinum).length;
-  const activeCount   = userList.filter(u => u.lastActiveAt && (Date.now() - new Date(u.lastActiveAt).getTime()) < 15 * 60 * 1000).length;
+  const activeCount   = userList.filter(u => u.lastActiveAt && now - new Date(u.lastActiveAt).getTime() < 15 * 60 * 1000).length;
+  const withPinCount  = userList.filter(u => !!getUserCoords(u)).length;
 
   return (
     <div className="space-y-4">
@@ -2690,36 +2835,55 @@ function UsersSection() {
         <div>
           <h2 className="text-lg font-bold text-gray-900">Users ({userList.length})</h2>
           <p className="text-sm text-gray-500">
-            {platinumCount} platinum &nbsp;•&nbsp; {activeCount} online now &nbsp;•&nbsp; ₹{totalSpent.toLocaleString()} total spent
+            {platinumCount} platinum &nbsp;•&nbsp; {activeCount} online now &nbsp;•&nbsp; {withPinCount} pinned &nbsp;•&nbsp; ₹{totalSpent.toLocaleString()} spent
           </p>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
           <input className="input-field pl-10" placeholder="Search by name, phone, email..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="input-field sm:w-40" value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+        <select className="input-field sm:w-44" value={filterRole} onChange={e => setFilterRole(e.target.value)}>
           <option value="">All Users</option>
-          <option value="platinum">Platinum only</option>
-          <option value="admin">Admins only</option>
-          <option value="active">With orders</option>
+          <option value="live">🟢 Live (last 15 min)</option>
+          <option value="platinum">👑 Platinum only</option>
+          <option value="admin">🔑 Admins only</option>
+          <option value="active">📦 With orders</option>
+        </select>
+        <select className="input-field sm:w-40" value={distanceKm} onChange={e => setDistanceKm(e.target.value)}>
+          {DISTANCE_OPTIONS.map(o => <option key={o.value} value={o.value}>📍 {o.label}</option>)}
+        </select>
+        <select className="input-field sm:w-40" value={filterRole === 'live' ? 'lastActiveAt' : sortBy} onChange={e => setSortBy(e.target.value)} disabled={filterRole === 'live'}>
+          <option value="createdAt">Newest joined</option>
+          <option value="lastActiveAt">Latest active</option>
         </select>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(u => <UserRow key={u._id} u={u} />)}
-          {filtered.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <Users size={32} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No users found</p>
-            </div>
+        <>
+          <div className="space-y-2">
+            {paginated.map(u => <UserRow key={u._id} u={u} />)}
+            {filtered.length === 0 && (
+              <div className="text-center py-12 text-gray-400">
+                <Users size={32} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No users found</p>
+              </div>
+            )}
+          </div>
+          {totalPages > 1 && (
+            <PaginationBar
+              page={currentPage}
+              totalPages={totalPages}
+              total={filtered.length}
+              perPage={PAGE_SIZE}
+              onChange={setCurrentPage}
+            />
           )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -5228,10 +5392,15 @@ function ReferralsSection() {
   );
 }
 
+const ADMIN_PIN = '0095';
+
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { isLoggedIn, isAdmin, logout } = useAuth();
   const router = useRouter();
+  const [pinVerified, setPinVerified] = useState(false);
+  const [pinInput, setPinInput]       = useState('');
+  const [pinError, setPinError]       = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -5291,6 +5460,13 @@ export default function AdminPage() {
     };
   }, [isLoggedIn, isAdmin]);
 
+  // Restore PIN session from sessionStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && sessionStorage.getItem('admin_pin_ok') === '1') {
+      setPinVerified(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isLoggedIn) { router.replace('/'); return; }
     if (!isAdmin) { router.replace('/'); return; }
@@ -5303,6 +5479,49 @@ export default function AdminPage() {
   };
 
   if (!isLoggedIn || !isAdmin) return null;
+
+  if (!pinVerified) {
+    const submitPin = () => {
+      if (pinInput === ADMIN_PIN) {
+        sessionStorage.setItem('admin_pin_ok', '1');
+        setPinVerified(true);
+      } else {
+        setPinError(true);
+        setPinInput('');
+        setTimeout(() => setPinError(false), 1500);
+      }
+    };
+    return (
+      <div className="min-h-screen bg-surface-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm text-center space-y-5">
+          <div className="w-14 h-14 gradient-brand rounded-2xl flex items-center justify-center mx-auto">
+            <span className="text-white font-bold text-xl">P</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Admin Access</h1>
+            <p className="text-sm text-gray-400 mt-1">Enter your 4-digit PIN to continue</p>
+          </div>
+          <input
+            type="password"
+            maxLength={4}
+            inputMode="numeric"
+            placeholder="••••"
+            autoFocus
+            value={pinInput}
+            onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            onKeyDown={e => e.key === 'Enter' && submitPin()}
+            className={`w-full text-center text-3xl tracking-[0.6em] font-bold border-2 rounded-xl px-4 py-3 focus:outline-none transition-colors ${
+              pinError ? 'border-red-400 bg-red-50 animate-pulse' : 'border-gray-200 focus:border-brand-400'
+            }`}
+          />
+          {pinError && <p className="text-red-500 text-sm font-medium -mt-1">Incorrect PIN. Try again.</p>}
+          <button onClick={submitPin} className="btn-primary w-full py-3 text-sm font-semibold">
+            Unlock Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const renderSection = () => {
     switch (activeSection) {

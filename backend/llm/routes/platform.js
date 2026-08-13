@@ -107,13 +107,29 @@ router.get('/explore/collections/:name', async (req, res) => {
 router.post('/connections', async (req, res) => {
   try {
     const ws = await getOrCreateDefaultWorkspace();
-    const { mode, name, uri } = req.body || {};
+    const { mode, name, uri, autoDiscover = true } = req.body || {};
     if (mode === 'self' || !uri) {
       const conn = await getOrCreateSelfConnection(ws._id);
       return res.json({ connection: sanitizeConnection(conn) });
     }
     const conn = await upsertExternalConnection(ws._id, { name, uri });
-    res.json({ connection: sanitizeConnection(conn) });
+    res.json({ connection: sanitizeConnection(conn), autoDiscoverStarted: false });
+
+    // Auto-discover + train in background after responding so the user isn't blocked
+    if (autoDiscover !== false) {
+      setImmediate(async () => {
+        try {
+          await runTrainingDiscover(ws._id, {
+            connectionId: String(conn._id),
+            mergeLearning: true,
+            modelName: `Auto-discover: ${name || 'external cluster'}`,
+          });
+          console.log(`[llm] Auto-discover complete for connection ${conn._id}`);
+        } catch (err) {
+          console.warn('[llm] Auto-discover failed (non-fatal):', err.message);
+        }
+      });
+    }
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

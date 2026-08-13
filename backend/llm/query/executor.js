@@ -1,5 +1,21 @@
 import mongoose from 'mongoose';
-import { Order, User } from '../../models/Model.js';
+import {
+  Order,
+  User,
+  FriendReferral,
+  FriendReferralRequest,
+  Agent,
+  AgentLead,
+  AgentCommission,
+  Campaign,
+  CampaignLead,
+  CampaignRedemption,
+  PlatinumCard,
+  HealthySubscription,
+  Feedback,
+  NotifyRequest,
+  OutOfRadiusAttempt,
+} from '../../models/Model.js';
 import { withTimeout } from './validator.js';
 import { haversineKm, storeCoords, latLngBoundingBox, filterByRadius } from '../geo.js';
 import {
@@ -472,4 +488,330 @@ export async function executeOrderCountForProduct(
     createdAt,
     $or: or,
   });
+}
+
+// ── Referral stats ────────────────────────────────────────────────────────────
+export async function executeReferralStats({ fromDate = null, toDate = null, listLimit = 50 } = {}) {
+  const createdFilter = {};
+  if (fromDate) createdFilter.$gte = new Date(fromDate);
+  if (toDate) createdFilter.$lte = new Date(toDate);
+  const hasDateFilter = fromDate || toDate;
+
+  // Aggregate across all FriendReferral docs
+  const allReferrals = await FriendReferral.find({}).lean().catch(() => []);
+
+  let totalReferrers = 0;
+  let totalJoined = 0;
+  let totalOrdered = 0;
+  let totalRewards = 0;
+  const referrerRows = [];
+
+  for (const ref of allReferrals) {
+    const friends = (ref.referredFriends || []).filter((f) => {
+      if (!hasDateFilter) return true;
+      const d = f.joinedAt ? new Date(f.joinedAt) : null;
+      if (!d) return false;
+      if (fromDate && d < new Date(fromDate)) return false;
+      if (toDate && d > new Date(toDate)) return false;
+      return true;
+    });
+    if (friends.length === 0 && hasDateFilter) continue;
+    totalReferrers++;
+    totalJoined += hasDateFilter ? friends.length : (ref.totalJoined || friends.length);
+    totalOrdered += hasDateFilter
+      ? friends.filter((f) => f.firstOrderAt).length
+      : (ref.totalOrdered || friends.filter((f) => f.firstOrderAt).length);
+    totalRewards += hasDateFilter
+      ? friends.filter((f) => f.rewardEarned).length
+      : (ref.totalRewardsEarned || friends.filter((f) => f.rewardEarned).length);
+
+    if (referrerRows.length < listLimit) {
+      referrerRows.push({
+        referrerName: ref.referrerName,
+        referrerPhone: ref.referrerPhone,
+        code: ref.code,
+        joined: hasDateFilter ? friends.length : (ref.totalJoined || 0),
+        ordered: hasDateFilter
+          ? friends.filter((f) => f.firstOrderAt).length
+          : (ref.totalOrdered || 0),
+        rewards: ref.totalRewardsEarned || 0,
+        status: ref.status,
+      });
+    }
+  }
+
+  // Also count users with referredByAgent set (agent-referred registrations)
+  const agentReferralFilter = hasDateFilter
+    ? { referredByAgent: { $ne: null }, createdAt: createdFilter }
+    : { referredByAgent: { $ne: null } };
+  const agentReferredCount = await User.countDocuments(agentReferralFilter).catch(() => 0);
+
+  // Pending requests
+  const pendingRequests = await FriendReferralRequest.countDocuments({ status: 'pending' }).catch(() => 0);
+
+  return {
+    totalReferrers,
+    totalJoined,
+    totalOrdered,
+    totalRewards,
+    conversionRate: totalJoined > 0 ? Math.round((totalOrdered / totalJoined) * 100) / 100 : 0,
+    agentReferredUsers: agentReferredCount,
+    pendingRequests,
+    referrers: referrerRows,
+    filters: { fromDate, toDate },
+    source: { dataset: 'friendreferrals + users', freshness: 'live' },
+  };
+}
+
+// ── Agent stats ───────────────────────────────────────────────────────────────
+export async function executeAgentStats({ fromDate = null, toDate = null, listLimit = 30 } = {}) {
+  const agents = await Agent.find({}).lean().catch(() => []);
+  const totalAgents = agents.length;
+  const activeAgents = agents.filter((a) => a.isActive).length;
+  const totalEarnings = agents.reduce((s, a) => s + (a.totalEarnings || 0), 0);
+  const totalOrders = agents.reduce((s, a) => s + (a.totalOrders || 0), 0);
+  const totalLeads = agents.reduce((s, a) => s + (a.totalLeads || 0), 0);
+
+  const top = agents
+    .filter((a) => a.isActive)
+    .sort((a, b) => (b.totalOrders || 0) - (a.totalOrders || 0))
+    .slice(0, listLimit)
+    .map((a) => ({
+      name: a.name,
+      phone: a.phone,
+      code: a.agentCode,
+      orders: a.totalOrders || 0,
+      leads: a.totalLeads || 0,
+      earnings: a.totalEarnings || 0,
+      wallet: a.wallet || 0,
+    }));
+
+  return {
+    totalAgents,
+    activeAgents,
+    totalOrders,
+    totalLeads,
+    totalEarnings: Math.round(totalEarnings * 100) / 100,
+    agents: top,
+    filters: { fromDate, toDate },
+    source: { dataset: 'agents', freshness: 'live' },
+  };
+}
+
+// ── Campaign stats ────────────────────────────────────────────────────────────
+export async function executeCampaignStats({ fromDate = null, toDate = null, listLimit = 20 } = {}) {
+  const campaigns = await Campaign.find({}).lean().catch(() => []);
+  const totalCampaigns = campaigns.length;
+  const activeCampaigns = campaigns.filter((c) => c.active).length;
+  const totalRedeemed = campaigns.reduce((s, c) => s + (c.redeemedCount || 0), 0);
+  const totalBudget = campaigns.reduce((s, c) => s + (c.totalBudget || 0), 0);
+
+  const dateFilter = {};
+  if (fromDate) dateFilter.$gte = new Date(fromDate);
+  if (toDate) dateFilter.$lte = new Date(toDate);
+  const leadQuery = Object.keys(dateFilter).length ? { registeredAt: dateFilter } : {};
+  const totalLeads = await CampaignLead.countDocuments(leadQuery).catch(() => 0);
+  const totalRedemptions = await CampaignRedemption.countDocuments(
+    Object.keys(dateFilter).length ? { redeemedAt: dateFilter } : {}
+  ).catch(() => 0);
+
+  const campaignRows = campaigns
+    .sort((a, b) => (b.redeemedCount || 0) - (a.redeemedCount || 0))
+    .slice(0, listLimit)
+    .map((c) => ({
+      code: c.code,
+      name: c.name,
+      benefit: c.benefit,
+      freeItem: c.freeItemLabel,
+      budget: c.totalBudget,
+      redeemed: c.redeemedCount,
+      active: c.active,
+    }));
+
+  return {
+    totalCampaigns,
+    activeCampaigns,
+    totalLeads,
+    totalRedemptions,
+    totalRedeemed,
+    totalBudget,
+    campaigns: campaignRows,
+    filters: { fromDate, toDate },
+    source: { dataset: 'campaigns + campaignleads + campaignredemptions', freshness: 'live' },
+  };
+}
+
+// ── Platinum card stats ───────────────────────────────────────────────────────
+export async function executePlatinumStats({ fromDate = null, toDate = null } = {}) {
+  const dateFilter = {};
+  if (fromDate) dateFilter.$gte = new Date(fromDate);
+  if (toDate) dateFilter.$lte = new Date(toDate);
+  const hasFilter = Object.keys(dateFilter).length > 0;
+
+  const total = await PlatinumCard.countDocuments({}).catch(() => 0);
+  const active = await PlatinumCard.countDocuments({ active: true }).catch(() => 0);
+  const newInPeriod = hasFilter
+    ? await PlatinumCard.countDocuments({ createdAt: dateFilter }).catch(() => 0)
+    : null;
+  const monthlyRevenue = active * 299;
+
+  const recentCards = await PlatinumCard.find({ active: true })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean()
+    .catch(() => []);
+
+  const userIds = recentCards.map((c) => c.userId);
+  const users = await User.find({ _id: { $in: userIds } })
+    .select('name phone')
+    .lean()
+    .catch(() => []);
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  return {
+    totalCards: total,
+    activeCards: active,
+    newInPeriod,
+    estimatedMonthlyRevenue: monthlyRevenue,
+    recentMembers: recentCards.slice(0, 20).map((c) => ({
+      name: byId.get(String(c.userId))?.name || '—',
+      phone: byId.get(String(c.userId))?.phone || '—',
+      active: c.active,
+      fee: c.monthlyFee || 299,
+      startDate: c.startDate,
+    })),
+    filters: { fromDate, toDate },
+    source: { dataset: 'platinumcards + users', freshness: 'live' },
+  };
+}
+
+// ── Subscription stats ────────────────────────────────────────────────────────
+export async function executeSubscriptionStats({ fromDate = null, toDate = null } = {}) {
+  const all = await HealthySubscription.find({}).lean().catch(() => []);
+
+  const byStatus = {};
+  for (const s of all) {
+    byStatus[s.status] = (byStatus[s.status] || 0) + 1;
+  }
+  const active = byStatus.active || 0;
+  const pending = (byStatus.pending_payment || 0) + (byStatus.pending_approval || 0);
+  const paused = byStatus.paused || 0;
+  const cancelled = byStatus.cancelled || 0;
+  const totalRevenue = all
+    .filter((s) => s.status === 'active')
+    .reduce((sum, s) => sum + (s.weeklyPrice || 0), 0);
+
+  const userIds = all.filter((s) => s.status === 'active').map((s) => s.userId);
+  const users = await User.find({ _id: { $in: userIds } })
+    .select('name phone')
+    .lean()
+    .catch(() => []);
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  return {
+    totalSubscriptions: all.length,
+    activeSubscriptions: active,
+    pendingSubscriptions: pending,
+    pausedSubscriptions: paused,
+    cancelledSubscriptions: cancelled,
+    weeklyRevenueActive: Math.round(totalRevenue * 100) / 100,
+    activeMembers: all
+      .filter((s) => s.status === 'active')
+      .slice(0, 30)
+      .map((s) => ({
+        name: byId.get(String(s.userId))?.name || '—',
+        phone: byId.get(String(s.userId))?.phone || '—',
+        bowlsPerWeek: s.bowlsPerWeek,
+        weeklyPrice: s.weeklyPrice,
+        status: s.status,
+      })),
+    filters: { fromDate, toDate },
+    source: { dataset: 'healthysubscriptions + users', freshness: 'live' },
+  };
+}
+
+// ── Feedback / ratings ────────────────────────────────────────────────────────
+export async function executeFeedbackStats({ fromDate = null, toDate = null } = {}) {
+  const match = {};
+  if (fromDate || toDate) {
+    match.createdAt = {};
+    if (fromDate) match.createdAt.$gte = new Date(fromDate);
+    if (toDate) match.createdAt.$lte = new Date(toDate);
+  }
+
+  const pipeline = [
+    { $match: match },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        avgRating: { $avg: '$rating' },
+        fiveStars: { $sum: { $cond: [{ $eq: ['$rating', 5] }, 1, 0] } },
+        fourStars: { $sum: { $cond: [{ $eq: ['$rating', 4] }, 1, 0] } },
+        oneToThree: { $sum: { $cond: [{ $lte: ['$rating', 3] }, 1, 0] } },
+      },
+    },
+  ];
+
+  const rows = await Feedback.aggregate(pipeline).catch(() => []);
+  const result = rows[0] || { total: 0, avgRating: 0, fiveStars: 0, fourStars: 0, oneToThree: 0 };
+
+  const recent = await Feedback.find(match)
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean()
+    .catch(() => []);
+
+  return {
+    totalFeedback: result.total,
+    averageRating: result.avgRating ? Math.round(result.avgRating * 100) / 100 : null,
+    fiveStars: result.fiveStars,
+    fourStars: result.fourStars,
+    oneToThreeStars: result.oneToThree,
+    recent: recent.map((f) => ({
+      rating: f.rating,
+      message: f.message || '',
+      createdAt: f.createdAt,
+    })),
+    filters: { fromDate, toDate },
+    source: { dataset: 'feedback', freshness: 'live' },
+  };
+}
+
+// ── Out-of-radius / notify-me captures ───────────────────────────────────────
+export async function executeExpansionStats({ fromDate = null, toDate = null } = {}) {
+  const dateFilter = {};
+  if (fromDate) dateFilter.$gte = new Date(fromDate);
+  if (toDate) dateFilter.$lte = new Date(toDate);
+  const hasFilter = Object.keys(dateFilter).length > 0;
+
+  const outOfRadiusCount = await OutOfRadiusAttempt.countDocuments(
+    hasFilter ? { createdAt: dateFilter } : {}
+  ).catch(() => 0);
+
+  const notifyCount = await NotifyRequest.countDocuments(
+    hasFilter ? { createdAt: dateFilter } : {}
+  ).catch(() => 0);
+
+  // Top areas requesting delivery
+  const areaPipeline = [
+    ...(hasFilter ? [{ $match: { createdAt: dateFilter } }] : []),
+    { $group: { _id: '$area', count: { $sum: 1 }, city: { $first: '$city' } } },
+    { $sort: { count: -1 } },
+    { $limit: 15 },
+  ];
+  const topAreas = await OutOfRadiusAttempt.aggregate(areaPipeline).catch(() => []);
+
+  return {
+    outOfRadiusAttempts: outOfRadiusCount,
+    notifyMeRequests: notifyCount,
+    totalInterest: outOfRadiusCount + notifyCount,
+    topRequestedAreas: topAreas.map((a) => ({
+      area: a._id || '—',
+      city: a.city,
+      count: a.count,
+    })),
+    filters: { fromDate, toDate },
+    source: { dataset: 'outofradiusattempts + notifyrequests', freshness: 'live' },
+  };
 }

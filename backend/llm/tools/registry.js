@@ -8,6 +8,13 @@ import {
   executeCustomersInRadius,
   executeOrdersInRadius,
   executeOrderCountForProduct,
+  executeReferralStats,
+  executeAgentStats,
+  executeCampaignStats,
+  executePlatinumStats,
+  executeSubscriptionStats,
+  executeFeedbackStats,
+  executeExpansionStats,
 } from '../query/executor.js';
 import { clampDays, clampLimit, clampRadiusKm } from '../query/validator.js';
 import { stripPiiDeep, sanitizeCustomerRow } from '../pii.js';
@@ -17,6 +24,8 @@ import {
   executeSemanticQuery,
   executeModelMetric,
   sampleCollection,
+  executePipeline,
+  getSchemaForPrompt,
 } from '../query/semanticExecutor.js';
 import {
   getCorpusForModel,
@@ -1147,6 +1156,284 @@ async function get_store_info() {
   };
 }
 
+// ── Referral / Agent / Campaign / Platinum / Subscription / Feedback ─────────
+
+async function get_referral_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || input.period_label || null;
+  const listLimit = clampLimit(input.limit ?? 50, 50);
+  const raw = await executeReferralStats({ fromDate, toDate, listLimit });
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'referral_stats',
+    preferMetric: 'referral_stats',
+    value: raw.totalJoined,
+    unit: 'users',
+    related: {
+      referrers: raw.totalReferrers,
+      ordered: raw.totalOrdered,
+      rewards_earned: raw.totalRewards,
+      agent_referred: raw.agentReferredUsers,
+      pending_requests: raw.pendingRequests,
+    },
+    relatedLabels: {
+      referrers: 'Active referrers',
+      ordered: 'Joined & placed order',
+      rewards_earned: 'Rewards earned',
+      agent_referred: 'Joined via agent link',
+      pending_requests: 'Pending referral requests',
+    },
+    customers: (raw.referrers || []).map((r) => ({
+      name: r.referrerName,
+      phone: r.referrerPhone,
+      orders: r.ordered,
+      spend: r.rewards,
+      distanceKm: null,
+      code: r.code,
+      joined: r.joined,
+      status: r.status,
+    })),
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition:
+      'Friends who joined the platform via a unique referral link (FriendReferral.referredFriends) or agent referral link (User.referredByAgent).',
+    calculationNote: `${raw.totalJoined} users joined · ${raw.totalOrdered} placed first order · ${raw.totalRewards} rewards earned · conversion ${Math.round((raw.conversionRate || 0) * 100)}%`,
+  });
+}
+
+async function get_agent_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || null;
+  const listLimit = clampLimit(input.limit ?? 30, 30);
+  const raw = await executeAgentStats({ fromDate, toDate, listLimit });
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'agent_stats',
+    preferMetric: 'agent_stats',
+    value: raw.totalAgents,
+    unit: 'agents',
+    related: {
+      active_agents: raw.activeAgents,
+      total_orders: raw.totalOrders,
+      total_leads: raw.totalLeads,
+      total_earnings: raw.totalEarnings,
+    },
+    relatedLabels: {
+      active_agents: 'Active agents',
+      total_orders: 'Orders via agents',
+      total_leads: 'Leads generated',
+      total_earnings: 'Total commissions paid (₹)',
+    },
+    customers: (raw.agents || []).map((a) => ({
+      name: a.name,
+      phone: a.phone,
+      orders: a.orders,
+      spend: a.earnings,
+      distanceKm: null,
+      code: a.code,
+      leads: a.leads,
+      wallet: a.wallet,
+    })),
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition: 'Agent network performance: registrations, leads, orders attributed, commissions.',
+    calculationNote: `${raw.activeAgents}/${raw.totalAgents} agents active · ₹${raw.totalEarnings} total commissions`,
+  });
+}
+
+async function get_campaign_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || null;
+  const listLimit = clampLimit(input.limit ?? 20, 20);
+  const raw = await executeCampaignStats({ fromDate, toDate, listLimit });
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'campaign_stats',
+    preferMetric: 'campaign_stats',
+    value: raw.totalLeads,
+    unit: 'leads',
+    related: {
+      campaigns: raw.totalCampaigns,
+      active_campaigns: raw.activeCampaigns,
+      redemptions: raw.totalRedemptions,
+      budget_used: raw.totalRedeemed,
+    },
+    relatedLabels: {
+      campaigns: 'Total campaigns',
+      active_campaigns: 'Active campaigns',
+      redemptions: 'Orders with campaign discount',
+      budget_used: 'Free items redeemed',
+    },
+    customers: (raw.campaigns || []).map((c) => ({
+      name: c.name,
+      phone: '',
+      orders: c.redeemed,
+      spend: 0,
+      distanceKm: null,
+      code: c.code,
+      benefit: c.benefit,
+      freeItem: c.freeItem,
+      budget: c.budget,
+      active: c.active,
+    })),
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition: 'Marketing campaign performance: leads registered, discounts redeemed, free items given.',
+    calculationNote: `${raw.activeCampaigns} active campaigns · ${raw.totalLeads} leads · ${raw.totalRedemptions} redemptions`,
+  });
+}
+
+async function get_platinum_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || null;
+  const raw = await executePlatinumStats({ fromDate, toDate });
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'platinum_stats',
+    preferMetric: 'platinum_stats',
+    value: raw.activeCards,
+    unit: 'members',
+    related: {
+      total_issued: raw.totalCards,
+      new_in_period: raw.newInPeriod,
+      monthly_revenue: raw.estimatedMonthlyRevenue,
+    },
+    relatedLabels: {
+      total_issued: 'Total platinum cards issued',
+      new_in_period: 'New in period',
+      monthly_revenue: 'Est. monthly revenue (₹299/member)',
+    },
+    customers: (raw.recentMembers || []).map((m) => ({
+      name: m.name,
+      phone: m.phone,
+      orders: null,
+      spend: m.fee,
+      distanceKm: null,
+      active: m.active,
+      startDate: m.startDate,
+    })),
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition: 'Platinum card holders: active members, monthly fee (₹299), estimated recurring revenue.',
+    calculationNote: `${raw.activeCards} active · ₹${raw.estimatedMonthlyRevenue}/month estimated`,
+  });
+}
+
+async function get_subscription_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || null;
+  const raw = await executeSubscriptionStats({ fromDate, toDate });
+
+  return stripPiiDeep({
+    type: 'metric_result',
+    metric: 'subscription_stats',
+    preferMetric: 'subscription_stats',
+    value: raw.activeSubscriptions,
+    unit: 'subscriptions',
+    related: {
+      total: raw.totalSubscriptions,
+      pending: raw.pendingSubscriptions,
+      paused: raw.pausedSubscriptions,
+      cancelled: raw.cancelledSubscriptions,
+      weekly_revenue: raw.weeklyRevenueActive,
+    },
+    relatedLabels: {
+      total: 'Total subscriptions',
+      pending: 'Pending approval/payment',
+      paused: 'Paused',
+      cancelled: 'Cancelled',
+      weekly_revenue: 'Weekly revenue (active, ₹)',
+    },
+    customers: (raw.activeMembers || []).map((m) => ({
+      name: m.name,
+      phone: m.phone,
+      orders: m.bowlsPerWeek,
+      spend: m.weeklyPrice,
+      distanceKm: null,
+    })),
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition: 'Healthy subscription plan (meal kit) — bowls per week, weekly price, status breakdown.',
+    calculationNote: `${raw.activeSubscriptions} active · ₹${raw.weeklyRevenueActive}/week`,
+  });
+}
+
+async function get_feedback_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || null;
+  const raw = await executeFeedbackStats({ fromDate, toDate });
+
+  return {
+    type: 'metric_result',
+    metric: 'feedback_stats',
+    preferMetric: 'feedback_stats',
+    value: raw.totalFeedback,
+    unit: 'reviews',
+    related: {
+      avg_rating: raw.averageRating,
+      five_stars: raw.fiveStars,
+      four_stars: raw.fourStars,
+      low_ratings: raw.oneToThreeStars,
+    },
+    relatedLabels: {
+      avg_rating: 'Average rating',
+      five_stars: '5-star reviews',
+      four_stars: '4-star reviews',
+      low_ratings: '1–3 star reviews',
+    },
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition: 'Customer feedback ratings (1–5 stars) submitted via the app.',
+    calculationNote: `${raw.totalFeedback} reviews · avg ${raw.averageRating}/5`,
+    recent: raw.recent,
+  };
+}
+
+async function get_expansion_stats(input = {}) {
+  const fromDate = input.fromDate || input.from_date || null;
+  const toDate = input.toDate || input.to_date || null;
+  const periodLabel = input.periodLabel || null;
+  const raw = await executeExpansionStats({ fromDate, toDate });
+
+  return {
+    type: 'metric_result',
+    metric: 'expansion_stats',
+    preferMetric: 'expansion_stats',
+    value: raw.totalInterest,
+    unit: 'requests',
+    related: {
+      out_of_radius: raw.outOfRadiusAttempts,
+      notify_me: raw.notifyMeRequests,
+    },
+    relatedLabels: {
+      out_of_radius: 'Out-of-radius delivery attempts',
+      notify_me: '"Notify me" waitlist signups',
+    },
+    customers: (raw.topRequestedAreas || []).map((a) => ({
+      name: a.area || '—',
+      phone: '',
+      orders: a.count,
+      spend: null,
+      distanceKm: null,
+      city: a.city,
+    })),
+    filters: { fromDate, toDate, periodLabel },
+    source: raw.source,
+    definition: 'Demand signals from outside current delivery radius — useful for expansion planning.',
+    calculationNote: `${raw.outOfRadiusAttempts} out-of-radius attempts · ${raw.notifyMeRequests} notify-me requests`,
+  };
+}
+
 // ── Schema-driven / trained-model tools ─────────────────────────────────────
 
 async function list_schema(_input = {}) {
@@ -1373,6 +1660,38 @@ async function sample_collection(input = {}) {
   return { type: 'sample', collection, rows };
 }
 
+/**
+ * Universal MongoDB aggregation pipeline runner.
+ * The LLM writes the full pipeline based on discovered schema.
+ */
+async function execute_pipeline(input = {}) {
+  const { workspaceId } = getToolContext();
+  if (!workspaceId) return { type: 'error', error: 'No workspace' };
+
+  const { collection, pipeline } = input;
+  if (!collection) return { type: 'error', error: 'collection is required' };
+  if (!Array.isArray(pipeline) || pipeline.length === 0) {
+    return { type: 'error', error: 'pipeline must be a non-empty array of stage objects' };
+  }
+
+  return executePipeline(workspaceId, {
+    collection,
+    pipeline,
+    limit: Number(input.limit) || 200,
+  });
+}
+
+/**
+ * Returns live schema: collection names, document counts, field paths, sample values.
+ * Call this when the user asks about data you don't know, or to confirm what's available.
+ */
+async function get_live_schema(input = {}) {
+  const { workspaceId } = getToolContext();
+  if (!workspaceId) return { type: 'error', error: 'No workspace' };
+  const schema = await getSchemaForPrompt(workspaceId);
+  return { type: 'live_schema', collections: schema, count: schema.length };
+}
+
 /** Tool definitions for Cohere */
 export const TOOL_DEFINITIONS = [
   {
@@ -1432,9 +1751,38 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'get_live_schema',
+    description:
+      'Returns LIVE schema: all collection names in the connected MongoDB cluster with document counts, field names, and sample values. Call this FIRST when you are unsure what collections/fields exist. The schema auto-updates as data changes — no manual training needed.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'execute_pipeline',
+    description:
+      'Execute ANY MongoDB aggregation pipeline on the user\'s connected cluster. Use this for any question that cannot be answered by simpler tools — complex joins ($lookup), nested array unwind ($unwind), date grouping, conditional counts, percentages, etc. First call get_live_schema to know the exact collection names and fields, then write the pipeline. The pipeline is a JSON array of MongoDB aggregation stages. Do NOT use $out, $merge, or write stages.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: {
+          type: 'string',
+          description: 'The collection to run the pipeline on (must match exactly as discovered)',
+        },
+        pipeline: {
+          type: 'array',
+          description: 'MongoDB aggregation pipeline stages. Example: [{"$match":{"status":"delivered"}},{"$group":{"_id":null,"total":{"$sum":"$totalPrice"}}}]',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max rows to return (default 200, max 500)',
+        },
+      },
+      required: ['collection', 'pipeline'],
+    },
+  },
+  {
     name: 'semantic_query',
     description:
-      'Flexible analytics: count/sum/avg on any trained collection + field. Prefer run_metric when a named metric exists.',
+      'Simple analytics shorthand: count/sum/avg on any collection + field with optional date range and group_by. Use execute_pipeline for anything more complex.',
     parameters: {
       type: 'object',
       properties: {
@@ -1723,6 +2071,107 @@ export const TOOL_DEFINITIONS = [
       required: [],
     },
   },
+  {
+    name: 'get_referral_stats',
+    description:
+      'Users who joined via referral/friend link (FriendReferral) or agent link (User.referredByAgent). Use for "how many users joined through referral", "referral conversions", "who referred the most friends", "referral program performance".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_agent_stats',
+    description:
+      'Agent network analytics: total agents, active agents, leads generated, orders placed via agents, total commissions paid. Use for "agent performance", "how many agents", "top agents", "agent commissions".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_campaign_stats',
+    description:
+      'Marketing campaign performance: leads registered, free-item redemptions, active campaigns. Use for "campaign stats", "how many redeemed free coffee", "which campaigns are active", "campaign leads".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_platinum_stats',
+    description:
+      'Platinum card membership: active members, total issued, estimated monthly recurring revenue (₹299/member). Use for "platinum members", "platinum card holders", "premium subscribers", "membership revenue".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_subscription_stats',
+    description:
+      'Healthy subscription (meal-kit) plan stats: active/pending/paused/cancelled subscriptions, bowls per week, weekly revenue. Use for "subscription plan", "meal kit subscribers", "healthy plan members", "weekly subscriptions".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_feedback_stats',
+    description:
+      'Customer ratings and reviews: average rating, 5-star count, low ratings. Use for "ratings", "reviews", "customer feedback", "how many 5 star", "satisfaction".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_expansion_stats',
+    description:
+      'Demand outside delivery radius: out-of-radius attempts and notify-me waitlist. Use for "expansion", "areas requesting delivery", "out of range customers", "notify me requests", "delivery expansion".',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromDate: { type: 'string' },
+        toDate: { type: 'string' },
+        periodLabel: { type: 'string' },
+      },
+      required: [],
+    },
+  },
 ];
 
 const EXECUTORS = {
@@ -1731,6 +2180,8 @@ const EXECUTORS = {
   query_trained_samples,
   list_metrics,
   run_metric,
+  execute_pipeline,
+  get_live_schema,
   semantic_query,
   sample_collection,
   resolve_product,
@@ -1743,6 +2194,13 @@ const EXECUTORS = {
   export_order_customers,
   count_registered_users,
   list_registered_users,
+  get_referral_stats,
+  get_agent_stats,
+  get_campaign_stats,
+  get_platinum_stats,
+  get_subscription_stats,
+  get_feedback_stats,
+  get_expansion_stats,
   get_clock_context,
   calculate_revenue,
   count_orders,

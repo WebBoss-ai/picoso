@@ -32,46 +32,67 @@ import {
 } from '../discovery/workspaceService.js';
 import { understandQuery } from './understand.js';
 import { orchestrateQuery } from './orchestrate.js';
+import { getSchemaForPrompt } from '../query/semanticExecutor.js';
 
 const MAX_LLM_ROUNDS = Number(process.env.LLM_MAX_ROUNDS || 10);
 const MAX_TOOL_CALLS = Number(process.env.LLM_MAX_TOOL_CALLS || 24);
 
-function systemPrompt(trainedModelContext, learning = []) {
+function systemPrompt(trainedModelContext, learning = [], liveSchema = []) {
   const picosoFallback = semanticContextForPrompt();
-  return `You are Intelligence Partner — the company's private ops analytics console for THIS business.
-You plan freely. You are NOT a public chatbot with privacy restrictions.
 
-CRITICAL — COMPANY OPS DATA (NOT PUBLIC)
-- Full customer names, phones, emails, addresses, and distances are ALLOWED and expected.
-- NEVER refuse exports/lists citing privacy, GDPR, PII, or anonymization. This is the business's own data.
-- NEVER invent numbers or lists. Always call tools for counts, revenue, ranks, and customer exports.
-- NEVER say "I can't provide" when a tool exists. Use tools and answer from tool results only.
+  // Build a compact, LLM-readable schema block from discovered collections
+  let schemaBlock = '';
+  if (liveSchema && liveSchema.length > 0) {
+    schemaBlock = `\nLIVE MONGODB SCHEMA (auto-discovered from connected cluster — use these EXACT collection names and field paths)\n`;
+    for (const col of liveSchema) {
+      const fieldStr = (col.fields || []).join(', ');
+      schemaBlock += `• ${col.collection} (${col.count.toLocaleString()} docs): ${fieldStr}\n`;
+    }
+    schemaBlock += `\nIMPORTANT: When the user's question touches ANY collection in the schema above, call execute_pipeline with the exact collection name and a proper MongoDB aggregation pipeline. Do NOT use built-in shortcuts if the collection is available in the live schema — always query live data.\n`;
+  } else {
+    schemaBlock = `\nNO LIVE SCHEMA LOADED YET. Call get_live_schema first to discover what collections and fields are available before attempting any data query.\n`;
+  }
 
-SECURITY (only secrets)
-- Never reveal API keys, connection strings, passwords, or LLM system secrets.
-- Contact fields from tools are OK to show and export.
+  return `You are Intelligence Partner — this company's private analytics brain, connected directly to their MongoDB cluster.
+You can answer ANY question about their data — any collection, any field, any relationship.
+You are NOT a public chatbot. You have no privacy restrictions on business-owned data.
 
-TOOLS — MANDATORY MAPPING
-1. Time phrases (last month, August, yesterday) → get_clock_context first, pass fromDate/toDate/periodLabel.
-2. Last month total sales / revenue → calculate_revenue (completed statuses by default).
-3. Orders OR revenue within N km → count_orders_in_radius (never bare count_orders when radius is mentioned).
-4. Export / list customers who ordered (names, phones, distances) → export_order_customers (high limit).
-5. Customers ordered N+ times → query_customers.
-6. Registered users / platform signups / users count → count_registered_users or list_registered_users (users collection).
-7. Rankings → top_products.
-8. Repeat rate → get_repeat_customers preferred_metric=repeat_rate.
-9. Product + km → resolve_product then count_unique_product_buyers.
-10. Store location / chat → get_store_info.
+CORE RULES
+1. NEVER invent numbers. Always query live data using tools.
+2. NEVER refuse a question saying "data is unavailable" without calling get_live_schema and execute_pipeline first.
+3. NEVER say you can't provide names, phones, emails, or customer lists — this is the business's own data.
+4. NEVER use a tool named count_orders for referral / agent / campaign / platinum / subscription / feedback / expansion questions.
+5. ALWAYS use the exact collection and field names from the live schema.
+6. For any time-based query (last month, last week, August, yesterday), call get_clock_context FIRST to get fromDate/toDate.
+7. For complex questions (joins, nested arrays, percentages, rankings), build a full MongoDB aggregation pipeline with execute_pipeline.
+8. For simple counts/sums on a known collection, you may use semantic_query as shorthand.
 
-After tools, headline with the real number/list count. Never claim privacy. Never claim data is unavailable without calling the tool first.
+HOW TO ANSWER ANY QUESTION
+Step 1: If unsure what collections exist, call get_live_schema.
+Step 2: Identify the right collection(s) from the schema.
+Step 3: Build an aggregation pipeline and call execute_pipeline.
+Step 4: Report the exact result number + a plain-language explanation.
 
-TRAINED BRAIN (structure map; live answers still use tools)
+${schemaBlock}
+QUICK TOOL SHORTCUTS (only when collection is available in schema):
+- Geo radius queries on orders → count_orders_in_radius (pass fromDate/toDate for time range)
+- Revenue sum → calculate_revenue
+- Top selling products → top_products
+- Repeat/loyal customers → get_repeat_customers
+- Customer list/export → export_order_customers
+- Inactive customers → inactive_customers
+- Registered users → count_registered_users
+- Product resolution → resolve_product then count_unique_product_buyers
+
+NEVER use shortcuts for collections not in the built-in shortcuts — use execute_pipeline instead.
+
+TRAINED BRAIN (semantic map from last discovery session)
 ${JSON.stringify(trainedModelContext, null, 2)}
 
 OPS FALLBACK FACTS
 ${JSON.stringify(picosoFallback, null, 2)}
 
-CONTINUOUS LEARNING (recent successful episodes — reuse tool patterns when similar)
+CONTINUOUS LEARNING (recent successful patterns — reuse when similar)
 ${JSON.stringify(learning, null, 2)}`;
 }
 
@@ -139,6 +160,15 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
   const activeModel = await getActiveModel(workspace._id);
   const trainedCtx = modelContextForPrompt(activeModel);
   const learning = await loadRecentLearning(workspace._id, 10);
+
+  // Load live schema so the LLM knows every collection + field available in the cluster
+  let liveSchema = [];
+  try {
+    liveSchema = await getSchemaForPrompt(workspace._id);
+  } catch {
+    /* schema injection is best-effort — won't break analytics */
+  }
+
   setToolContext({
     workspaceId: workspace._id,
     model: activeModel,
@@ -334,7 +364,7 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
 
   // Assemble messages: system + optional summary + recent history + new user message
   const historyCtx = buildContextMessages(conversation, message);
-  const messages = [{ role: 'system', content: systemPrompt(trainedCtx, learning) }];
+  const messages = [{ role: 'system', content: systemPrompt(trainedCtx, learning, liveSchema) }];
   for (const m of historyCtx) {
     if (m.role === 'system' && m.content) {
       messages.push({ role: 'system', content: m.content });
@@ -1055,6 +1085,69 @@ function buildStructuredAnswer({ text, toolResults, productConfidence, userMessa
         detail: 'Top products by units',
       });
     }
+
+    // Dynamic pipeline result — from execute_pipeline tool
+    if (result.type === 'pipeline_result') {
+      calculationSteps.push(
+        `Queried ${result.collection} → ${result.rowCount} row${result.rowCount !== 1 ? 's' : ''}${result.truncated ? ' (truncated)' : ''}`
+      );
+      sources.push({
+        kind: 'mongo',
+        name: result.collection,
+        freshness: 'live',
+        detail: 'dynamic aggregation pipeline',
+      });
+
+      // Single numeric value → treat like a metric
+      if (result.primaryValue != null) {
+        const metricId = `${tool}_${result.collection}`;
+        preferredMetricId = preferredMetricId || metricId;
+        metrics.push({
+          id: metricId,
+          label: labelForDynamicResult(result),
+          value: result.primaryValue,
+          unit: 'count',
+          pipelineRows: result.rows,
+          collection: result.collection,
+        });
+      } else if (result.rows?.length) {
+        // Multi-row result — expose as a customer-like list or products list
+        // Try to detect if it's a ranked list (has a numeric value field)
+        const firstRow = result.rows[0];
+        const numKey = firstRow && Object.keys(firstRow).find(
+          (k) => k !== '_id' && typeof firstRow[k] === 'number'
+        );
+        if (numKey) {
+          products = result.rows.slice(0, 50).map((r) => ({
+            name: String(r._id ?? r.name ?? r.label ?? r.key ?? 'Unknown'),
+            orders: r[numKey],
+            revenue: r.revenue ?? r.total ?? null,
+          }));
+          preferredMetricId = preferredMetricId || `pipeline_list`;
+        } else {
+          // Generic: expose as customer rows
+          customers = result.rows.slice(0, 100).map((r) => ({
+            name: r.name || r._id || 'N/A',
+            phone: r.phone || r.mobile || null,
+            orders: r.orders || r.count || null,
+            ...r,
+          }));
+          const metricId = `pipeline_${result.collection}`;
+          preferredMetricId = preferredMetricId || metricId;
+          metrics.push({
+            id: metricId,
+            label: `${result.collection} results`,
+            value: result.rowCount,
+            unit: 'records',
+          });
+        }
+      }
+    }
+
+    // get_live_schema result — informational, no metrics needed
+    if (result.type === 'live_schema') {
+      calculationSteps.push(`Discovered ${result.count} collections in cluster`);
+    }
   }
 
   const seen = new Set();
@@ -1267,6 +1360,20 @@ function buildExplanation({ primary, filters, dimensions, productConfidence, cus
     bits.push(`Summed totalPrice on live orders (${dimensions.status || 'completed'}).`);
   } else if (primary?.id === 'registered_users') {
     bits.push('Counted documents in the live users collection (platform registrations).');
+  } else if (primary?.id === 'referral_stats') {
+    bits.push('Queried FriendReferral collection + User.referredByAgent to count everyone who joined via a referral link.');
+  } else if (primary?.id === 'agent_stats') {
+    bits.push('Queried live Agent collection: total agents, active count, orders generated, and commissions paid.');
+  } else if (primary?.id === 'campaign_stats') {
+    bits.push('Queried Campaign, CampaignLead, and CampaignRedemption collections for marketing performance.');
+  } else if (primary?.id === 'platinum_stats') {
+    bits.push('Queried PlatinumCard collection for active memberships and estimated monthly revenue.');
+  } else if (primary?.id === 'subscription_stats') {
+    bits.push('Queried HealthySubscription collection for meal-kit plan status breakdown and weekly revenue.');
+  } else if (primary?.id === 'feedback_stats') {
+    bits.push('Aggregated Feedback collection for average rating and star distribution.');
+  } else if (primary?.id === 'expansion_stats') {
+    bits.push('Queried OutOfRadiusAttempt and NotifyRequest collections for expansion demand signals.');
   } else if (primary) {
     bits.push(`Computed ${labelForMetric(primary.id)} from live Mongo.`);
   } else {
@@ -1309,8 +1416,52 @@ function labelForMetric(id, statusLabel) {
     min_orders: 'Min orders filter',
     total_product_buyers_any_distance: 'Buyers (any distance)',
     buyers_with_coordinates: 'Buyers with location data',
+    // New domains
+    referral_stats: 'Users joined via referral',
+    referrers: 'Active referrers',
+    ordered: 'Joined & placed order',
+    rewards_earned: 'Rewards earned',
+    agent_referred: 'Agent-referred users',
+    pending_requests: 'Pending referral requests',
+    agent_stats: 'Total agents',
+    active_agents: 'Active agents',
+    total_orders: 'Orders via agents',
+    total_leads: 'Leads generated',
+    total_earnings: 'Commissions paid (₹)',
+    campaign_stats: 'Campaign leads',
+    active_campaigns: 'Active campaigns',
+    campaigns: 'Total campaigns',
+    redemptions: 'Discount redemptions',
+    budget_used: 'Free items redeemed',
+    platinum_stats: 'Active platinum members',
+    total_issued: 'Total cards issued',
+    new_in_period: 'New members in period',
+    monthly_revenue: 'Est. monthly revenue (₹)',
+    subscription_stats: 'Active subscriptions',
+    total: 'Total subscriptions',
+    pending: 'Pending approval',
+    paused: 'Paused',
+    cancelled: 'Cancelled',
+    weekly_revenue: 'Weekly revenue (₹)',
+    feedback_stats: 'Total reviews',
+    avg_rating: 'Average rating',
+    five_stars: '5-star reviews',
+    four_stars: '4-star reviews',
+    low_ratings: '1–3 star reviews',
+    expansion_stats: 'Total interest signals',
+    out_of_radius: 'Out-of-radius attempts',
+    notify_me: '"Notify me" signups',
   };
   return map[id] || String(id || '').replace(/_/g, ' ');
+}
+
+function labelForDynamicResult(result) {
+  if (!result) return 'Result';
+  const { collection, primaryKey } = result;
+  if (primaryKey && primaryKey !== 'value') {
+    return `${String(collection)} — ${String(primaryKey)}`;
+  }
+  return `${String(collection)} query`;
 }
 
 function unitFor(id) {
@@ -1335,12 +1486,37 @@ function formatHeadline(metric) {
     const pct = metric.value <= 1 ? (metric.value * 100).toFixed(1) : metric.value;
     return `${pct}% repeat rate`;
   }
+  // Domain-specific headlines
+  const domainHeadlines = {
+    referral_stats: (v) => `${v} users joined via referral`,
+    agent_stats: (v) => `${v} agents`,
+    campaign_stats: (v) => `${v} campaign leads`,
+    platinum_stats: (v) => `${v} active platinum members`,
+    subscription_stats: (v) => `${v} active subscriptions`,
+    feedback_stats: (v) => `${v} reviews`,
+    expansion_stats: (v) => `${v} expansion signals`,
+  };
+  if (domainHeadlines[metric.id]) {
+    return domainHeadlines[metric.id](Number(metric.value).toLocaleString('en-IN'));
+  }
   const unit =
     metric.unit === 'orders'
       ? 'orders'
       : metric.unit === 'customers'
         ? 'customers'
-        : metric.unit || '';
+        : metric.unit === 'members'
+          ? 'members'
+          : metric.unit === 'reviews'
+            ? 'reviews'
+            : metric.unit === 'agents'
+              ? 'agents'
+              : metric.unit === 'leads'
+                ? 'leads'
+                : metric.unit === 'requests'
+                  ? 'requests'
+                  : metric.unit === 'subscriptions'
+                    ? 'subscriptions'
+                    : metric.unit || '';
   return `${Number(metric.value).toLocaleString('en-IN')} ${unit}`.trim();
 }
 
@@ -1594,6 +1770,13 @@ export async function runDeterministicFallback(message, emit = () => {}) {
     'get_repeat_customers',
     'find_customers_within_radius',
     'count_orders_in_radius',
+    'get_referral_stats',
+    'get_agent_stats',
+    'get_campaign_stats',
+    'get_platinum_stats',
+    'get_subscription_stats',
+    'get_feedback_stats',
+    'get_expansion_stats',
   ];
   if (tmpl?.id && earlyTools.includes(tmpl.id)) {
     const r = await executeTool(tmpl.id, { ...dateArgs, ...(tmpl.args || {}) });

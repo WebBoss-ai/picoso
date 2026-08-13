@@ -15,7 +15,7 @@ export function isGreeting(message = '') {
 }
 
 function isAnalyticsIntentQuick(m) {
-  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver|total)\b/i.test(
+  return /\b(kitne|kitna|how many|count|revenue|sales|repeat|customer|order|product|km|buyers?|aov|inactive|segment|yesterday|today|month|cancel|deliver|total|referral|refer|agent|campaign|platinum|subscription|feedback|rating|review|expand|expansion|notify|waitlist|invite|link|joined|signed|signup|registered|inactive|reward|commission|membership|meal.?kit|weekly plan|bowl.?plan|free coffee|promo|out.?of.?radius|star|satisfaction)\b/i.test(
     m
   );
 }
@@ -366,6 +366,34 @@ export function matchTemplate(message = '') {
   }
   if (/inactive|60\s*din|haven'?t ordered|nahi order/i.test(message)) {
     return { id: 'inactive_customers', args: { days_inactive: 60 } };
+  }
+  // Referral
+  if (/\b(referral|refer|referred|friend link|invite link|via referral|joined.*referral|referral.*user|referral.*program|referral code)\b/i.test(message)) {
+    return { id: 'get_referral_stats', args: { ...dateArgs } };
+  }
+  // Agents
+  if (/\b(agent|agents|agent commission|agent earnings|top agent|agent performance|agent orders|agent lead)\b/i.test(message)) {
+    return { id: 'get_agent_stats', args: { ...dateArgs } };
+  }
+  // Campaigns
+  if (/\b(campaign|free coffee|promo code|promo|campaign lead|campaign redemption|marketing campaign)\b/i.test(message)) {
+    return { id: 'get_campaign_stats', args: { ...dateArgs } };
+  }
+  // Platinum
+  if (/\b(platinum|platinum card|platinum member|premium member|membership card)\b/i.test(message)) {
+    return { id: 'get_platinum_stats', args: { ...dateArgs } };
+  }
+  // Subscription / meal kit
+  if (/\b(subscription plan|healthy plan|meal.?kit|healthy subscription|bowl.?plan|weekly plan)\b/i.test(message)) {
+    return { id: 'get_subscription_stats', args: { ...dateArgs } };
+  }
+  // Feedback / ratings
+  if (/\b(rating|ratings|review|reviews|feedback|star|satisfaction|nps)\b/i.test(message)) {
+    return { id: 'get_feedback_stats', args: { ...dateArgs } };
+  }
+  // Expansion / out-of-radius
+  if (/\b(expansion|out.?of.?radius|out of range|notify.?me|waitlist|areas requesting|demand outside)\b/i.test(message)) {
+    return { id: 'get_expansion_stats', args: { ...dateArgs } };
   }
   if (/\baov\b|average order/i.test(message) && !productQuery) {
     return { id: 'get_aov', args: { ...dateArgs, ...statusArgs } };

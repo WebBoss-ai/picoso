@@ -131,12 +131,54 @@ export function resolvePeriod(message = '') {
 
 function detectPrimaryMetric(message = '') {
   const m = String(message).toLowerCase();
+
+  // Referral system (must match before registered_users to avoid mis-routing "referral users")
+  if (/\b(referral|refer|referred|friend link|invite link|invit|share link|referral code|referral program|joined.*referral|referral.*joined|referral.*user|how many.*referral|via referral)\b/.test(m)) {
+    return 'referral_stats';
+  }
+
+  // Agent network
+  if (/\b(agent|agents|agent commission|agent earnings|agent orders|agent lead|agent network|top agent|agent performance|agent code)\b/.test(m)) {
+    return 'agent_stats';
+  }
+
+  // Marketing campaigns
+  if (/\b(campaign|campaigns|free coffee|promo code|promo|campaign lead|campaign redemption|campaign scan|marketing campaign)\b/.test(m)) {
+    return 'campaign_stats';
+  }
+
+  // Platinum membership
+  if (/\b(platinum|platinum card|platinum member|premium member|membership|subscription card|paid member)\b/.test(m) &&
+      !/\bhealthy|meal.?kit|bowl.?plan\b/.test(m)) {
+    return 'platinum_stats';
+  }
+
+  // Healthy subscription / meal kit
+  if (/\b(subscription plan|healthy plan|meal.?kit|healthy subscription|bowl.?plan|weekly plan|subscription)\b/.test(m)) {
+    return 'subscription_stats';
+  }
+
+  // Feedback / ratings
+  if (/\b(rating|ratings|review|reviews|feedback|star|stars|satisfaction|nps)\b/.test(m)) {
+    return 'feedback_stats';
+  }
+
+  // Expansion / out-of-radius demand
+  if (/\b(expansion|expand|out.?of.?radius|out of range|outside radius|outside.?delivery|outside our area|notify.?me|notify me|waitlist|areas requesting|demand outside|delivery area|requesting delivery|can'?t deliver|no delivery)\b/.test(m)) {
+    return 'expansion_stats';
+  }
+
+  // Export / list customers
   if (/\b(export|list|download|csv)\b/.test(m) && /\b(customer|user|phone)\b/.test(m)) {
     return 'export_customers';
   }
-  if (/\b(registered|signup|sign[- ]?up|platform users?)\b/.test(m)) {
+
+  // Registered users (platform signups — check AFTER referral/agent)
+  if (/\b(registered|signup|sign[- ]?up|platform users?|new users?|joined platform)\b/.test(m) &&
+      !/referral|agent/.test(m)) {
     return 'registered_users';
   }
+
   if (/\brepeat\s*rate\b/.test(m)) return 'repeat_rate';
   if (/\brepeat\b/.test(m) && /\bcustomer/.test(m)) return 'repeat_customers';
   if (/\baov\b|average order/.test(m)) return 'aov';
@@ -168,6 +210,13 @@ function buildNormalized(message, c) {
     repeat_rate: 'Compute repeat rate',
     repeat_customers: 'Count repeat customers',
     inactive_customers: 'List inactive customers',
+    referral_stats: 'Referral program analytics (users joined via referral link)',
+    agent_stats: 'Agent network analytics (commissions, leads, orders)',
+    campaign_stats: 'Marketing campaign analytics (leads, redemptions)',
+    platinum_stats: 'Platinum card membership analytics',
+    subscription_stats: 'Healthy subscription plan analytics',
+    feedback_stats: 'Customer feedback & ratings analytics',
+    expansion_stats: 'Expansion demand analytics (out-of-radius, notify-me)',
   };
   parts.push(metricLabels[c.metric] || 'Analyze live ops data');
   if (c.period?.label) parts.push(`in ${c.period.label}`);
@@ -214,6 +263,13 @@ function buildPlan(c) {
     repeat_rate: 'Calculating repeat rate…',
     repeat_customers: 'Finding repeat customers…',
     inactive_customers: 'Finding inactive customers…',
+    referral_stats: 'Querying FriendReferral + User.referredByAgent…',
+    agent_stats: 'Querying Agent network (leads, orders, commissions)…',
+    campaign_stats: 'Querying Campaign leads and redemptions…',
+    platinum_stats: 'Querying PlatinumCard membership records…',
+    subscription_stats: 'Querying HealthySubscription plan records…',
+    feedback_stats: 'Aggregating Feedback ratings…',
+    expansion_stats: 'Querying OutOfRadius + NotifyMe demand signals…',
   };
   plan.push({
     id: 'query',
@@ -455,6 +511,55 @@ export function planToolCalls(understanding) {
         name: 'inactive_customers',
         arguments: { days_inactive: 60, limit: 100 },
         stepLabel: 'Finding inactive customers…',
+      });
+      break;
+    case 'referral_stats':
+      tools.push({
+        name: 'get_referral_stats',
+        arguments: { ...dateArgs, limit: c.wantList ? 100 : 50 },
+        stepLabel: 'Querying referral program data…',
+      });
+      break;
+    case 'agent_stats':
+      tools.push({
+        name: 'get_agent_stats',
+        arguments: { ...dateArgs, limit: c.wantList ? 50 : 30 },
+        stepLabel: 'Querying agent network performance…',
+      });
+      break;
+    case 'campaign_stats':
+      tools.push({
+        name: 'get_campaign_stats',
+        arguments: { ...dateArgs, limit: 20 },
+        stepLabel: 'Querying campaign leads and redemptions…',
+      });
+      break;
+    case 'platinum_stats':
+      tools.push({
+        name: 'get_platinum_stats',
+        arguments: { ...dateArgs },
+        stepLabel: 'Querying platinum membership data…',
+      });
+      break;
+    case 'subscription_stats':
+      tools.push({
+        name: 'get_subscription_stats',
+        arguments: { ...dateArgs },
+        stepLabel: 'Querying healthy subscription plans…',
+      });
+      break;
+    case 'feedback_stats':
+      tools.push({
+        name: 'get_feedback_stats',
+        arguments: { ...dateArgs },
+        stepLabel: 'Aggregating customer ratings…',
+      });
+      break;
+    case 'expansion_stats':
+      tools.push({
+        name: 'get_expansion_stats',
+        arguments: { ...dateArgs },
+        stepLabel: 'Querying expansion demand signals…',
       });
       break;
     default:

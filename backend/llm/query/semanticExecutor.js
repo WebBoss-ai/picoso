@@ -3,6 +3,16 @@ import { getOrCreateSelfConnection } from '../discovery/workspaceService.js';
 import { LlmConnection } from '../models/llmModels.js';
 import { getDataConnection } from '../discovery/connection.js';
 
+function withTimeout(promise, ms, label = 'query') {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
 const ALLOWED_AGGS = new Set(['count', 'count_distinct', 'sum', 'avg', 'min', 'max']);
 const MAX_LIMIT = 100;
 
@@ -245,4 +255,224 @@ export async function sampleCollection(workspaceId, collection, limit = 5) {
   } finally {
     await data.release();
   }
+}
+
+// ── Forbidden pipeline stages (mutation / server-side writes) ─────────────────
+const FORBIDDEN_STAGES = new Set([
+  '$out', '$merge', '$indexStats', '$planCacheStats',
+  '$currentOp', '$listLocalSessions', '$listSessions',
+]);
+
+function sanitizePipeline(rawPipeline) {
+  if (!Array.isArray(rawPipeline)) {
+    throw new Error('pipeline must be a JSON array of stage objects');
+  }
+  if (rawPipeline.length > 20) {
+    throw new Error('Pipeline too long (max 20 stages)');
+  }
+  for (const stage of rawPipeline) {
+    if (!stage || typeof stage !== 'object') {
+      throw new Error('Each pipeline stage must be an object');
+    }
+    const key = Object.keys(stage)[0];
+    if (FORBIDDEN_STAGES.has(key)) {
+      throw new Error(`Stage ${key} is not permitted (read-only analytics only)`);
+    }
+  }
+  return rawPipeline;
+}
+
+function redactSensitiveFields(rows) {
+  return rows.map((row) => {
+    const out = {};
+    for (const [k, v] of Object.entries(row || {})) {
+      if (/password|secret|token|hash|encryptedUri/i.test(k)) {
+        out[k] = '[redacted]';
+      } else if (v && typeof v === 'object' && v._bsontype) {
+        out[k] = String(v);
+      } else if (v instanceof Date) {
+        out[k] = v.toISOString();
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  });
+}
+
+/**
+ * Execute any MongoDB aggregation pipeline on the user's connected cluster.
+ * This is the universal analytics engine — the LLM writes the pipeline
+ * based on the discovered schema.
+ *
+ * @param {string} workspaceId
+ * @param {{ collection: string, pipeline: object[], limit?: number, connectionId?: string }} opts
+ */
+export async function executePipeline(workspaceId, {
+  collection,
+  pipeline: rawPipeline,
+  limit = 200,
+  connectionId = null,
+} = {}) {
+  if (!collection) {
+    return { type: 'error', error: 'collection is required' };
+  }
+
+  let connection = null;
+  if (connectionId) {
+    const { LlmConnection } = await import('../models/llmModels.js');
+    connection = await LlmConnection.findById(connectionId);
+  }
+  if (!connection) {
+    connection = await getOrCreateSelfConnection(workspaceId);
+  }
+
+  let pipeline;
+  try {
+    pipeline = sanitizePipeline(rawPipeline);
+  } catch (err) {
+    return { type: 'error', error: err.message };
+  }
+
+  // Auto-cap results: inject $limit at end if not already present
+  const lastStage = pipeline[pipeline.length - 1];
+  const hasLimit = lastStage && ('$limit' in lastStage || '$count' in lastStage);
+  if (!hasLimit) {
+    pipeline = [...pipeline, { $limit: Math.min(Number(limit) || 200, 500) }];
+  }
+
+  const data = await getDataConnection(connection);
+  try {
+    const col = data.db.collection(collection);
+    const rows = await withTimeout(
+      col.aggregate(pipeline, { allowDiskUse: true }).toArray(),
+      25000,
+      `pipeline on ${collection}`
+    );
+    const clean = redactSensitiveFields(rows);
+
+    // Try to detect a single numeric result (count, sum, avg, etc.)
+    let primaryValue = null;
+    let primaryKey = null;
+    if (clean.length === 1) {
+      const row = clean[0];
+      const keys = Object.keys(row).filter((k) => k !== '_id');
+      if (keys.length === 1 && typeof row[keys[0]] === 'number') {
+        primaryKey = keys[0];
+        primaryValue = row[keys[0]];
+      } else if (typeof row.count === 'number') {
+        primaryKey = 'count';
+        primaryValue = row.count;
+      } else if (typeof row.total === 'number') {
+        primaryKey = 'total';
+        primaryValue = row.total;
+      } else if (typeof row.value === 'number') {
+        primaryKey = 'value';
+        primaryValue = row.value;
+      } else if (typeof row.result === 'number') {
+        primaryKey = 'result';
+        primaryValue = row.result;
+      }
+    }
+
+    return {
+      type: 'pipeline_result',
+      collection,
+      rowCount: clean.length,
+      primaryKey,
+      primaryValue,
+      rows: clean.slice(0, 500),
+      truncated: rows.length >= (Number(limit) || 200),
+      source: { dataset: collection, freshness: 'live' },
+    };
+  } catch (err) {
+    return {
+      type: 'error',
+      error: `Pipeline failed on "${collection}": ${err.message}`,
+    };
+  } finally {
+    await data.release();
+  }
+}
+
+/**
+ * Get a compact schema summary for LLM prompt injection.
+ * Returns each collection's document count + field paths + sample values.
+ */
+export async function getSchemaForPrompt(workspaceId, connectionId = null) {
+  let connection = null;
+  if (connectionId) {
+    const { LlmConnection } = await import('../models/llmModels.js');
+    connection = await LlmConnection.findById(connectionId);
+  }
+  if (!connection) {
+    connection = await getOrCreateSelfConnection(workspaceId);
+  }
+  const data = await getDataConnection(connection);
+  try {
+    const names = (await data.db.listCollections().toArray())
+      .map((c) => c.name)
+      .filter((n) => !n.startsWith('system.') && !/^llm/i.test(n))
+      .sort()
+      .slice(0, 60);
+
+    const summary = [];
+    for (const name of names) {
+      const col = data.db.collection(name);
+      let count = 0;
+      try { count = await col.estimatedDocumentCount(); } catch { /* ignore */ }
+      if (count === 0) continue;
+
+      let fields = [];
+      try {
+        const sample = await col.aggregate([{ $sample: { size: 3 } }]).toArray();
+        const pathSet = new Set();
+        for (const doc of sample) {
+          Object.keys(flatten(doc)).forEach((p) => pathSet.add(p));
+        }
+        // Include compact sample values for key fields
+        const sampleDoc = sample[0] || {};
+        fields = [...pathSet]
+          .filter((p) => p !== '_id')
+          .slice(0, 25)
+          .map((p) => {
+            const v = sampleDoc[p];
+            let hint = '';
+            if (v instanceof Date || (typeof v === 'string' && /^\d{4}-/.test(v))) hint = ':date';
+            else if (typeof v === 'number') hint = `:num(e.g.${v})`;
+            else if (typeof v === 'string' && v.length < 30) hint = `:"${v}"`;
+            return `${p}${hint}`;
+          });
+      } catch { /* ignore */ }
+
+      summary.push({ collection: name, count, fields });
+    }
+    return summary;
+  } catch {
+    return [];
+  } finally {
+    await data.release();
+  }
+}
+
+// Re-export flatten for getSchemaForPrompt
+function flatten(obj, prefix = '', out = {}, depth = 0) {
+  if (depth > 3 || obj == null) return out;
+  if (typeof obj !== 'object' || Array.isArray(obj) || obj instanceof Date) {
+    out[prefix || '_'] = obj;
+    return out;
+  }
+  if (typeof obj.toHexString === 'function') {
+    out[prefix || '_id'] = String(obj);
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && !v._bsontype) {
+      flatten(v, path, out, depth + 1);
+    } else {
+      out[path] = v;
+    }
+  }
+  return out;
 }
