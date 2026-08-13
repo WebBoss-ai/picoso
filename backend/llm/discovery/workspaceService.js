@@ -315,7 +315,18 @@ export async function runTrainingDiscover(workspaceId, options = {}) {
       corpusId,
       trainingHints: draft.trainingHints || base?.trainingHints || [],
       extractionMeta,
-      status: 'draft',
+      // Auto-activate discovered models so "No active brain" never shows after discovery
+      status: 'active',
+      updatedAt: new Date(),
+    });
+
+    // Archive any previous active models and point workspace at the new one
+    await LlmSemanticModel.updateMany(
+      { workspaceId, status: 'active', _id: { $ne: model._id } },
+      { $set: { status: 'archived', updatedAt: new Date() } }
+    );
+    await LlmWorkspace.findByIdAndUpdate(workspaceId, {
+      activeSemanticModelId: model._id,
       updatedAt: new Date(),
     });
 

@@ -1705,6 +1705,41 @@ async function get_live_schema(input = {}) {
 
 /** Tool definitions for Cohere */
 export const TOOL_DEFINITIONS = [
+  // ── Primary dynamic tools — always listed first so the LLM sees them first ──
+  {
+    name: 'get_live_schema',
+    description:
+      'CALL THIS FIRST for any question about referrals, agents, campaigns, platinum, subscriptions, feedback/ratings, expansion, or any collection you are unsure about. Returns ALL connected MongoDB clusters with connectionIds, collection names, document counts, and field paths with sample values. Use the connectionId returned here when calling execute_pipeline.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'execute_pipeline',
+    description:
+      'Execute ANY MongoDB aggregation pipeline on a connected cluster. Use for: referral/friend link queries, agent stats, campaign stats, platinum/subscription/feedback/expansion, users who never ordered, users who joined but didn\'t purchase, complex joins, date-range segments, ANY custom collection query. Always use exact collection names and field paths from get_live_schema. Pass connection_id to target a specific cluster.',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: {
+          type: 'string',
+          description: 'Exact collection name from get_live_schema',
+        },
+        pipeline: {
+          type: 'array',
+          description: 'MongoDB aggregation pipeline array. E.g. [{"$match":{"status":"delivered"}},{"$group":{"_id":null,"total":{"$sum":"$totalPrice"}}}]',
+        },
+        connection_id: {
+          type: 'string',
+          description: 'connectionId from get_live_schema to target a specific cluster. Omit to use the default cluster.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max rows to return (default 200, max 500)',
+        },
+      },
+      required: ['collection', 'pipeline'],
+    },
+  },
+  // ── Shortcut tools — only for simple well-known Picoso built-ins ──────────
   {
     name: 'list_schema',
     description:
@@ -1759,39 +1794,6 @@ export const TOOL_DEFINITIONS = [
         status: { type: 'string' },
       },
       required: ['metric_id'],
-    },
-  },
-  {
-    name: 'get_live_schema',
-    description:
-      'Returns LIVE schema for ALL connected MongoDB clusters: cluster names, connectionIds, collection names, document counts, field paths with sample values. Call this FIRST for any unknown question, discovery query ("what do you know?", "what data is available?"), or before writing an execute_pipeline call. Also use when user asks about a collection you cannot identify. The schema is always live — no manual training needed.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'execute_pipeline',
-    description:
-      'Execute ANY MongoDB aggregation pipeline on a connected cluster. Use for any question that cannot be answered by simpler tools: joins ($lookup), nested arrays ($unwind), date grouping, complex filters, percentages, rankings, cross-collection queries, referral/agent/campaign/platinum/subscription/feedback/expansion stats, or ANY custom collection. Always call get_live_schema first to get exact collection names, field paths, and the connectionId. Pass connection_id to target a specific cluster. Do NOT use $out, $merge, or write stages.',
-    parameters: {
-      type: 'object',
-      properties: {
-        collection: {
-          type: 'string',
-          description: 'Exact collection name from get_live_schema',
-        },
-        pipeline: {
-          type: 'array',
-          description: 'MongoDB aggregation pipeline array. E.g. [{"$match":{"status":"delivered"}},{"$group":{"_id":null,"total":{"$sum":"$totalPrice"}}}]',
-        },
-        connection_id: {
-          type: 'string',
-          description: 'connectionId from get_live_schema to target a specific cluster. Omit to use the default (self) cluster.',
-        },
-        limit: {
-          type: 'number',
-          description: 'Max rows to return (default 200, max 500)',
-        },
-      },
-      required: ['collection', 'pipeline'],
     },
   },
   {

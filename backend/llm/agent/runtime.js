@@ -122,6 +122,68 @@ ${JSON.stringify(picosoFallback, null, 2)}
 ${JSON.stringify(learning, null, 2)}`;
 }
 
+// Maps detected metric to the most likely collection names (hint for LLM)
+const METRIC_COLLECTION_HINTS = {
+  referral_stats:     ['friendreferrals', 'friendreferralrequests'],
+  agent_stats:        ['agents', 'agentleads', 'agentcommissions'],
+  campaign_stats:     ['campaigns', 'campaignleads', 'campaignredemptions'],
+  platinum_stats:     ['platinumcards'],
+  subscription_stats: ['healthysubscriptions'],
+  feedback_stats:     ['feedbacks', 'feedback'],
+  expansion_stats:    ['outofradiusattempts', 'notifyrequests'],
+};
+
+/**
+ * Build a compact schema + intent hint injected right before the user message.
+ * This forces the LLM to see the available collections + the right tool to call.
+ */
+function buildSchemaHint(clusters = [], understanding = {}) {
+  const lines = [];
+
+  // Always show a mini schema for easy LLM reference
+  if (clusters.length) {
+    lines.push('─── AVAILABLE COLLECTIONS (use execute_pipeline with these EXACT names) ───');
+    for (const cluster of clusters) {
+      lines.push(`[${cluster.label}] id:${cluster.connectionId}`);
+      for (const col of cluster.collections.slice(0, 30)) {
+        const fieldPreview = (col.fields || []).slice(0, 12).join(', ');
+        lines.push(`  ${col.collection} (${col.count} docs) — fields: ${fieldPreview}`);
+      }
+    }
+  }
+
+  // Intent hint: steer LLM to the right collection + pipeline approach
+  const metric = understanding?.constraints?.metric;
+  const hintCollections = metric ? METRIC_COLLECTION_HINTS[metric] : null;
+
+  if (hintCollections) {
+    const matched = hintCollections.filter((hc) =>
+      clusters.some((cl) => cl.collections.some((c) => c.collection.toLowerCase() === hc))
+    );
+    const targets = matched.length ? matched : hintCollections;
+    lines.push('');
+    lines.push(`─── ROUTING HINT ───`);
+    lines.push(`This question is about "${metric}".`);
+    lines.push(`Call get_live_schema first, then execute_pipeline on: ${targets.join(' or ')}`);
+    lines.push(`DO NOT call export_order_customers, count_orders, or find_customers_within_radius for this question.`);
+  }
+
+  // Complex / negated user segment hint
+  const msg = String(understanding?.original || '').toLowerCase();
+  if (
+    metric === null &&
+    /\b(did not|didn'?t|haven'?t|never|without|no order|but joined|first order|new user|not order)\b/i.test(msg)
+  ) {
+    lines.push('');
+    lines.push('─── ROUTING HINT ───');
+    lines.push('This is a complex user segment query (e.g. users who joined but never ordered).');
+    lines.push('Call get_live_schema, then use execute_pipeline with a $lookup or $match pipeline across users + orders collections.');
+    lines.push('DO NOT call export_order_customers or find_customers_within_radius.');
+  }
+
+  return lines.length ? lines.join('\n') : null;
+}
+
 function looksLikePrivacyRefusal(text = '') {
   const t = String(text || '').toLowerCase();
   return (
@@ -397,6 +459,13 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
     } else if (m.role === 'user' || m.role === 'assistant') {
       messages.push({ role: m.role, content: m.content || '' });
     }
+  }
+
+  // Inject a compact live-schema hint right before the user message so LLM sees it fresh.
+  // Also inject an intent hint for non-fast-path analytics so LLM uses execute_pipeline.
+  const schemaHint = buildSchemaHint(liveClusters, understanding);
+  if (schemaHint) {
+    messages.push({ role: 'system', content: schemaHint });
   }
 
   await setStatus('PLANNING');
