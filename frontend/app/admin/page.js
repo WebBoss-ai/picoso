@@ -12,7 +12,7 @@ import {
   Store, BellRing, PhoneCall, CheckCheck, Power, ShoppingCart,
   MapPin, Navigation, QrCode, Wallet, ScanLine, IndianRupee,
   UserCheck, BadgeDollarSign, ChevronRight, Globe, Target, Radar,
-  Copy, ExternalLink, Truck, Phone,
+  Copy, ExternalLink, Truck, Phone, Shield,
   Coffee, Gift, Megaphone, MousePointerClick,
   Heart, Link2, ChevronLeft,
 } from 'lucide-react';
@@ -1686,12 +1686,12 @@ function timeAgo(date) {
 
 // ─── User Row (expandable) ────────────────────────────────────────────────────
 function UserRow({ u }) {
-  const [expanded, setExpanded]   = useState(false);
-  const [orders, setOrders]       = useState(null);
+  const [expanded, setExpanded]         = useState(false);
+  const [orders, setOrders]             = useState(null);
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   const fetchOrders = async () => {
-    if (orders !== null) return; // already loaded
+    if (orders !== null) return;
     setLoadingOrders(true);
     try {
       const res = await admin.getUserOrders(u._id);
@@ -1710,171 +1710,229 @@ function UserRow({ u }) {
   const userCoords = getUserCoords(u);
   const distKm     = userCoords ? haversineKm(STORE_LAT, STORE_LNG, userCoords.lat, userCoords.lng) : null;
 
+  const initials = u.name
+    ? u.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+    : u.phone?.slice(-2);
+
   return (
-    <div className="card overflow-hidden">
-      {/* Summary row */}
-      <div className="p-4 cursor-pointer hover:bg-surface-50 transition-colors" onClick={handleExpand}>
-        <div className="flex items-center gap-3">
-          {/* Avatar */}
-          <div className="relative flex-shrink-0">
-            <div className="w-10 h-10 bg-brand-100 rounded-xl flex items-center justify-center">
-              <span className="text-brand-700 font-bold text-sm">
-                {u.name ? u.name[0].toUpperCase() : u.phone?.slice(-2)}
+    <div style={{ background: '#fff', border: '1px solid #f0f0f0', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'box-shadow 0.15s' }}>
+
+      {/* ── Summary row ── */}
+      <div
+        onClick={handleExpand}
+        style={{ padding: '13px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}
+        onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+      >
+        {/* Avatar */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 10,
+            background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontWeight: 700, fontSize: 13, color: '#2e7d32', letterSpacing: 0.5,
+          }}>
+            {initials}
+          </div>
+          {isActive && (
+            <span style={{
+              position: 'absolute', bottom: -1, right: -1,
+              width: 10, height: 10, background: '#22c55e',
+              borderRadius: '50%', border: '2px solid #fff',
+            }} title="Active in last 15 min" />
+          )}
+        </div>
+
+        {/* Name + phone + badges */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginBottom: 2 }}>
+            <span style={{ fontWeight: 600, fontSize: 13.5, color: '#111827' }}>{u.name || '—'}</span>
+            {u.role === 'admin' && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, background: '#eff6ff', color: '#1d4ed8' }}>
+                <Shield size={8} /> ADMIN
               </span>
-            </div>
-            {isActive && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white" title="Active in last 15 min" />
+            )}
+            {u.isPlatinum && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, background: '#fff7ed', color: '#c2410c' }}>
+                <Crown size={8} /> PLT
+              </span>
+            )}
+            {cartItems.length > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6, background: '#f0fdf4', color: '#15803d' }}>
+                <ShoppingCart size={8} /> {cartItems.length} in cart
+              </span>
+            )}
+            {distKm !== null && (
+              <a
+                href={mapsRouteUrl(userCoords.lat, userCoords.lng)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', textDecoration: 'none' }}
+                title="Open route in Google Maps"
+              >
+                <Navigation size={8} /> {formatDist(distKm)}
+              </a>
             )}
           </div>
-
-          {/* Core info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center flex-wrap gap-1.5">
-              <p className="font-semibold text-gray-900 text-sm">{u.name || 'No name'}</p>
-              {u.role === 'admin' && <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-bold">ADMIN</span>}
-              {u.isPlatinum && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><Crown size={8} /> PLT</span>}
-              {cartItems.length > 0 && <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full font-bold">{cartItems.length} in cart</span>}
-              {distKm !== null && (
-                <a
-                  href={mapsRouteUrl(userCoords.lat, userCoords.lng)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5 hover:bg-emerald-100 transition-colors"
-                  title="Open route in Google Maps"
-                >
-                  <MapPin size={8} /> {formatDist(distKm)}
-                </a>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">+91 {u.phone}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Phone size={10} style={{ color: '#9ca3af', flexShrink: 0 }} />
+            <span style={{ fontSize: 11.5, color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>+91 {u.phone}</span>
           </div>
-
-          {/* Stats */}
-          <div className="hidden sm:flex items-center gap-5 flex-shrink-0 mr-2">
-            <div className="text-center">
-              <p className="text-sm font-extrabold text-gray-900">{u.orderCount || 0}</p>
-              <p className="text-[10px] text-gray-400">orders</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-extrabold text-gray-900">₹{(u.totalSpent || 0).toLocaleString()}</p>
-              <p className="text-[10px] text-gray-400">spent</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs font-semibold text-gray-600">{timeAgo(u.lastActiveAt)}</p>
-              <p className="text-[10px] text-gray-400">last seen</p>
-            </div>
-          </div>
-
-          <ChevronDown size={15} className={`text-gray-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </div>
+
+        {/* Stats — desktop */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0, marginRight: 8 }} className="hidden sm:flex">
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#111827', lineHeight: 1.2 }}>{u.orderCount || 0}</div>
+            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>orders</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#111827', lineHeight: 1.2 }}>₹{(u.totalSpent || 0).toLocaleString('en-IN')}</div>
+            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>spent</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', lineHeight: 1.2 }}>{timeAgo(u.lastActiveAt)}</div>
+            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>last seen</div>
+          </div>
+        </div>
+
+        <ChevronDown size={14} style={{ color: '#d1d5db', flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
       </div>
 
-      {/* Expanded detail */}
+      {/* ── Expanded detail ── */}
       {expanded && (
-        <div className="border-t border-surface-100 bg-surface-50/40 p-4 space-y-4">
+        <div style={{ borderTop: '1px solid #f3f4f6', background: '#fafafa', padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Two-col meta */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Meta stats strip */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
             {[
-              { label: 'Joined',      value: new Date(u.createdAt).toLocaleDateString('en-IN') },
-              { label: 'Last Login',  value: timeAgo(u.lastLoginAt) },
-              { label: 'Last Active', value: timeAgo(u.lastActiveAt) },
-              { label: 'Delivered',   value: `${u.deliveredCount || 0} orders` },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-white rounded-xl p-2.5 border border-surface-100 text-center">
-                <p className="text-xs font-bold text-gray-900">{value}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+              { icon: <Clock size={12} />, label: 'Joined',      value: new Date(u.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) },
+              { icon: <Activity size={12} />, label: 'Last Login',  value: timeAgo(u.lastLoginAt) },
+              { icon: <Zap size={12} />,   label: 'Last Active', value: timeAgo(u.lastActiveAt) },
+              { icon: <CheckCheck size={12} />, label: 'Delivered',  value: `${u.deliveredCount || 0}` },
+            ].map(({ icon, label, value }) => (
+              <div key={label} style={{ background: '#fff', borderRadius: 10, padding: '10px 12px', border: '1px solid #f0f0f0', textAlign: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4, color: '#9ca3af' }}>{icon}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>{value}</div>
+                <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{label}</div>
               </div>
             ))}
           </div>
 
-          {/* Contact */}
+          {/* Contact card */}
           <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Contact</p>
-            <div className="bg-white rounded-xl p-3 border border-surface-100 text-xs text-gray-600 space-y-1">
-              <p><span className="font-semibold text-gray-700">Phone: </span>+91 {u.phone}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <UserCheck size={11} style={{ color: '#6b7280' }} />
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Contact</span>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 10, padding: '12px 14px', border: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                <Phone size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                <span style={{ color: '#374151', fontWeight: 600 }}>+91 {u.phone}</span>
+              </div>
               {u.email && !u.email.endsWith('@picoso.in') && (
-                <p><span className="font-semibold text-gray-700">Email: </span>{u.email}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <Globe size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                  <span style={{ color: '#374151' }}>{u.email}</span>
+                </div>
               )}
               {u.location?.area && (
-                <p><span className="font-semibold text-gray-700">Location: </span>{[u.location.area, u.location.city].filter(Boolean).join(', ')}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <MapPin size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                  <span style={{ color: '#374151' }}>{[u.location.area, u.location.city].filter(Boolean).join(', ')}</span>
+                </div>
               )}
               {distKm !== null && (
-                <p className="flex items-center gap-1">
-                  <span className="font-semibold text-gray-700">Distance from store: </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <Navigation size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
                   <a
                     href={mapsRouteUrl(userCoords.lat, userCoords.lng)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-emerald-600 font-semibold hover:underline flex items-center gap-0.5"
+                    style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
                   >
-                    <MapPin size={10} /> {formatDist(distKm)} — view route
+                    {formatDist(distKm)}
+                    <ExternalLink size={10} />
                   </a>
-                </p>
+                </div>
               )}
               {u.savedAddresses?.length > 0 && (
-                <p><span className="font-semibold text-gray-700">Saved addresses: </span>{u.savedAddresses.length}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <Truck size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                  <span style={{ color: '#374151' }}>{u.savedAddresses.length} saved address{u.savedAddresses.length !== 1 ? 'es' : ''}</span>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Current cart snapshot */}
+          {/* Cart snapshot */}
           {cartItems.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Current Cart ({cartItems.length} items)</p>
-              <div className="space-y-1.5">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <ShoppingCart size={11} style={{ color: '#6b7280' }} />
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Cart &nbsp;·&nbsp; {cartItems.length} item{cartItems.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {cartItems.map((item, i) => (
-                  <div key={i} className="bg-white rounded-xl p-2.5 border border-surface-100 flex items-center gap-3 text-xs">
-                    <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
-                      <UtensilsCrossed size={12} className="text-brand-400" />
+                  <div key={i} style={{ background: '#fff', borderRadius: 10, padding: '10px 12px', border: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <UtensilsCrossed size={12} style={{ color: '#16a34a' }} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 truncate">{item.name}</p>
-                      <p className="text-gray-400">Qty: {item.quantity}</p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                      <div style={{ fontSize: 10.5, color: '#9ca3af' }}>Qty {item.quantity}</div>
                     </div>
-                    <p className="font-bold text-gray-900 flex-shrink-0">₹{item.price * item.quantity}</p>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', flexShrink: 0 }}>₹{item.price * item.quantity}</div>
                   </div>
                 ))}
-                <div className="bg-brand-50 rounded-xl p-2.5 border border-brand-100 flex justify-between text-xs font-bold text-brand-700">
-                  <span>Cart Total</span>
-                  <span>₹{cartItems.reduce((s, i) => s + i.price * i.quantity, 0)}</span>
+                <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '9px 12px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: '#15803d' }}>
+                  <span>Cart total</span>
+                  <span>₹{cartItems.reduce((s, i) => s + i.price * i.quantity, 0).toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Recent orders */}
+          {/* Order history */}
           <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-              Order History {orders ? `(${orders.length})` : ''}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Package size={11} style={{ color: '#6b7280' }} />
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Order History {orders ? `· ${orders.length}` : ''}
+              </span>
+            </div>
             {loadingOrders ? (
-              <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-brand-500" /></div>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+                <Loader2 size={16} style={{ color: '#16a34a' }} className="animate-spin" />
+              </div>
             ) : orders?.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-3">No orders yet</p>
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#9ca3af', fontSize: 12 }}>No orders yet</div>
             ) : (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 280, overflowY: 'auto' }}>
                 {orders?.map(o => (
-                  <div key={o._id} className="bg-white rounded-xl p-2.5 border border-surface-100 flex items-center gap-3 text-xs">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                        <span className="font-mono text-gray-500">#{o._id.slice(-6).toUpperCase()}</span>
+                  <div key={o._id} style={{ background: '#fff', borderRadius: 10, padding: '9px 12px', border: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#6b7280' }}>#{o._id.slice(-6).toUpperCase()}</span>
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize ${STATUS_COLORS[o.status] || 'bg-gray-100 text-gray-600'}`}>
                           {o.status?.replace(/-/g, ' ')}
                         </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${o.paymentMethod === 'upi' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                        <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 5, background: o.paymentMethod === 'upi' ? '#eff6ff' : '#f9fafb', color: o.paymentMethod === 'upi' ? '#1d4ed8' : '#4b5563', fontWeight: 600 }}>
                           {o.paymentMethod?.toUpperCase()}
                         </span>
                       </div>
-                      <p className="text-gray-400">{o.items?.length} item(s) &nbsp;• {new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
+                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{o.items?.length} item{o.items?.length !== 1 ? 's' : ''} · {new Date(o.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
                     </div>
-                    <p className="font-extrabold text-gray-900 flex-shrink-0">₹{o.totalPrice}</p>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#111827', flexShrink: 0 }}>₹{o.totalPrice}</div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
         </div>
       )}
     </div>
@@ -2769,13 +2827,13 @@ const DISTANCE_OPTIONS = [
 ];
 
 function UsersSection() {
-  const [userList, setUserList]         = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [search, setSearch]             = useState('');
-  const [filterRole, setFilterRole]     = useState('');
-  const [sortBy, setSortBy]             = useState('createdAt'); // 'createdAt' | 'lastActiveAt'
-  const [distanceKm, setDistanceKm]     = useState(''); // '' | '1' | '2' | '3' | '5' | '10'
-  const [currentPage, setCurrentPage]   = useState(1);
+  const [userList, setUserList]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState('');
+  const [filterRole, setFilterRole]   = useState('');
+  const [sortBy, setSortBy]           = useState('createdAt');
+  const [distanceKm, setDistanceKm]   = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     admin.getUsers()
@@ -2784,13 +2842,14 @@ function UsersSection() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Reset to page 1 whenever filters change
   useEffect(() => { setCurrentPage(1); }, [search, filterRole, sortBy, distanceKm]);
 
   const now = Date.now();
 
-  // Sort
-  const sorted = [...userList].sort((a, b) => {
+  // Exclude users without a phone number
+  const withPhone = userList.filter(u => !!u.phone);
+
+  const sorted = [...withPhone].sort((a, b) => {
     const effectiveSort = filterRole === 'live' ? 'lastActiveAt' : sortBy;
     if (effectiveSort === 'lastActiveAt') {
       return (new Date(b.lastActiveAt || 0)) - (new Date(a.lastActiveAt || 0));
@@ -2798,11 +2857,10 @@ function UsersSection() {
     return (new Date(b.createdAt || 0)) - (new Date(a.createdAt || 0));
   });
 
-  // Filter
   const filtered = sorted.filter(u => {
-    if (filterRole === 'admin'    && u.role !== 'admin')                        return false;
-    if (filterRole === 'platinum' && !u.isPlatinum)                             return false;
-    if (filterRole === 'active'   && !u.orderCount)                             return false;
+    if (filterRole === 'admin'    && u.role !== 'admin')   return false;
+    if (filterRole === 'platinum' && !u.isPlatinum)        return false;
+    if (filterRole === 'active'   && !u.orderCount)        return false;
     if (filterRole === 'live'     && !(u.lastActiveAt && now - new Date(u.lastActiveAt).getTime() < 15 * 60 * 1000)) return false;
 
     if (distanceKm) {
@@ -2824,53 +2882,110 @@ function UsersSection() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated  = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const totalSpent    = userList.reduce((s, u) => s + (u.totalSpent || 0), 0);
-  const platinumCount = userList.filter(u => u.isPlatinum).length;
-  const activeCount   = userList.filter(u => u.lastActiveAt && now - new Date(u.lastActiveAt).getTime() < 15 * 60 * 1000).length;
-  const withPinCount  = userList.filter(u => !!getUserCoords(u)).length;
+  const totalSpent    = withPhone.reduce((s, u) => s + (u.totalSpent || 0), 0);
+  const platinumCount = withPhone.filter(u => u.isPlatinum).length;
+  const activeCount   = withPhone.filter(u => u.lastActiveAt && now - new Date(u.lastActiveAt).getTime() < 15 * 60 * 1000).length;
+  const withPinCount  = withPhone.filter(u => !!getUserCoords(u)).length;
+
+  const selectStyle = {
+    height: 38, padding: '0 12px', borderRadius: 9, border: '1px solid #e5e7eb',
+    background: '#fff', fontSize: 12.5, color: '#374151', outline: 'none',
+    cursor: 'pointer', fontFamily: 'inherit',
+  };
+
+  const statCards = [
+    { icon: <Users size={14} />,       label: 'Total',    value: withPhone.length,                     color: '#6366f1' },
+    { icon: <Crown size={14} />,        label: 'Platinum', value: platinumCount,                        color: '#f59e0b' },
+    { icon: <Activity size={14} />,     label: 'Online',   value: activeCount,                          color: '#22c55e' },
+    { icon: <MapPin size={14} />,       label: 'Pinned',   value: withPinCount,                         color: '#0ea5e9' },
+    { icon: <IndianRupee size={14} />,  label: 'Total GMV', value: `₹${(totalSpent/1000).toFixed(1)}k`, color: '#10b981' },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">Users ({userList.length})</h2>
-          <p className="text-sm text-gray-500">
-            {platinumCount} platinum &nbsp;•&nbsp; {activeCount} online now &nbsp;•&nbsp; {withPinCount} pinned &nbsp;•&nbsp; ₹{totalSpent.toLocaleString()} spent
-          </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+      {/* Header */}
+      <div>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: '#111827', letterSpacing: -0.3 }}>Users</h2>
+        <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>Registered users with verified phone numbers</p>
+      </div>
+
+      {/* Stat strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+        {statCards.map(s => (
+          <div key={s.label} style={{ background: '#fff', border: '1px solid #f0f0f0', borderRadius: 12, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 9, background: `${s.color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: s.color, flexShrink: 0 }}>
+              {s.icon}
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#111827', lineHeight: 1.2 }}>{s.value}</div>
+              <div style={{ fontSize: 10.5, color: '#9ca3af', marginTop: 1 }}>{s.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Search */}
+        <div style={{ position: 'relative', flex: '1 1 200px' }}>
+          <Search size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' }} />
+          <input
+            style={{ width: '100%', height: 38, paddingLeft: 32, paddingRight: 12, borderRadius: 9, border: '1px solid #e5e7eb', background: '#fff', fontSize: 12.5, color: '#374151', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+            placeholder="Search by name, phone, email…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Segment filter */}
+        <div style={{ position: 'relative' }}>
+          <Users size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' }} />
+          <select style={{ ...selectStyle, paddingLeft: 28, minWidth: 148 }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+            <option value="">All Users</option>
+            <option value="live">Online now</option>
+            <option value="platinum">Platinum only</option>
+            <option value="admin">Admins only</option>
+            <option value="active">With orders</option>
+          </select>
+        </div>
+
+        {/* Distance filter */}
+        <div style={{ position: 'relative' }}>
+          <Navigation size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' }} />
+          <select style={{ ...selectStyle, paddingLeft: 28, minWidth: 136 }} value={distanceKm} onChange={e => setDistanceKm(e.target.value)}>
+            {DISTANCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+
+        {/* Sort */}
+        <div style={{ position: 'relative' }}>
+          <Clock size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' }} />
+          <select
+            style={{ ...selectStyle, paddingLeft: 28, minWidth: 144, opacity: filterRole === 'live' ? 0.5 : 1 }}
+            value={filterRole === 'live' ? 'lastActiveAt' : sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            disabled={filterRole === 'live'}
+          >
+            <option value="createdAt">Newest joined</option>
+            <option value="lastActiveAt">Recently active</option>
+          </select>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={15} className="absolute left-3.5 top-3.5 text-gray-400" />
-          <input className="input-field pl-10" placeholder="Search by name, phone, email..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <select className="input-field sm:w-44" value={filterRole} onChange={e => setFilterRole(e.target.value)}>
-          <option value="">All Users</option>
-          <option value="live">🟢 Live (last 15 min)</option>
-          <option value="platinum">👑 Platinum only</option>
-          <option value="admin">🔑 Admins only</option>
-          <option value="active">📦 With orders</option>
-        </select>
-        <select className="input-field sm:w-40" value={distanceKm} onChange={e => setDistanceKm(e.target.value)}>
-          {DISTANCE_OPTIONS.map(o => <option key={o.value} value={o.value}>📍 {o.label}</option>)}
-        </select>
-        <select className="input-field sm:w-40" value={filterRole === 'live' ? 'lastActiveAt' : sortBy} onChange={e => setSortBy(e.target.value)} disabled={filterRole === 'live'}>
-          <option value="createdAt">Newest joined</option>
-          <option value="lastActiveAt">Latest active</option>
-        </select>
-      </div>
-
+      {/* List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
+          <Loader2 size={22} style={{ color: '#16a34a' }} className="animate-spin" />
+        </div>
       ) : (
         <>
-          <div className="space-y-2">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {paginated.map(u => <UserRow key={u._id} u={u} />)}
             {filtered.length === 0 && (
-              <div className="text-center py-12 text-gray-400">
-                <Users size={32} className="mx-auto mb-2 opacity-30" />
-                <p className="text-sm">No users found</p>
+              <div style={{ textAlign: 'center', padding: '56px 0', color: '#9ca3af' }}>
+                <Users size={30} style={{ margin: '0 auto 10px', opacity: 0.3 }} />
+                <p style={{ fontSize: 13 }}>No users match your filters</p>
               </div>
             )}
           </div>
