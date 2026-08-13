@@ -396,18 +396,9 @@ export async function executePipeline(workspaceId, {
 }
 
 /**
- * Get a compact schema summary for LLM prompt injection.
- * Returns each collection's document count + field paths + sample values.
+ * Get schema for a single connection. Returns array of { collection, count, fields }.
  */
-export async function getSchemaForPrompt(workspaceId, connectionId = null) {
-  let connection = null;
-  if (connectionId) {
-    const { LlmConnection } = await import('../models/llmModels.js');
-    connection = await LlmConnection.findById(connectionId);
-  }
-  if (!connection) {
-    connection = await getOrCreateSelfConnection(workspaceId);
-  }
+async function getSchemaForConnection(connection) {
   const data = await getDataConnection(connection);
   try {
     const names = (await data.db.listCollections().toArray())
@@ -425,12 +416,15 @@ export async function getSchemaForPrompt(workspaceId, connectionId = null) {
 
       let fields = [];
       try {
-        const sample = await col.aggregate([{ $sample: { size: 3 } }]).toArray();
+        const sample = await withTimeout(
+          col.aggregate([{ $sample: { size: 3 } }]).toArray(),
+          8000,
+          `schema sample ${name}`
+        );
         const pathSet = new Set();
         for (const doc of sample) {
           Object.keys(flatten(doc)).forEach((p) => pathSet.add(p));
         }
-        // Include compact sample values for key fields
         const sampleDoc = sample[0] || {};
         fields = [...pathSet]
           .filter((p) => p !== '_id')
@@ -439,7 +433,7 @@ export async function getSchemaForPrompt(workspaceId, connectionId = null) {
             const v = sampleDoc[p];
             let hint = '';
             if (v instanceof Date || (typeof v === 'string' && /^\d{4}-/.test(v))) hint = ':date';
-            else if (typeof v === 'number') hint = `:num(e.g.${v})`;
+            else if (typeof v === 'number') hint = `:num(${Number.isInteger(v) ? v : v.toFixed(2)})`;
             else if (typeof v === 'string' && v.length < 30) hint = `:"${v}"`;
             return `${p}${hint}`;
           });
@@ -453,6 +447,73 @@ export async function getSchemaForPrompt(workspaceId, connectionId = null) {
   } finally {
     await data.release();
   }
+}
+
+/**
+ * Get combined schema across ALL connected clusters for a workspace.
+ * Returns an array of cluster objects, each with a label + their collections.
+ * This powers the multi-cluster LLM prompt so the model knows exactly what's available
+ * and which connectionId to pass to execute_pipeline for cross-cluster queries.
+ */
+export async function getAllClustersSchema(workspaceId) {
+  const { LlmConnection } = await import('../models/llmModels.js');
+
+  // Load all connections for this workspace
+  const connections = await LlmConnection.find({ workspaceId }).lean();
+  if (!connections.length) {
+    // Ensure self connection exists
+    const self = await getOrCreateSelfConnection(workspaceId);
+    connections.push(self.toObject ? self.toObject() : self);
+  }
+
+  const clusters = [];
+
+  await Promise.allSettled(
+    connections.map(async (conn) => {
+      try {
+        const label = conn.mode === 'self'
+          ? 'App database (self)'
+          : conn.name || conn.meta?.host || 'External cluster';
+
+        const schema = await getSchemaForConnection(conn);
+        clusters.push({
+          connectionId: String(conn._id),
+          label,
+          mode: conn.mode,
+          host: conn.meta?.host || 'self',
+          dbName: conn.meta?.dbName || '',
+          collections: schema,
+        });
+      } catch {
+        /* skip failed connection */
+      }
+    })
+  );
+
+  // Sort: self first, then alphabetical
+  clusters.sort((a, b) => {
+    if (a.mode === 'self') return -1;
+    if (b.mode === 'self') return 1;
+    return a.label.localeCompare(b.label);
+  });
+
+  return clusters;
+}
+
+/**
+ * Get a compact schema summary for LLM prompt injection (single self connection).
+ * For multi-cluster, use getAllClustersSchema instead.
+ */
+export async function getSchemaForPrompt(workspaceId, connectionId = null) {
+  let connection = null;
+  if (connectionId) {
+    const { LlmConnection } = await import('../models/llmModels.js');
+    connection = await LlmConnection.findById(connectionId);
+  }
+  if (!connection) {
+    connection = await getOrCreateSelfConnection(workspaceId);
+  }
+  return getSchemaForConnection(connection);
 }
 
 // Re-export flatten for getSchemaForPrompt

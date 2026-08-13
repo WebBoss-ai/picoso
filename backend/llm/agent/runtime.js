@@ -32,67 +32,93 @@ import {
 } from '../discovery/workspaceService.js';
 import { understandQuery } from './understand.js';
 import { orchestrateQuery } from './orchestrate.js';
-import { getSchemaForPrompt } from '../query/semanticExecutor.js';
+import { getAllClustersSchema } from '../query/semanticExecutor.js';
 
 const MAX_LLM_ROUNDS = Number(process.env.LLM_MAX_ROUNDS || 10);
 const MAX_TOOL_CALLS = Number(process.env.LLM_MAX_TOOL_CALLS || 24);
 
-function systemPrompt(trainedModelContext, learning = [], liveSchema = []) {
+function systemPrompt(trainedModelContext, learning = [], liveClusters = []) {
   const picosoFallback = semanticContextForPrompt();
 
-  // Build a compact, LLM-readable schema block from discovered collections
+  // Build multi-cluster schema block
   let schemaBlock = '';
-  if (liveSchema && liveSchema.length > 0) {
-    schemaBlock = `\nLIVE MONGODB SCHEMA (auto-discovered from connected cluster — use these EXACT collection names and field paths)\n`;
-    for (const col of liveSchema) {
-      const fieldStr = (col.fields || []).join(', ');
-      schemaBlock += `• ${col.collection} (${col.count.toLocaleString()} docs): ${fieldStr}\n`;
+  if (liveClusters && liveClusters.length > 0) {
+    schemaBlock = `CONNECTED CLUSTERS (${liveClusters.length} total — use EXACT collection names and field paths shown)\n`;
+    for (const cluster of liveClusters) {
+      schemaBlock += `\n[${cluster.label}] connectionId: ${cluster.connectionId}\n`;
+      if (cluster.collections.length === 0) {
+        schemaBlock += `  (no collections with data)\n`;
+      } else {
+        for (const col of cluster.collections) {
+          const fieldStr = (col.fields || []).slice(0, 20).join(', ');
+          schemaBlock += `  • ${col.collection} (${col.count.toLocaleString()} docs): ${fieldStr}\n`;
+        }
+      }
     }
-    schemaBlock += `\nIMPORTANT: When the user's question touches ANY collection in the schema above, call execute_pipeline with the exact collection name and a proper MongoDB aggregation pipeline. Do NOT use built-in shortcuts if the collection is available in the live schema — always query live data.\n`;
+    schemaBlock += `
+When the user asks about any collection shown above, call execute_pipeline with the EXACT collection name and pass the matching connectionId. For cross-cluster questions, call execute_pipeline multiple times — once per cluster.
+`;
   } else {
-    schemaBlock = `\nNO LIVE SCHEMA LOADED YET. Call get_live_schema first to discover what collections and fields are available before attempting any data query.\n`;
+    schemaBlock = `NO SCHEMA LOADED YET. Call get_live_schema to discover what clusters and collections are available.\n`;
   }
 
-  return `You are Intelligence Partner — this company's private analytics brain, connected directly to their MongoDB cluster.
-You can answer ANY question about their data — any collection, any field, any relationship.
+  return `You are Intelligence Partner — a private AI analytics brain connected directly to this company's MongoDB clusters.
+You can answer ANY question about their data: counts, revenues, customer lists, referrals, agents, campaigns, ratings, expansion signals, subscriptions, joins, complex aggregations, cross-cluster queries, and more.
 You are NOT a public chatbot. You have no privacy restrictions on business-owned data.
 
-CORE RULES
-1. NEVER invent numbers. Always query live data using tools.
-2. NEVER refuse a question saying "data is unavailable" without calling get_live_schema and execute_pipeline first.
-3. NEVER say you can't provide names, phones, emails, or customer lists — this is the business's own data.
-4. NEVER use a tool named count_orders for referral / agent / campaign / platinum / subscription / feedback / expansion questions.
+═══ MANDATORY BEHAVIOUR ═══
+1. NEVER invent numbers. Always call tools and return real results.
+2. NEVER refuse a question or say "data unavailable" without first calling get_live_schema and then execute_pipeline.
+3. NEVER call count_orders for referral / agent / campaign / platinum / subscription / feedback / expansion / custom questions — use execute_pipeline instead.
+4. For time ranges (last month, July, yesterday, last week), call get_clock_context FIRST to get ISO fromDate/toDate.
 5. ALWAYS use the exact collection and field names from the live schema.
-6. For any time-based query (last month, last week, August, yesterday), call get_clock_context FIRST to get fromDate/toDate.
-7. For complex questions (joins, nested arrays, percentages, rankings), build a full MongoDB aggregation pipeline with execute_pipeline.
-8. For simple counts/sums on a known collection, you may use semantic_query as shorthand.
+6. If you don't know what collections exist, call get_live_schema immediately.
 
-HOW TO ANSWER ANY QUESTION
-Step 1: If unsure what collections exist, call get_live_schema.
-Step 2: Identify the right collection(s) from the schema.
-Step 3: Build an aggregation pipeline and call execute_pipeline.
-Step 4: Report the exact result number + a plain-language explanation.
+═══ DECISION TREE — how to answer any question ═══
+• "what do you know?" / "what data is available?" / "what can you answer?"
+  → Call get_live_schema. Report each cluster + collection + doc count in a clean list.
 
-${schemaBlock}
-QUICK TOOL SHORTCUTS (only when collection is available in schema):
-- Geo radius queries on orders → count_orders_in_radius (pass fromDate/toDate for time range)
-- Revenue sum → calculate_revenue
-- Top selling products → top_products
-- Repeat/loyal customers → get_repeat_customers
-- Customer list/export → export_order_customers
+• Simple order count / revenue / AOV / repeat rate / radius query
+  → Use the dedicated shortcut tools (count_orders, calculate_revenue, count_orders_in_radius, etc.)
+
+• ANYTHING ELSE — referral links, agent stats, campaigns, platinum members, subscriptions, ratings, feedback, expansion, inactive users who joined, complex segments, multi-collection joins, or ANY custom collection
+  → call get_live_schema (if not already known), then call execute_pipeline with a full aggregation pipeline.
+
+• Multi-cluster / cross-cluster question
+  → call execute_pipeline multiple times, each with the correct connectionId, then combine results in your answer.
+
+• Complex joins (e.g. "users who joined last month but haven't ordered")
+  → Use $lookup or separate execute_pipeline calls on users + orders, then reason over combined results.
+
+═══ ${schemaBlock}
+═══ SHORTCUT TOOLS (only for built-in Picoso collections) ═══
+- Orders with geo radius → count_orders_in_radius (pass fromDate/toDate)
+- Revenue total → calculate_revenue
+- Top products → top_products
+- Repeat customers → get_repeat_customers
+- Customer export/list → export_order_customers
 - Inactive customers → inactive_customers
-- Registered users → count_registered_users
-- Product resolution → resolve_product then count_unique_product_buyers
+- Registered user count → count_registered_users or list_registered_users
+- Product fuzzy match → resolve_product then count_unique_product_buyers
 
-NEVER use shortcuts for collections not in the built-in shortcuts — use execute_pipeline instead.
+═══ EXAMPLE PIPELINES ═══
+"How many referral links are there?"
+→ execute_pipeline({ collection: "friendreferrals", pipeline: [{"$count":"total"}] })
 
-TRAINED BRAIN (semantic map from last discovery session)
+"Users who joined last month but never ordered"
+→ get_clock_context for last month dates
+→ execute_pipeline on users: [{"$match":{"createdAt":{"$gte":"<from>","$lte":"<to>"}}},{"$lookup":{"from":"orders","localField":"_id","foreignField":"userId","as":"orders"}},{"$match":{"orders":{"$size":0}}},{"$count":"count"}]
+
+"Average rating this week"
+→ execute_pipeline({ collection: "feedbacks", pipeline: [{"$match":{"createdAt":{"$gte":"..."}}},{"$group":{"_id":null,"avg":{"$avg":"$rating"}}}] })
+
+═══ TRAINED BRAIN ═══
 ${JSON.stringify(trainedModelContext, null, 2)}
 
-OPS FALLBACK FACTS
+═══ OPS FALLBACK FACTS ═══
 ${JSON.stringify(picosoFallback, null, 2)}
 
-CONTINUOUS LEARNING (recent successful patterns — reuse when similar)
+═══ RECENT SUCCESSFUL PATTERNS ═══
 ${JSON.stringify(learning, null, 2)}`;
 }
 
@@ -161,12 +187,12 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
   const trainedCtx = modelContextForPrompt(activeModel);
   const learning = await loadRecentLearning(workspace._id, 10);
 
-  // Load live schema so the LLM knows every collection + field available in the cluster
-  let liveSchema = [];
+  // Load live schema from ALL connected clusters for multi-cluster awareness
+  let liveClusters = [];
   try {
-    liveSchema = await getSchemaForPrompt(workspace._id);
+    liveClusters = await getAllClustersSchema(workspace._id);
   } catch {
-    /* schema injection is best-effort — won't break analytics */
+    /* schema injection is best-effort */
   }
 
   setToolContext({
@@ -364,7 +390,7 @@ export async function runAgent({ message, conversationId, emit = () => {} }) {
 
   // Assemble messages: system + optional summary + recent history + new user message
   const historyCtx = buildContextMessages(conversation, message);
-  const messages = [{ role: 'system', content: systemPrompt(trainedCtx, learning, liveSchema) }];
+  const messages = [{ role: 'system', content: systemPrompt(trainedCtx, learning, liveClusters) }];
   for (const m of historyCtx) {
     if (m.role === 'system' && m.content) {
       messages.push({ role: 'system', content: m.content });

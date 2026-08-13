@@ -193,7 +193,9 @@ function detectPrimaryMetric(message = '') {
   }
   if (/\b(orders?|order count|total order)\b/.test(m)) return 'orders';
   if (/\bcustomers?\b/.test(m)) return 'unique_customers';
-  return 'orders';
+
+  // No recognizable metric — return null so the LLM handles it with execute_pipeline
+  return null;
 }
 
 function buildNormalized(message, c) {
@@ -330,8 +332,19 @@ export function understandQuery(message = '') {
     wantExport: /\b(export|csv|download)\b/i.test(lower),
   };
 
-  const analytics = isAnalyticsIntent(original) || Boolean(metric);
-  const normalized = buildNormalized(original, constraints);
+  // Only use the fast-path orchestration for metrics that have reliable dedicated tools.
+  // Everything else (null metric, referral/agent/campaign/platinum/subscription/feedback/expansion,
+  // complex multi-hop queries) falls through to the LLM which will use execute_pipeline.
+  const FAST_PATH_METRICS = new Set([
+    'orders', 'revenue', 'aov', 'unique_customers', 'export_customers',
+    'top_products', 'repeat_customers', 'repeat_rate', 'inactive_customers',
+    'segment_customers', 'registered_users',
+  ]);
+
+  const analytics = metric != null && FAST_PATH_METRICS.has(metric);
+  const normalized = metric != null
+    ? buildNormalized(original, constraints)
+    : original;
   const plan = buildPlan(constraints);
 
   return {

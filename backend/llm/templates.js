@@ -25,11 +25,21 @@ export function isConversational(message = '') {
   const m = String(message || '').trim().toLowerCase();
   if (!m) return false;
   if (isGreeting(m)) return true;
+
+  // Explicit discovery / capability questions → LLM handles via get_live_schema
+  if (
+    /\b(what (do you know|can you (do|answer|tell|help)|data (do you have|is available|can you see)|collections? (do you have|are there|do you see)|clusters? (are|do)|databases? (are|do))|show me (what|your)|capabilities|what('?s| is) (available|connected|in your (brain|data|knowledge))|introduce yourself|tell me about yourself|what are you|who are you|how are you|what'?s? up|thank(s| you)|great|awesome)\b/i.test(m)
+  ) {
+    return true;
+  }
+
+  // Explicit "what do you know" patterns
+  if (/^what (do you know|can you tell me|information do you have)\??$/.test(m)) return true;
+  if (/^(tell me|show me) (what|everything) you know/.test(m)) return true;
+
   if (isAnalyticsIntentQuick(m)) return false;
   return (
-    /\b(where are you|who are you|what are you|how are you|based out|your (name|location|address)|what can you do|help me|thank(s| you))\b/i.test(
-      m
-    ) ||
+    /\b(where are you|who are you|what are you|how are you|based out|your (name|location|address)|what can you do|help me|thank(s| you))\b/i.test(m) ||
     /^(where|who|what|how)\s+(are|is)\s+you\b/i.test(m) ||
     /\bbased\s+out\b/i.test(m)
   );

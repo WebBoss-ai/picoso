@@ -26,6 +26,7 @@ import {
   sampleCollection,
   executePipeline,
   getSchemaForPrompt,
+  getAllClustersSchema,
 } from '../query/semanticExecutor.js';
 import {
   getCorpusForModel,
@@ -1663,12 +1664,13 @@ async function sample_collection(input = {}) {
 /**
  * Universal MongoDB aggregation pipeline runner.
  * The LLM writes the full pipeline based on discovered schema.
+ * Pass connection_id to target a specific cluster (from get_live_schema results).
  */
 async function execute_pipeline(input = {}) {
   const { workspaceId } = getToolContext();
   if (!workspaceId) return { type: 'error', error: 'No workspace' };
 
-  const { collection, pipeline } = input;
+  const { collection, pipeline, connection_id } = input;
   if (!collection) return { type: 'error', error: 'collection is required' };
   if (!Array.isArray(pipeline) || pipeline.length === 0) {
     return { type: 'error', error: 'pipeline must be a non-empty array of stage objects' };
@@ -1678,18 +1680,27 @@ async function execute_pipeline(input = {}) {
     collection,
     pipeline,
     limit: Number(input.limit) || 200,
+    connectionId: connection_id || null,
   });
 }
 
 /**
- * Returns live schema: collection names, document counts, field paths, sample values.
- * Call this when the user asks about data you don't know, or to confirm what's available.
+ * Returns live schema for ALL connected clusters:
+ * cluster label, connectionId, collection names, document counts, field paths with sample values.
+ * ALWAYS call this first for unknown questions. Use connectionId from results in execute_pipeline
+ * to target the right cluster. For multi-cluster questions, run execute_pipeline multiple times.
  */
 async function get_live_schema(input = {}) {
   const { workspaceId } = getToolContext();
   if (!workspaceId) return { type: 'error', error: 'No workspace' };
-  const schema = await getSchemaForPrompt(workspaceId);
-  return { type: 'live_schema', collections: schema, count: schema.length };
+  const clusters = await getAllClustersSchema(workspaceId);
+  const totalCollections = clusters.reduce((s, c) => s + c.collections.length, 0);
+  return {
+    type: 'live_schema',
+    clusterCount: clusters.length,
+    totalCollections,
+    clusters,
+  };
 }
 
 /** Tool definitions for Cohere */
@@ -1753,23 +1764,27 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'get_live_schema',
     description:
-      'Returns LIVE schema: all collection names in the connected MongoDB cluster with document counts, field names, and sample values. Call this FIRST when you are unsure what collections/fields exist. The schema auto-updates as data changes — no manual training needed.',
+      'Returns LIVE schema for ALL connected MongoDB clusters: cluster names, connectionIds, collection names, document counts, field paths with sample values. Call this FIRST for any unknown question, discovery query ("what do you know?", "what data is available?"), or before writing an execute_pipeline call. Also use when user asks about a collection you cannot identify. The schema is always live — no manual training needed.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'execute_pipeline',
     description:
-      'Execute ANY MongoDB aggregation pipeline on the user\'s connected cluster. Use this for any question that cannot be answered by simpler tools — complex joins ($lookup), nested array unwind ($unwind), date grouping, conditional counts, percentages, etc. First call get_live_schema to know the exact collection names and fields, then write the pipeline. The pipeline is a JSON array of MongoDB aggregation stages. Do NOT use $out, $merge, or write stages.',
+      'Execute ANY MongoDB aggregation pipeline on a connected cluster. Use for any question that cannot be answered by simpler tools: joins ($lookup), nested arrays ($unwind), date grouping, complex filters, percentages, rankings, cross-collection queries, referral/agent/campaign/platinum/subscription/feedback/expansion stats, or ANY custom collection. Always call get_live_schema first to get exact collection names, field paths, and the connectionId. Pass connection_id to target a specific cluster. Do NOT use $out, $merge, or write stages.',
     parameters: {
       type: 'object',
       properties: {
         collection: {
           type: 'string',
-          description: 'The collection to run the pipeline on (must match exactly as discovered)',
+          description: 'Exact collection name from get_live_schema',
         },
         pipeline: {
           type: 'array',
-          description: 'MongoDB aggregation pipeline stages. Example: [{"$match":{"status":"delivered"}},{"$group":{"_id":null,"total":{"$sum":"$totalPrice"}}}]',
+          description: 'MongoDB aggregation pipeline array. E.g. [{"$match":{"status":"delivered"}},{"$group":{"_id":null,"total":{"$sum":"$totalPrice"}}}]',
+        },
+        connection_id: {
+          type: 'string',
+          description: 'connectionId from get_live_schema to target a specific cluster. Omit to use the default (self) cluster.',
         },
         limit: {
           type: 'number',
