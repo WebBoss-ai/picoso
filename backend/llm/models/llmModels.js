@@ -361,6 +361,71 @@ const llmTrainingCorpusSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+// ── Dashboards: AI-built, fully-dynamic components ───────────────────────────
+/**
+ * A dashboard component spec. Nothing about the business is hardcoded — the
+ * whole spec (viz type, collection, aggregation pipeline, field mappings,
+ * assumptions, clarifying questions) is produced by the model from the live
+ * discovered schema and refined through conversation.
+ */
+const llmDashboardComponentSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    title: { type: String, default: 'Untitled' },
+    subtitle: { type: String, default: '' },
+    viz: {
+      type: String,
+      enum: ['metric', 'line', 'bar', 'area', 'pie', 'table'],
+      default: 'metric',
+    },
+    connectionId: { type: String, default: null },
+    collection: { type: String, default: '' },
+    pipeline: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    /** Field mappings used by the renderer */
+    valueField: { type: String, default: '' },
+    labelField: { type: String, default: '' },
+    seriesField: { type: String, default: '' },
+    secondaryValueField: { type: String, default: '' },
+    format: { type: String, default: 'number' },
+    unit: { type: String, default: '' },
+    accent: { type: String, default: '' },
+    refreshSeconds: { type: Number, default: 0 },
+    limit: { type: Number, default: 200 },
+    /** Transparency: what the model assumed + what it computes */
+    computedNote: { type: String, default: '' },
+    assumptions: { type: [String], default: [] },
+    clarifyingQuestions: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    /** Editing history of prompts that shaped this component */
+    promptHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    /** grid layout */
+    layout: {
+      w: { type: Number, default: 1 },
+      h: { type: Number, default: 1 },
+    },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false, suppressReservedKeysWarning: true }
+);
+
+const llmDashboardSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LlmWorkspace',
+    required: true,
+    index: true,
+  },
+  name: { type: String, default: 'Main dashboard' },
+  slug: { type: String, default: 'main' },
+  description: { type: String, default: '' },
+  components: { type: [llmDashboardComponentSchema], default: [] },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+export const LlmDashboard =
+  mongoose.models.LlmDashboard || mongoose.model('LlmDashboard', llmDashboardSchema);
+
 export const LlmConversation =
   mongoose.models.LlmConversation ||
   mongoose.model('LlmConversation', llmConversationSchema);

@@ -46,6 +46,17 @@ import {
   Mail,
   Type,
   ListTree,
+  LayoutDashboard,
+  Plus,
+  Trash2,
+  Pencil,
+  Wand2,
+  LineChart as LineChartIcon,
+  BarChart as BarChartIcon,
+  PieChart as PieChartIcon,
+  Activity,
+  Save,
+  HelpCircle,
 } from 'lucide-react';
 
 const PIN_KEY = 'picoso_llm_pin';
@@ -579,6 +590,540 @@ function ClusterAnalysisPanel({ clusters, busy, error, steps, onRefresh }) {
   );
 }
 
+// ── Dashboard: value formatting + dependency-free SVG charts ─────────────────
+const CHART_COLORS = ['#2563eb', '#7c3aed', '#059669', '#d97706', '#db2777', '#0891b2', '#65a30d', '#e11d48'];
+
+function formatValue(n, spec = {}) {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  const num = Number(n);
+  const { format = 'number', unit = '', currency = 'INR' } = spec;
+  try {
+    if (format === 'currency') {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 0,
+      }).format(num);
+    }
+    if (format === 'percent') {
+      return `${(Math.round(num * 100) / 100).toLocaleString()}%`;
+    }
+    if (format === 'compact') {
+      return new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(num);
+    }
+    const rounded = Number.isInteger(num) ? num : Math.round(num * 100) / 100;
+    const s = rounded.toLocaleString('en-IN');
+    return unit ? `${s} ${unit}` : s;
+  } catch {
+    return String(n);
+  }
+}
+
+function svgPointsMax(points, keys = ['value']) {
+  let max = 0;
+  let min = 0;
+  for (const p of points) {
+    for (const k of keys) {
+      const v = Number(p[k]);
+      if (!Number.isNaN(v)) {
+        if (v > max) max = v;
+        if (v < min) min = v;
+      }
+    }
+  }
+  if (max === min) max = min + 1;
+  return { max, min };
+}
+
+function LineChart({ points, spec, area = false }) {
+  const W = 320;
+  const H = 130;
+  const pad = { l: 6, r: 6, t: 10, b: 18 };
+  const iw = W - pad.l - pad.r;
+  const ih = H - pad.t - pad.b;
+  const keys = points.some((p) => p.value2 != null) ? ['value', 'value2'] : ['value'];
+  const { max, min } = svgPointsMax(points, keys);
+  const n = points.length;
+  const xOf = (i) => pad.l + (n <= 1 ? iw / 2 : (i / (n - 1)) * iw);
+  const yOf = (v) => pad.t + ih - ((Number(v) - min) / (max - min)) * ih;
+
+  const line = (key, color) => {
+    const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xOf(i).toFixed(1)} ${yOf(p[key]).toFixed(1)}`).join(' ');
+    const areaD = `${d} L ${xOf(n - 1).toFixed(1)} ${pad.t + ih} L ${xOf(0).toFixed(1)} ${pad.t + ih} Z`;
+    return (
+      <g key={key}>
+        {area && <path d={areaD} fill={color} opacity="0.12" />}
+        <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => (
+          <circle key={i} cx={xOf(i)} cy={yOf(p[key])} r="2" fill={color} />
+        ))}
+      </g>
+    );
+  };
+
+  const labelIdxs = n <= 4 ? points.map((_, i) => i) : [0, Math.floor(n / 2), n - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="llm-chart-svg" preserveAspectRatio="none">
+      {keys.map((k, i) => line(k, CHART_COLORS[i]))}
+      {labelIdxs.map((i) => (
+        <text key={i} x={xOf(i)} y={H - 4} className="llm-chart-xlabel" textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}>
+          {String(points[i]?.label ?? '').slice(0, 10)}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+function BarChart({ points, spec }) {
+  const W = 320;
+  const H = 130;
+  const pad = { l: 6, r: 6, t: 10, b: 18 };
+  const iw = W - pad.l - pad.r;
+  const ih = H - pad.t - pad.b;
+  const { max } = svgPointsMax(points, ['value']);
+  const n = points.length || 1;
+  const bw = Math.max(4, (iw / n) * 0.62);
+  const gap = iw / n;
+  const yOf = (v) => pad.t + ih - (Number(v) / max) * ih;
+  const labelIdxs = n <= 6 ? points.map((_, i) => i) : [0, Math.floor(n / 2), n - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="llm-chart-svg" preserveAspectRatio="none">
+      {points.map((p, i) => {
+        const x = pad.l + i * gap + (gap - bw) / 2;
+        const y = yOf(p.value);
+        const h = pad.t + ih - y;
+        return <rect key={i} x={x} y={y} width={bw} height={Math.max(0, h)} rx="2" fill={CHART_COLORS[i % CHART_COLORS.length]} />;
+      })}
+      {labelIdxs.map((i) => (
+        <text key={i} x={pad.l + i * gap + gap / 2} y={H - 4} className="llm-chart-xlabel" textAnchor="middle">
+          {String(points[i]?.label ?? '').slice(0, 8)}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+function PieChart({ points, spec }) {
+  const size = 130;
+  const r = 56;
+  const cx = size / 2;
+  const cy = size / 2;
+  const total = points.reduce((s, p) => s + (Number(p.value) || 0), 0) || 1;
+  let acc = 0;
+  const arcs = points.slice(0, 8).map((p, i) => {
+    const frac = (Number(p.value) || 0) / total;
+    const a0 = acc * 2 * Math.PI - Math.PI / 2;
+    acc += frac;
+    const a1 = acc * 2 * Math.PI - Math.PI / 2;
+    const x0 = cx + r * Math.cos(a0);
+    const y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1);
+    const y1 = cy + r * Math.sin(a1);
+    const large = frac > 0.5 ? 1 : 0;
+    return {
+      d: `M ${cx} ${cy} L ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z`,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      label: p.label,
+      pct: Math.round(frac * 100),
+    };
+  });
+  return (
+    <div className="llm-pie-wrap">
+      <svg viewBox={`0 0 ${size} ${size}`} className="llm-pie-svg">
+        {arcs.map((a, i) => (
+          <path key={i} d={a.d} fill={a.color} stroke="#fff" strokeWidth="1" />
+        ))}
+      </svg>
+      <div className="llm-pie-legend">
+        {arcs.map((a, i) => (
+          <div key={i} className="llm-pie-legend-item">
+            <span className="llm-pie-dot" style={{ background: a.color }} />
+            <span className="llm-pie-legend-label">{String(a.label).slice(0, 18)}</span>
+            <span className="llm-pie-legend-pct">{a.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DataTableView({ rows, spec }) {
+  const list = (rows || []).slice(0, 50);
+  if (!list.length) return <p className="llm-muted">No rows.</p>;
+  const cols = Object.keys(list[0]).filter((k) => k !== '_id').slice(0, 6);
+  return (
+    <div className="llm-dtable-wrap">
+      <table className="llm-dtable">
+        <thead>
+          <tr>{cols.map((c) => <th key={c}>{c}</th>)}</tr>
+        </thead>
+        <tbody>
+          {list.map((r, i) => (
+            <tr key={i}>
+              {cols.map((c) => {
+                const v = r[c];
+                return <td key={c}>{typeof v === 'number' ? v.toLocaleString('en-IN') : String(v ?? '—').slice(0, 40)}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Renders any component spec + its live result. */
+function ChartRenderer({ spec, result, loading, error }) {
+  if (loading) {
+    return (
+      <div className="llm-chart-loading">
+        <Loader2 className="w-5 h-5 animate-spin" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="llm-chart-error">
+        <AlertCircle className="w-4 h-4" /> {error}
+      </div>
+    );
+  }
+  if (!result || !result.ok) {
+    return <div className="llm-chart-error"><AlertCircle className="w-4 h-4" /> {result?.error || 'No data'}</div>;
+  }
+
+  if (spec.viz === 'metric') {
+    return (
+      <div className="llm-metric-big">
+        <div className="llm-metric-big-value">{formatValue(result.value, spec)}</div>
+        {spec.unit && spec.format !== 'currency' && spec.format !== 'percent' && (
+          <div className="llm-metric-big-unit">{spec.unit}</div>
+        )}
+      </div>
+    );
+  }
+  if (spec.viz === 'table') {
+    return <DataTableView rows={result.rows} spec={spec} />;
+  }
+  const points = result.points || [];
+  if (!points.length) return <p className="llm-muted">No data points.</p>;
+  if (spec.viz === 'line') return <LineChart points={points} spec={spec} />;
+  if (spec.viz === 'area') return <LineChart points={points} spec={spec} area />;
+  if (spec.viz === 'bar') return <BarChart points={points} spec={spec} />;
+  if (spec.viz === 'pie') return <PieChart points={points} spec={spec} />;
+  return <DataTableView rows={result.rows} spec={spec} />;
+}
+
+const VIZ_ICON = {
+  metric: Activity,
+  line: LineChartIcon,
+  area: Activity,
+  bar: BarChartIcon,
+  pie: PieChartIcon,
+  table: Table2,
+};
+
+/**
+ * In-chat card: shows the freshly built component with a LIVE preview,
+ * the model's assumptions, 2–4 clarifying questions (answerable inline),
+ * a free-text correction box, and Add / Refine actions.
+ */
+function ComponentBuilderCard({ build, onRefine, onRun, onAdd }) {
+  const [spec, setSpec] = useState(build.spec);
+  const [preview, setPreview] = useState(build.preview);
+  const [answers, setAnswers] = useState({});
+  const [correction, setCorrection] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState(false);
+  const [err, setErr] = useState('');
+  const VizIcon = VIZ_ICON[spec.viz] || Activity;
+
+  async function refine() {
+    setBusy(true);
+    setErr('');
+    try {
+      const answered = Object.entries(answers)
+        .filter(([, v]) => v && v.trim())
+        .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+      const data = await onRefine({
+        prompt: correction,
+        priorSpec: spec,
+        userAnswers: Object.keys(answered).length ? answered : null,
+        mode: 'refine',
+      });
+      setSpec(data.spec);
+      setPreview(data.preview);
+      setAnswers({});
+      setCorrection('');
+    } catch (e) {
+      setErr(e.message || 'Refine failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refresh() {
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await onRun(spec);
+      setPreview(r);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="llm-builder-card">
+      <div className="llm-builder-head">
+        <span className="llm-builder-viz"><VizIcon className="w-3.5 h-3.5" /> {spec.viz}</span>
+        <div className="llm-builder-title">
+          <strong>{spec.title}</strong>
+          {spec.subtitle && <span>{spec.subtitle}</span>}
+        </div>
+        <button type="button" className="llm-icon-btn" title="Refresh" onClick={refresh} disabled={busy}>
+          <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      <div className="llm-builder-preview">
+        <ChartRenderer spec={spec} result={preview} loading={busy} error={err} />
+      </div>
+
+      {spec.computedNote && <p className="llm-builder-note">{spec.computedNote}</p>}
+
+      {spec.assumptions?.length > 0 && (
+        <div className="llm-builder-assume">
+          <div className="llm-section-title">Assumptions I made</div>
+          <ul>
+            {spec.assumptions.map((a, i) => (
+              <li key={i}><CheckCircle2 className="w-3 h-3" /> {a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {spec.clarifyingQuestions?.length > 0 && (
+        <div className="llm-builder-q">
+          <div className="llm-section-title">
+            <HelpCircle className="w-3.5 h-3.5" /> Answer these to make it perfect
+          </div>
+          {spec.clarifyingQuestions.map((q) => (
+            <div key={q.id} className="llm-builder-qrow">
+              <label>{q.question}</label>
+              {q.why && <span className="llm-builder-why">{q.why}</span>}
+              <input
+                className="llm-input"
+                placeholder={q.exampleAnswer ? `e.g. ${q.exampleAnswer}` : 'Your answer…'}
+                value={answers[q.id] || ''}
+                onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <textarea
+        className="llm-textarea mt-2"
+        rows={2}
+        placeholder="Or type a correction — e.g. “group daily, not monthly” or “exclude cancelled orders”…"
+        value={correction}
+        onChange={(e) => setCorrection(e.target.value)}
+      />
+
+      <div className="llm-builder-actions">
+        <button
+          type="button"
+          className="llm-btn-ghost"
+          disabled={busy || (!correction.trim() && !Object.values(answers).some((v) => v && v.trim()))}
+          onClick={refine}
+        >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+          Refine
+        </button>
+        <button
+          type="button"
+          className="llm-btn-primary"
+          disabled={busy || added}
+          onClick={async () => {
+            await onAdd(spec);
+            setAdded(true);
+          }}
+        >
+          {added ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {added ? 'Added to dashboard' : 'Add to dashboard'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A single live tile on the dashboard with refresh, edit-refine, remove. */
+function DashboardTile({ spec, onRun, onRefine, onRemove, onUpdate }) {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [correction, setCorrection] = useState('');
+  const [busy, setBusy] = useState(false);
+  const VizIcon = VIZ_ICON[spec.viz] || Activity;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await onRun(spec);
+      setResult(r);
+      if (!r.ok) setError(r.error || 'No data');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(spec.pipeline), spec.collection, spec.connectionId]);
+
+  useEffect(() => {
+    load();
+    if (spec.refreshSeconds > 0) {
+      const t = setInterval(load, spec.refreshSeconds * 1000);
+      return () => clearInterval(t);
+    }
+  }, [load, spec.refreshSeconds]);
+
+  async function applyRefine() {
+    setBusy(true);
+    try {
+      const data = await onRefine({ prompt: correction, priorSpec: spec, mode: 'refine' });
+      onUpdate(data.spec);
+      setResult(data.preview);
+      setCorrection('');
+      setEditing(false);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`llm-tile llm-tile-${spec.viz}`}>
+      <div className="llm-tile-head">
+        <span className="llm-tile-viz"><VizIcon className="w-3.5 h-3.5" /></span>
+        <div className="llm-tile-title">
+          <strong>{spec.title}</strong>
+          {spec.subtitle && <span>{spec.subtitle}</span>}
+        </div>
+        <div className="llm-tile-tools">
+          <button type="button" className="llm-icon-btn" title="Refresh" onClick={load}>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button type="button" className="llm-icon-btn" title="Edit" onClick={() => setEditing((e) => !e)}>
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button type="button" className="llm-icon-btn danger" title="Remove" onClick={() => onRemove(spec.id)}>
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="llm-tile-body">
+        <ChartRenderer spec={spec} result={result} loading={loading} error={error} />
+      </div>
+
+      {result?.meta?.ranAt && !editing && (
+        <div className="llm-tile-foot">
+          <span className="llm-dot on" /> live · {new Date(result.meta.ranAt).toLocaleTimeString()}
+          {spec.refreshSeconds > 0 ? ` · auto ${spec.refreshSeconds}s` : ''}
+        </div>
+      )}
+
+      {editing && (
+        <div className="llm-tile-edit">
+          <textarea
+            className="llm-textarea"
+            rows={2}
+            placeholder="Refine — e.g. “make it daily”, “last 7 days”, “as a bar chart”…"
+            value={correction}
+            onChange={(e) => setCorrection(e.target.value)}
+          />
+          <div className="flex gap-2 mt-2">
+            <button type="button" className="llm-btn-primary" disabled={busy || !correction.trim()} onClick={applyRefine}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Apply
+            </button>
+            <button type="button" className="llm-btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The dashboard page — futuristic grid of live, editable components. */
+function DashboardView({ dashboard, setDashboard, busy, onReload, onSave, onRun, onRefine, goBuild }) {
+  const components = dashboard?.components || [];
+
+  async function removeComponent(id) {
+    const next = components.filter((c) => c.id !== id);
+    await onSave(next);
+  }
+  async function updateComponent(spec) {
+    const next = components.map((c) => (c.id === spec.id ? spec : c));
+    await onSave(next);
+  }
+
+  return (
+    <div className="llm-dashboard">
+      <div className="llm-dash-head">
+        <div>
+          <h2 className="llm-dash-title">{dashboard?.name || 'Dashboard'}</h2>
+          <p className="llm-dash-sub">
+            {components.length} live element{components.length !== 1 ? 's' : ''} · real-time from your clusters
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" className="llm-btn-ghost" onClick={onReload} disabled={busy}>
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Reload
+          </button>
+          <button type="button" className="llm-btn-primary" onClick={goBuild}>
+            <Plus className="w-4 h-4" /> Build element
+          </button>
+        </div>
+      </div>
+
+      {components.length === 0 ? (
+        <div className="llm-dash-empty">
+          <div className="llm-dash-empty-icon"><LayoutDashboard className="w-8 h-8" /></div>
+          <h3>Your dashboard is a blank canvas</h3>
+          <p>
+            Switch to Chat → <strong>Build dashboard element</strong> and describe anything —
+            “users who joined today”, “daily revenue trend”, “orders by status”. The AI designs it
+            live from your data, asks a couple of questions to get it exactly right, then you add it here.
+          </p>
+          <button type="button" className="llm-btn-primary" onClick={goBuild}>
+            <Wand2 className="w-4 h-4" /> Build your first element
+          </button>
+        </div>
+      ) : (
+        <div className="llm-dash-grid">
+          {components.map((c) => (
+            <DashboardTile
+              key={c.id}
+              spec={c}
+              onRun={onRun}
+              onRefine={onRefine}
+              onRemove={removeComponent}
+              onUpdate={updateComponent}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LlmPage() {
   const [pin, setPin] = useState('');
   const [pinInput, setPinInput] = useState('');
@@ -640,6 +1185,11 @@ export default function LlmPage() {
   const [clustersError, setClustersError] = useState('');
   const [analyzeSteps, setAnalyzeSteps] = useState([]);
 
+  // Dashboard builder
+  const [dashboard, setDashboard] = useState(null);
+  const [dashboardBusy, setDashboardBusy] = useState(false);
+  const [buildMode, setBuildMode] = useState(false);
+
   useEffect(() => {
     const saved = getPin();
     if (saved) {
@@ -660,6 +1210,7 @@ export default function LlmPage() {
     if (ready && pin) {
       loadWorkspace(pin);
       loadBrain(pin);
+      loadDashboard(pin);
     }
   }, [ready, pin]);
 
@@ -770,6 +1321,76 @@ export default function LlmPage() {
       setAnalyzeSteps([]);
       setClustersBusy(false);
     }
+  }
+
+  // ── Dashboard builder API ──────────────────────────────────────────────
+  async function loadDashboard(p = pin) {
+    setDashboardBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/llm/dashboard`, { headers: apiHeaders(p, false) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.dashboards?.length) setDashboard(data.dashboards[0]);
+    } catch {
+      /* ignore */
+    } finally {
+      setDashboardBusy(false);
+    }
+  }
+
+  async function saveDashboard(components, meta = {}) {
+    const board = dashboard || {};
+    const body = {
+      name: meta.name ?? board.name,
+      description: meta.description ?? board.description,
+      components,
+    };
+    try {
+      const res = await fetch(
+        `${API_BASE}/llm/dashboard/${board.id || ''}`.replace(/\/$/, ''),
+        {
+          method: 'PUT',
+          headers: apiHeaders(pin),
+          body: JSON.stringify(body),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.dashboard) setDashboard(data.dashboard);
+      return data.dashboard;
+    } catch {
+      return null;
+    }
+  }
+
+  // Build or refine a component spec (returns { spec, preview })
+  async function buildComponent({ prompt, priorSpec, userAnswers, mode }) {
+    const res = await fetch(`${API_BASE}/llm/dashboard/build`, {
+      method: 'POST',
+      headers: apiHeaders(pin),
+      body: JSON.stringify({ prompt, priorSpec, userAnswers, mode }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Build failed');
+    return data;
+  }
+
+  // Execute a spec for live data
+  async function runComponent(spec) {
+    const res = await fetch(`${API_BASE}/llm/dashboard/run`, {
+      method: 'POST',
+      headers: apiHeaders(pin),
+      body: JSON.stringify({ spec }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Run failed');
+    return data;
+  }
+
+  // Add a built component to the dashboard + persist
+  async function addComponentToDashboard(spec) {
+    const existing = dashboard?.components || [];
+    const next = [...existing.filter((c) => c.id !== spec.id), spec];
+    await saveDashboard(next);
+    return next;
   }
 
   async function verifyPin(value, silent = false) {
@@ -1076,6 +1697,34 @@ export default function LlmPage() {
       const q = (text || message).trim();
       if (!q || loading || !pin) return;
 
+      // ── Dashboard element building mode ──────────────────────────────
+      if (buildMode) {
+        setLoading(true);
+        setError('');
+        setMessage('');
+        setTab('ask');
+        setTurns((t) => [...t, { role: 'user', content: q }]);
+        setStatus({ stage: 'building', label: 'Designing component…' });
+        setLiveSteps([
+          { id: 'b1', label: 'Reading live schema of connected clusters…' },
+          { id: 'b2', label: 'Designing the aggregation & visual…' },
+        ]);
+        try {
+          const data = await buildComponent({ prompt: q, mode: 'create' });
+          setTurns((t) => [
+            ...t,
+            { role: 'assistant', kind: 'component', build: data, prompt: q },
+          ]);
+        } catch (e) {
+          setError(e.message || 'Could not build component');
+        } finally {
+          setLoading(false);
+          setStatus(null);
+          setLiveSteps([]);
+        }
+        return;
+      }
+
       setLoading(true);
       setError('');
       setStatus({ stage: 'received', label: 'Received…' });
@@ -1214,7 +1863,8 @@ export default function LlmPage() {
         setStatus(null);
       }
     },
-    [message, loading, pin, conversationId]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [message, loading, pin, conversationId, buildMode]
   );
 
   function onStudioResizeStart(e) {
@@ -1331,28 +1981,6 @@ export default function LlmPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="llm-tabs">
-            <button type="button" className={tab === 'ask' ? 'on' : ''} onClick={() => setTab('ask')}>
-              Ask
-            </button>
-            <button
-              type="button"
-              className={tab === 'train' ? 'on' : ''}
-              onClick={() => setTab('train')}
-            >
-              Train
-            </button>
-            <button
-              type="button"
-              className={tab === 'brain' ? 'on' : ''}
-              onClick={() => {
-                setTab('brain');
-                loadBrain();
-              }}
-            >
-              Brain
-            </button>
-          </div>
           {tab === 'ask' && (
             <button
               type="button"
@@ -1385,7 +2013,55 @@ export default function LlmPage() {
         </div>
       </header>
 
-      {tab === 'train' ? (
+      <div className="llm-shell">
+        <aside className="llm-sidebar">
+          {[
+            { id: 'ask', label: 'Chat', icon: Sparkles },
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'train', label: 'Train', icon: Database },
+            { id: 'brain', label: 'Brain', icon: Brain },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`llm-nav-item ${tab === item.id ? 'on' : ''}`}
+                onClick={() => {
+                  setTab(item.id);
+                  if (item.id === 'brain') loadBrain();
+                  if (item.id === 'dashboard') loadDashboard();
+                }}
+                title={item.label}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+          <div className="llm-nav-spacer" />
+          <div className="llm-nav-foot">
+            <span className={`llm-dot ${trained ? 'on' : ''}`} />
+            {trained ? 'Brain online' : 'Live tools'}
+          </div>
+        </aside>
+
+        <div className="llm-main">
+      {tab === 'dashboard' ? (
+        <DashboardView
+          dashboard={dashboard}
+          setDashboard={setDashboard}
+          busy={dashboardBusy}
+          onReload={loadDashboard}
+          onSave={saveDashboard}
+          onRun={runComponent}
+          onRefine={buildComponent}
+          goBuild={() => {
+            setTab('ask');
+            setBuildMode(true);
+          }}
+        />
+      ) : tab === 'train' ? (
         <div className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 space-y-5 overflow-y-auto">
           <ClusterAnalysisPanel
             clusters={clusters}
@@ -2090,6 +2766,18 @@ export default function LlmPage() {
                     <div key={i} className="llm-bubble-user">
                       <p>{t.content}</p>
                     </div>
+                  ) : t.kind === 'component' ? (
+                    <div key={i} className="llm-bubble-ai">
+                      <ComponentBuilderCard
+                        build={t.build}
+                        onRefine={buildComponent}
+                        onRun={runComponent}
+                        onAdd={async (spec) => {
+                          await addComponentToDashboard(spec);
+                          setTab('dashboard');
+                        }}
+                      />
+                    </div>
                   ) : (
                     <div key={i} className="llm-bubble-ai">
                       <AnswerCard
@@ -2134,7 +2822,23 @@ export default function LlmPage() {
                 )}
               </div>
 
-              <div className="llm-composer">
+              <div className="llm-mode-switch">
+                <button
+                  type="button"
+                  className={!buildMode ? 'on' : ''}
+                  onClick={() => setBuildMode(false)}
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Ask
+                </button>
+                <button
+                  type="button"
+                  className={buildMode ? 'on' : ''}
+                  onClick={() => setBuildMode(true)}
+                >
+                  <Wand2 className="w-3.5 h-3.5" /> Build dashboard element
+                </button>
+              </div>
+              <div className={`llm-composer ${buildMode ? 'build' : ''}`}>
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -2144,7 +2848,11 @@ export default function LlmPage() {
                       ask();
                     }
                   }}
-                  placeholder="Ask for metrics, customers, rankings — or “export list of…”"
+                  placeholder={
+                    buildMode
+                      ? 'Describe a dashboard element, e.g. “users who joined today” or “daily profit”…'
+                      : 'Ask for metrics, customers, rankings — or “export list of…”'
+                  }
                   rows={2}
                   className="llm-textarea"
                   disabled={loading}
@@ -2153,11 +2861,13 @@ export default function LlmPage() {
                   type="button"
                   disabled={loading || !message.trim()}
                   className="llm-btn-primary llm-send"
-                  aria-label="Ask"
+                  aria-label={buildMode ? 'Build' : 'Ask'}
                   onClick={() => ask()}
                 >
                   {loading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : buildMode ? (
+                    <Wand2 className="w-5 h-5" />
                   ) : (
                     <Send className="w-5 h-5" />
                   )}
@@ -2297,6 +3007,8 @@ export default function LlmPage() {
           )}
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3106,6 +3818,157 @@ const LLM_CSS = `
   }
   .llm-session-list li:last-child { border-bottom: 0; }
   .llm-preview { border-top: 1px solid var(--llm-line); padding-top: 0.75rem; }
+
+  /* ── Sidebar shell ────────────────────────────────────────────────── */
+  .llm-shell { flex: 1; display: flex; min-height: 0; }
+  .llm-sidebar {
+    width: 168px; flex-shrink: 0; border-right: 1px solid var(--llm-line);
+    background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+    display: flex; flex-direction: column; gap: 0.2rem; padding: 0.75rem 0.6rem;
+  }
+  .llm-nav-item {
+    display: flex; align-items: center; gap: 0.6rem; width: 100%; text-align: left;
+    padding: 0.55rem 0.7rem; border: 0; background: transparent; border-radius: 10px;
+    color: var(--llm-muted); font-weight: 600; font-size: 0.82rem; cursor: pointer; font-family: inherit;
+    transition: background 0.14s, color 0.14s;
+  }
+  .llm-nav-item:hover { background: var(--llm-bg); color: var(--llm-ink); }
+  .llm-nav-item.on {
+    background: var(--llm-blue-soft); color: var(--llm-blue-deep);
+    box-shadow: inset 2px 0 0 var(--llm-blue);
+  }
+  .llm-nav-spacer { flex: 1; }
+  .llm-nav-foot {
+    display: flex; align-items: center; gap: 0.4rem; font-size: 0.68rem; color: var(--llm-muted);
+    padding: 0.5rem 0.7rem;
+  }
+  .llm-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--llm-line-strong); display: inline-block; }
+  .llm-dot.on { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.18); }
+  .llm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .llm-main > * { min-height: 0; }
+
+  /* ── Mode switch + build composer ─────────────────────────────────── */
+  .llm-mode-switch {
+    display: inline-flex; gap: 0.25rem; margin: 0 auto 0.5rem; padding: 0.2rem;
+    border: 1px solid var(--llm-line); border-radius: 999px; background: var(--llm-bg);
+  }
+  .llm-mode-switch button {
+    display: inline-flex; align-items: center; gap: 0.35rem; border: 0; background: transparent;
+    color: var(--llm-muted); font-size: 0.74rem; font-weight: 600; padding: 0.35rem 0.7rem;
+    border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  .llm-mode-switch button.on { background: #fff; color: var(--llm-blue-deep); box-shadow: var(--llm-shadow); }
+  .llm-composer.build { box-shadow: 0 0 0 2px rgba(124,58,237,0.25); border-radius: 16px; }
+
+  /* ── Component builder card (in chat) ─────────────────────────────── */
+  .llm-builder-card {
+    border: 1px solid var(--llm-line); border-radius: 14px; background: #fff;
+    box-shadow: var(--llm-shadow); overflow: hidden;
+  }
+  .llm-builder-head {
+    display: flex; align-items: center; gap: 0.55rem; padding: 0.65rem 0.8rem;
+    border-bottom: 1px solid var(--llm-line);
+    background: linear-gradient(135deg, rgba(124,58,237,0.06), #fff 70%);
+  }
+  .llm-builder-viz {
+    display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.62rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #7c3aed;
+    background: rgba(124,58,237,0.1); border-radius: 999px; padding: 0.18rem 0.5rem;
+  }
+  .llm-builder-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .llm-builder-title strong { font-size: 0.88rem; letter-spacing: -0.01em; }
+  .llm-builder-title span { font-size: 0.7rem; color: var(--llm-muted); }
+  .llm-builder-preview { padding: 0.85rem; display: grid; place-items: center; min-height: 130px; }
+  .llm-builder-note { margin: 0 0.8rem 0.6rem; font-size: 0.74rem; color: #475569; line-height: 1.45; }
+
+  .llm-builder-assume, .llm-builder-q { padding: 0 0.8rem 0.6rem; }
+  .llm-builder-assume ul { list-style: none; margin: 0.35rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .llm-builder-assume li { display: flex; align-items: flex-start; gap: 0.35rem; font-size: 0.73rem; color: #334155; }
+  .llm-builder-assume li svg { color: #059669; margin-top: 0.12rem; flex-shrink: 0; }
+  .llm-builder-qrow { display: flex; flex-direction: column; gap: 0.2rem; margin-top: 0.5rem; }
+  .llm-builder-qrow label { font-size: 0.76rem; font-weight: 600; color: var(--llm-ink); }
+  .llm-builder-why { font-size: 0.66rem; color: var(--llm-muted); }
+  .llm-builder-q .llm-input { padding: 0.5rem 0.7rem; font-size: 0.8rem; }
+  .llm-builder-actions { display: flex; gap: 0.5rem; justify-content: flex-end; padding: 0.6rem 0.8rem 0.8rem; }
+  .llm-builder-card .llm-textarea { margin: 0 0.8rem; width: calc(100% - 1.6rem); font-size: 0.8rem; }
+
+  /* ── Charts ───────────────────────────────────────────────────────── */
+  .llm-chart-svg { width: 100%; height: 130px; display: block; }
+  .llm-chart-xlabel { font-size: 8px; fill: var(--llm-muted); font-family: inherit; }
+  .llm-chart-loading, .llm-chart-error {
+    display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+    min-height: 120px; color: var(--llm-muted); font-size: 0.78rem; text-align: center; padding: 0.5rem;
+  }
+  .llm-chart-error { color: #b91c1c; }
+  .llm-metric-big { text-align: center; }
+  .llm-metric-big-value {
+    font-size: clamp(1.8rem, 5vw, 2.6rem); font-weight: 750; letter-spacing: -0.04em;
+    line-height: 1; color: var(--llm-ink); font-variant-numeric: tabular-nums;
+  }
+  .llm-metric-big-unit { font-size: 0.72rem; color: var(--llm-muted); margin-top: 0.25rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .llm-pie-wrap { display: flex; align-items: center; gap: 0.9rem; width: 100%; }
+  .llm-pie-svg { width: 130px; height: 130px; flex-shrink: 0; }
+  .llm-pie-legend { display: flex; flex-direction: column; gap: 0.28rem; min-width: 0; flex: 1; }
+  .llm-pie-legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; }
+  .llm-pie-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .llm-pie-legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--llm-ink); }
+  .llm-pie-legend-pct { color: var(--llm-muted); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .llm-dtable-wrap { width: 100%; overflow: auto; max-height: 260px; }
+  .llm-dtable { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+  .llm-dtable th {
+    text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--llm-line);
+    color: var(--llm-muted); font-weight: 600; text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.04em;
+    position: sticky; top: 0; background: #fff;
+  }
+  .llm-dtable td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--llm-line); white-space: nowrap; }
+
+  /* ── Dashboard page ───────────────────────────────────────────────── */
+  .llm-dashboard { flex: 1; overflow-y: auto; padding: 1.1rem 1.25rem 2rem; }
+  .llm-dash-head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    margin-bottom: 1.1rem;
+  }
+  .llm-dash-title { font-size: 1.15rem; font-weight: 750; letter-spacing: -0.03em; margin: 0; }
+  .llm-dash-sub { font-size: 0.74rem; color: var(--llm-muted); margin: 0.15rem 0 0; }
+  .llm-dash-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.9rem;
+  }
+  .llm-dash-empty {
+    text-align: center; max-width: 480px; margin: 3rem auto; padding: 2rem 1.5rem;
+    border: 1px dashed var(--llm-line-strong); border-radius: 18px; background: rgba(255,255,255,0.6);
+  }
+  .llm-dash-empty-icon {
+    width: 3.4rem; height: 3.4rem; border-radius: 16px; display: grid; place-items: center; margin: 0 auto 1rem;
+    color: var(--llm-blue); background: var(--llm-blue-soft); border: 1px solid var(--llm-blue-mid);
+  }
+  .llm-dash-empty h3 { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.4rem; }
+  .llm-dash-empty p { font-size: 0.82rem; color: var(--llm-muted); line-height: 1.55; margin: 0 0 1.1rem; }
+
+  .llm-tile {
+    border: 1px solid var(--llm-line); border-radius: 14px; background: #fff;
+    box-shadow: var(--llm-shadow); display: flex; flex-direction: column; overflow: hidden;
+    transition: box-shadow 0.15s, transform 0.15s;
+  }
+  .llm-tile:hover { box-shadow: var(--llm-shadow-lg); transform: translateY(-1px); }
+  .llm-tile-head {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--llm-line);
+  }
+  .llm-tile-viz { display: inline-flex; color: var(--llm-blue); }
+  .llm-tile-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .llm-tile-title strong { font-size: 0.82rem; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .llm-tile-title span { font-size: 0.66rem; color: var(--llm-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .llm-tile-tools { display: flex; gap: 0.1rem; }
+  .llm-tile-tools .llm-icon-btn.danger:hover { color: #dc2626; }
+  .llm-tile-body { padding: 0.85rem; display: grid; place-items: center; min-height: 148px; flex: 1; }
+  .llm-tile-metric .llm-tile-body { min-height: 120px; }
+  .llm-tile-foot {
+    display: flex; align-items: center; gap: 0.35rem; font-size: 0.64rem; color: var(--llm-muted);
+    padding: 0.4rem 0.75rem; border-top: 1px solid var(--llm-line);
+  }
+  .llm-tile-edit { padding: 0.6rem 0.75rem; border-top: 1px solid var(--llm-line); background: var(--llm-bg); }
+  .llm-tile-edit .llm-textarea { font-size: 0.78rem; }
 
   /* ── Cluster analysis ─────────────────────────────────────────────── */
   .llm-cluster-topline {

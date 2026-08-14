@@ -18,8 +18,14 @@ import {
   sanitizeModel,
   modelContextForPrompt,
 } from '../discovery/workspaceService.js';
-import { LlmConnection, LlmSchemaSnapshot, LlmSemanticModel } from '../models/llmModels.js';
+import {
+  LlmConnection,
+  LlmSchemaSnapshot,
+  LlmSemanticModel,
+  LlmDashboard,
+} from '../models/llmModels.js';
 import { analyzeAllClusters, analyzeConnection } from '../discovery/clusterAnalyzer.js';
+import { buildComponentSpec, runComponentSpec } from '../dashboard/builder.js';
 
 const router = express.Router();
 
@@ -325,6 +331,99 @@ router.get('/clusters', async (req, res) => {
     res.status(500).json({ error: err.message || 'Cluster analysis failed' });
   }
 });
+
+// ── Dashboard builder ────────────────────────────────────────────────────────
+
+/**
+ * Build or refine a dashboard component from natural language.
+ * Body: { prompt, priorSpec?, userAnswers?, mode?: 'create'|'refine' }
+ * Also runs a live preview so the operator sees real data immediately.
+ */
+router.post('/dashboard/build', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const { prompt, priorSpec, userAnswers, mode } = req.body || {};
+    const spec = await buildComponentSpec(ws._id, {
+      prompt: prompt || '',
+      priorSpec: priorSpec || null,
+      userAnswers: userAnswers || null,
+      mode: mode === 'refine' ? 'refine' : 'create',
+      timezone: ws.settings?.timezone,
+      currency: ws.settings?.currency,
+    });
+    let preview = null;
+    try {
+      preview = await runComponentSpec(ws._id, spec);
+    } catch (e) {
+      preview = { ok: false, error: e.message };
+    }
+    res.json({ spec, preview });
+  } catch (err) {
+    console.error('[llm] dashboard build', err);
+    res.status(500).json({ error: err.message || 'Component build failed' });
+  }
+});
+
+/** Execute a component spec and return live data (used for tiles + refresh). */
+router.post('/dashboard/run', async (req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const { spec } = req.body || {};
+    if (!spec) return res.status(400).json({ error: 'spec is required' });
+    const result = await runComponentSpec(ws._id, spec);
+    res.json(result);
+  } catch (err) {
+    console.error('[llm] dashboard run', err);
+    res.status(500).json({ error: err.message || 'Component run failed' });
+  }
+});
+
+/** List all dashboards (creates a default one if none exist). */
+router.get('/dashboard', async (_req, res) => {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    let boards = await LlmDashboard.find({ workspaceId: ws._id }).sort({ createdAt: 1 }).lean();
+    if (!boards.length) {
+      const created = await LlmDashboard.create({ workspaceId: ws._id, name: 'Main dashboard' });
+      boards = [created.toObject()];
+    }
+    res.json({ dashboards: boards.map((b) => ({ ...b, id: String(b._id) })) });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Could not load dashboards' });
+  }
+});
+
+/** Save the components of a dashboard (create default if none exist). */
+async function saveDashboardHandler(req, res) {
+  try {
+    const ws = await getOrCreateDefaultWorkspace();
+    const { name, description, components } = req.body || {};
+    let board;
+    if (req.params.id) {
+      board = await LlmDashboard.findOne({ _id: req.params.id, workspaceId: ws._id });
+    }
+    if (!board) {
+      board = await LlmDashboard.findOne({ workspaceId: ws._id }).sort({ createdAt: 1 });
+    }
+    if (!board) {
+      board = new LlmDashboard({ workspaceId: ws._id });
+    }
+    if (name != null) board.name = name;
+    if (description != null) board.description = description;
+    if (Array.isArray(components)) {
+      board.components = components.map((c) => ({ ...c, updatedAt: new Date() }));
+    }
+    board.updatedAt = new Date();
+    await board.save();
+    const out = board.toObject();
+    res.json({ dashboard: { ...out, id: String(out._id) } });
+  } catch (err) {
+    console.error('[llm] dashboard save', err);
+    res.status(500).json({ error: err.message || 'Could not save dashboard' });
+  }
+}
+router.put('/dashboard', saveDashboardHandler);
+router.put('/dashboard/:id', saveDashboardHandler);
 
 /** Analyze a single cluster by connectionId (used after connecting a new one) */
 router.get('/clusters/:connectionId', async (req, res) => {
