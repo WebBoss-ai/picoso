@@ -741,7 +741,7 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
 
   const examplePrompts = [
     'These are our repeat customers and we want to encourage them to order again.',
-    'First-time buyers who ordered last month but haven't returned.',
+    "First-time buyers who ordered last month but haven't returned.",
     'Premium customers — share an exclusive offer to reward their loyalty.',
     'Festival season is coming — announce a special seasonal menu.',
   ];
