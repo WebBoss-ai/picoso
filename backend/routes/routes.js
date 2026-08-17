@@ -220,11 +220,19 @@ router.get('/wp-marketing/contacts/:id',           requireWpPin, wpMarketing.get
 router.delete('/wp-marketing/contacts/:id',        requireWpPin, wpMarketing.deleteContactList);
 router.post('/wp-marketing/contacts/:id/members',  requireWpPin, wpMarketing.addContactsToList);
 // Campaign drafts
-router.get('/wp-marketing/campaigns',              requireWpPin, wpMarketing.getCampaigns);
-router.post('/wp-marketing/campaigns',             requireWpPin, wpMarketing.createCampaign);
-router.put('/wp-marketing/campaigns/:id',          requireWpPin, wpMarketing.updateCampaign);
-router.delete('/wp-marketing/campaigns/:id',       requireWpPin, wpMarketing.deleteCampaign);
-router.post('/wp-marketing/campaigns/:id/analyze', requireWpPin, wpMarketing.analyzeCampaign);
+router.get('/wp-marketing/campaigns',                      requireWpPin, wpMarketing.getCampaigns);
+router.post('/wp-marketing/campaigns',                     requireWpPin, wpMarketing.createCampaign);
+router.put('/wp-marketing/campaigns/:id',                  requireWpPin, wpMarketing.updateCampaign);
+router.delete('/wp-marketing/campaigns/:id',               requireWpPin, wpMarketing.deleteCampaign);
+router.post('/wp-marketing/campaigns/:id/analyze',         requireWpPin, wpMarketing.analyzeCampaign);
+// Experiment plan (Phase 2)
+router.post('/wp-marketing/campaigns/:id/generate-plan',   requireWpPin, wpMarketing.generatePlan);
+router.get('/wp-marketing/campaigns/:id/plan',             requireWpPin, wpMarketing.getPlan);
+router.post('/wp-marketing/campaigns/:id/approve-plan',    requireWpPin, wpMarketing.approvePlan);
+// Tracking links
+router.post('/wp-marketing/tracking-links',                requireWpPin, wpMarketing.createTrackingLink);
+// Public click tracking — no PIN, used by WhatsApp link recipients
+router.get('/t/:code',                                     wpMarketing.handleTrackClick);
 
 // ── Picoso Intelligence (/llm console) — self-contained module ───────────────
 router.use('/llm', llmRouter);

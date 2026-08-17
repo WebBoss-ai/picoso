@@ -2,7 +2,8 @@
  * WP Marketing controller — multi-client PIN auth, contact lists, campaign drafts,
  * and AI-powered campaign strategy generation via Cohere.
  */
-import { WpContactList, WpCampaignDraft } from '../models/wpMarketingModels.js';
+import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink } from '../models/wpMarketingModels.js';
+import crypto from 'crypto';
 import { CohereProvider } from '../llm/provider/cohere.js';
 
 /* ── Auth ping ─────────────────────────────────────────────────────────────── */
@@ -160,6 +161,309 @@ export const deleteCampaign = async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+/* ── Phase 2: Generate Full Experiment Plan ───────────────────────────────── */
+
+const VARIANT_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
+const COPY_ANGLES = [
+  'Urgency + Time-Limited Offer',
+  'Personal Recognition + Gratitude',
+  'Exclusive Member Benefit',
+  'Social Proof + Community',
+  'Curiosity + Intrigue',
+  'Clear Benefit-Led',
+  'Emotional + Nostalgia',
+  'Casual + Friendly',
+  'Direct + No-Nonsense',
+  'FOMO + Scarcity',
+];
+
+function generateShortCode() {
+  return crypto.randomBytes(5).toString('hex'); // 10-char hex
+}
+
+function scheduleDates(startDate, count, gapDays) {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i * gapDays);
+    d.setHours(11, 0, 0, 0); // 11 AM IST default
+    return d;
+  });
+}
+
+export const generatePlan = async (req, res) => {
+  try {
+    const campaign = await WpCampaignDraft.findOne({
+      _id: req.params.id,
+      clientId: req.wpClient._id,
+    }).populate('contactListId');
+
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    if (!campaign.context?.trim()) return res.status(400).json({ error: 'Campaign context is required' });
+
+    const list = campaign.contactListId;
+    if (!list) return res.status(400).json({ error: 'Contact list required — complete Step 1 first' });
+
+    const contactCount = list.contacts?.length || 0;
+    const sampleLines = (list.contacts || []).slice(0, 8).map((c) =>
+      `- ${c.name || 'Customer'}: ${c.orderCount || 0} orders, ₹${c.totalSpend || 0} total spend, tags: ${(c.tags || []).join(', ') || 'none'}`
+    ).join('\n');
+
+    // Remove stale plan if one exists
+    await WpExperiment.deleteOne({ campaignId: campaign._id, clientId: req.wpClient._id });
+
+    const llm = new CohereProvider({ maxTokens: 4096, timeoutMs: 90000 });
+
+    const systemPrompt = `You are a top-tier WhatsApp marketing strategist specialising in multivariate experiments. Generate a complete 10-variant experiment plan.
+
+STRICT RULES:
+- Exactly 10 variants, labels "Variant A" through "Variant J"
+- Each variant uses a genuinely different psychological/creative angle — NOT just rewording
+- WhatsApp messages: 2-4 sentences max, conversational, include relevant emojis, use {{name}} personalisation
+- Each variant has a meaningfully different offer, tone, and creative angle
+- Return ONLY valid JSON with no markdown fences, no text outside the JSON object
+
+JSON schema to return:
+{
+  "experimentTitle": "concise descriptive title",
+  "objective": "one sentence campaign objective",
+  "reasoning": "2-3 sentences on the experiment strategy and why 10 variants covers the angle space",
+  "optimizationCriteria": {
+    "primaryMetric": "conversions",
+    "signals": ["delivery_rate","read_rate","link_click_rate","unique_clicks","repeat_clicks","replies","conversions","revenue"],
+    "progressionLogic": "explain exactly how 10→5→3→1 will be decided using these signals in this context"
+  },
+  "trackingExplanation": "1-2 sentences on unique per-customer tracking links",
+  "variants": [
+    {
+      "variantNumber": 1,
+      "label": "Variant A",
+      "copyAngle": "Urgency + Time-Limited Offer",
+      "tone": "Urgent & Direct",
+      "offer": "specific offer text shown in this variant",
+      "cta": "primary call-to-action button text",
+      "imageConceptDescription": "detailed description of the visual/creative for this variant",
+      "message": "complete WhatsApp message with {{name}} and emojis"
+    }
+  ]
+}
+
+Use these 10 copy angles in order (adapt each to the actual context):
+A - Urgency + Time-Limited Offer
+B - Personal Recognition + Gratitude
+C - Exclusive Member Benefit
+D - Social Proof + Community
+E - Curiosity + Intrigue
+F - Clear Benefit-Led
+G - Emotional + Nostalgia
+H - Casual + Friendly (sounds like a friend, not a brand)
+I - Direct + No-Nonsense (pure value, zero fluff)
+J - FOMO + Scarcity`;
+
+    const userMessage = `Business: ${req.wpClient.workspace?.businessName || req.wpClient.name} (${req.wpClient.workspace?.businessType || req.wpClient.workspace?.industry || 'business'})
+
+Campaign context: "${campaign.context}"
+
+Contact list: "${list.name}" — ${contactCount} contacts
+${sampleLines || 'No sample data available'}
+
+Generate all 10 variants now. Make each genuinely distinct.`;
+
+    const result = await llm.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.7,
+    });
+
+    let aiPlan;
+    try {
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      aiPlan = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(result.text);
+    } catch {
+      return res.status(500).json({ error: 'AI returned a malformed response — please try generating again.' });
+    }
+
+    const variants = (aiPlan.variants || []).slice(0, 10);
+    if (variants.length < 10) {
+      return res.status(500).json({ error: `AI only generated ${variants.length} variants — please try again.` });
+    }
+
+    // Build phase schedule (proposed, relative to "today + 1 day" when plan is generated)
+    const baseDate = new Date();
+    baseDate.setDate(baseDate.getDate() + 1);
+
+    const phases = [
+      { phaseNumber: 1, label: 'Phase 1: 10 Variants', variantCount: 10, contactsPerVariant: 100,  totalContacts: 1000, rounds: 3, daySpread: 6,  scheduledDates: scheduleDates(baseDate, 3, 2) },
+      { phaseNumber: 2, label: 'Phase 2: Top 5',        variantCount: 5,  contactsPerVariant: 200,  totalContacts: 1000, rounds: 3, daySpread: 6,  scheduledDates: scheduleDates(new Date(baseDate.getTime() + 7 * 86400000), 3, 2) },
+      { phaseNumber: 3, label: 'Phase 3: Top 3',        variantCount: 3,  contactsPerVariant: 334,  totalContacts: 1002, rounds: 3, daySpread: 6,  scheduledDates: scheduleDates(new Date(baseDate.getTime() + 14 * 86400000), 3, 2) },
+      { phaseNumber: 4, label: 'Final: Winner',         variantCount: 1,  contactsPerVariant: contactCount, totalContacts: contactCount, rounds: 1, daySpread: 1, scheduledDates: [new Date(baseDate.getTime() + 21 * 86400000)] },
+    ];
+
+    const experiment = await WpExperiment.create({
+      clientId: req.wpClient._id,
+      campaignId: campaign._id,
+      contactListId: list._id,
+      context: campaign.context,
+      status: 'awaiting_approval',
+      plan: {
+        totalAudience: contactCount,
+        experimentTitle: aiPlan.experimentTitle || campaign.name,
+        objective: aiPlan.objective || '',
+        reasoning: aiPlan.reasoning || '',
+        trackingEnabled: true,
+        trackingExplanation: aiPlan.trackingExplanation || '',
+        phases,
+        optimizationCriteria: aiPlan.optimizationCriteria || {
+          primaryMetric: 'conversions',
+          signals: ['delivery_rate','read_rate','link_click_rate','unique_clicks','repeat_clicks','replies','conversions','revenue'],
+          progressionLogic: 'Top performers by conversion rate advance; revenue weighted 2×.',
+        },
+      },
+      variants: variants.map((v, i) => ({
+        variantNumber: v.variantNumber || (i + 1),
+        label: v.label || `Variant ${VARIANT_LABELS[i]}`,
+        copyAngle: v.copyAngle || COPY_ANGLES[i],
+        tone: v.tone || '',
+        offer: v.offer || '',
+        cta: v.cta || '',
+        imageConceptDescription: v.imageConceptDescription || '',
+        message: v.message || '',
+        status: 'active',
+      })),
+    });
+
+    // Update campaign status
+    await WpCampaignDraft.findByIdAndUpdate(campaign._id, { status: 'strategy_ready', updatedAt: new Date() });
+
+    res.json({ success: true, experiment });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Plan generation failed' });
+  }
+};
+
+export const getPlan = async (req, res) => {
+  try {
+    const experiment = await WpExperiment.findOne({
+      campaignId: req.params.id,
+      clientId: req.wpClient._id,
+    });
+    if (!experiment) return res.status(404).json({ error: 'No plan found for this campaign' });
+    res.json(experiment);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const approvePlan = async (req, res) => {
+  try {
+    const experiment = await WpExperiment.findOne({
+      campaignId: req.params.id,
+      clientId: req.wpClient._id,
+    });
+    if (!experiment) return res.status(404).json({ error: 'Plan not found' });
+    if (experiment.status !== 'awaiting_approval') {
+      return res.status(400).json({ error: `Plan is already ${experiment.status}` });
+    }
+
+    // Recalculate confirmed schedule from today
+    const base = new Date();
+    base.setDate(base.getDate() + 1);
+    base.setHours(11, 0, 0, 0);
+
+    const offsets = [[1,3,5], [8,10,12], [15,17,19], [22]];
+    experiment.plan.phases = experiment.plan.phases.map((ph, i) => {
+      const days = offsets[i] || [22 + i];
+      return {
+        ...ph.toObject(),
+        scheduledDates: days.map((d) => {
+          const date = new Date(base);
+          date.setDate(base.getDate() + d - 1);
+          return date;
+        }),
+        status: i === 0 ? 'running' : 'pending',
+      };
+    });
+
+    experiment.status = 'approved';
+    experiment.approvedAt = new Date();
+    experiment.updatedAt = new Date();
+    await experiment.save();
+
+    await WpCampaignDraft.findByIdAndUpdate(experiment.campaignId, {
+      status: 'scheduled',
+      updatedAt: new Date(),
+    });
+
+    res.json({ success: true, experiment });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* ── Tracking Link — public (no PIN) ─────────────────────────────────────── */
+export const createTrackingLink = async (req, res) => {
+  try {
+    const { experimentId, variantNumber, contactPhone, contactName, originalUrl } = req.body;
+    if (!originalUrl) return res.status(400).json({ error: 'originalUrl required' });
+
+    let shortCode;
+    let attempts = 0;
+    do {
+      shortCode = generateShortCode();
+      attempts++;
+    } while (await WpTrackingLink.exists({ shortCode }) && attempts < 10);
+
+    const link = await WpTrackingLink.create({
+      shortCode,
+      clientId: req.wpClient._id,
+      experimentId: experimentId || null,
+      variantNumber: variantNumber || null,
+      contactPhone: contactPhone || '',
+      contactName: contactName || '',
+      originalUrl,
+    });
+
+    const baseUrl = process.env.API_PUBLIC_URL || 'https://picoso.in/api';
+    res.json({ success: true, shortCode, trackingUrl: `${baseUrl}/t/${shortCode}`, link });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const handleTrackClick = async (req, res) => {
+  try {
+    const link = await WpTrackingLink.findOne({ shortCode: req.params.code });
+    if (!link) return res.redirect(302, 'https://picoso.in');
+
+    const isRepeat = link.clicks.length > 0;
+    link.clicks.push({
+      clickedAt: new Date(),
+      isRepeat,
+      userAgent: req.headers['user-agent'] || '',
+      ip: req.ip || '',
+    });
+    await link.save();
+
+    // Update variant metrics if linked to an experiment
+    if (link.experimentId && link.variantNumber != null) {
+      await WpExperiment.updateOne(
+        { _id: link.experimentId, 'variants.variantNumber': link.variantNumber },
+        {
+          $inc: {
+            'variants.$.metrics.linkClicks': 1,
+            ...(isRepeat ? { 'variants.$.metrics.repeatClicks': 1 } : { 'variants.$.metrics.uniqueLinkClicks': 1 }),
+          },
+        }
+      );
+    }
+
+    res.redirect(302, link.originalUrl);
+  } catch (err) {
+    res.redirect(302, 'https://picoso.in');
   }
 };
 

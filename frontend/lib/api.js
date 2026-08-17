@@ -277,6 +277,10 @@ export const wpMarketing = {
   updateCampaign:    (id, data) => wpMarketingApi.put(`/wp-marketing/campaigns/${id}`, data),
   deleteCampaign:    (id)      => wpMarketingApi.delete(`/wp-marketing/campaigns/${id}`),
   analyzeCampaign:   (id, data) => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/analyze`, data),
+  // Phase 2 — experiment plan
+  generatePlan:      (id)      => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/generate-plan`),
+  getPlan:           (id)      => wpMarketingApi.get(`/wp-marketing/campaigns/${id}/plan`),
+  approvePlan:       (id)      => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/approve-plan`),
 };
 
 export default api;

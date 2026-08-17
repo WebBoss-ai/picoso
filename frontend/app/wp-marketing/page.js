@@ -7,6 +7,8 @@ import {
   Loader2, Sparkles, ArrowLeft, CheckCircle2, X, Phone,
   Search, Copy, Check, AlertCircle, Zap, Target,
   Clock, MessageSquare, TrendingUp, Send, Eye, RefreshCw,
+  FlaskConical, ShieldCheck, BarChart2, Layers, Link2,
+  ChevronDown, ChevronUp, Play,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
 
@@ -609,135 +611,460 @@ function CampaignStep1({ onNext, onCancel }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   STRATEGY RESULT CARD
+   EXPERIMENT PLAN — GENERATION LOADING SCREEN
 ══════════════════════════════════════════════════════════════════════════════ */
-function StrategyCard({ strategy, onSaveDraft, saving }) {
-  const [copied, setCopied] = useState(false);
+const GEN_STEPS = [
+  'Analysing your audience & context…',
+  'Mapping 10 unique creative angles…',
+  'Crafting variant messages & offers…',
+  'Designing image concept briefs…',
+  'Building testing schedule & phases…',
+  'Setting up tracking architecture…',
+  'Finalising experiment plan…',
+];
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(strategy.suggestedTemplate || '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+function PlanGeneratingScreen() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(s + 1, GEN_STEPS.length - 1)), 3800);
+    return () => clearInterval(t);
+  }, []);
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-blue-600 to-blue-500">
-        <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-          <Sparkles className="w-4 h-4 text-white" />
-        </div>
-        <div>
-          <p className="text-[13px] font-semibold text-white">AI Campaign Strategy</p>
-          <p className="text-[11.5px] text-blue-100">Generated based on your context + contacts</p>
-        </div>
+    <div className="flex flex-col items-center justify-center py-20 gap-6">
+      <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center shadow-[0_4px_24px_rgba(37,99,235,0.30)] animate-pulse">
+        <FlaskConical className="w-8 h-8 text-white" />
       </div>
-
-      <div className="p-5 space-y-4">
-        {/* Objective */}
-        <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-xl">
-          <Target className="w-4.5 h-4.5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-[11.5px] font-semibold text-blue-600 uppercase tracking-wider mb-0.5">Objective</p>
-            <p className="text-[14px] font-medium text-gray-900">{strategy.objective}</p>
-          </div>
-        </div>
-
-        {/* 3 column details */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="p-3.5 bg-gray-50 rounded-xl">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Audience</p>
-            <p className="text-[13px] text-gray-700 font-medium">{strategy.audience}</p>
-          </div>
-          <div className="p-3.5 bg-gray-50 rounded-xl">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Tone</p>
-            <p className="text-[13px] text-gray-700 font-medium">{strategy.tone}</p>
-          </div>
-          <div className="p-3.5 bg-gray-50 rounded-xl">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> Timing</p>
-            <p className="text-[13px] text-gray-700 font-medium">{strategy.timing}</p>
-          </div>
-        </div>
-
-        {/* Key messages */}
-        <div>
-          <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-            <MessageSquare className="w-3 h-3" /> Key Messages
-          </p>
-          <ul className="space-y-1.5">
-            {(strategy.keyMessages || []).map((msg, i) => (
-              <li key={i} className="flex items-start gap-2 text-[13.5px] text-gray-700">
-                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-                  {i + 1}
-                </span>
-                {msg}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* CTA */}
-        <div className="flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-100">
-          <Send className="w-4 h-4 text-green-600 flex-shrink-0" />
-          <div>
-            <p className="text-[11.5px] font-semibold text-green-600 uppercase tracking-wider">Call to Action</p>
-            <p className="text-[14px] font-semibold text-gray-900 mt-0.5">{strategy.callToAction}</p>
-          </div>
-        </div>
-
-        {/* Suggested template */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider">Suggested Message Template</p>
-            <button
-              onClick={copy}
-              className="flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <div className="bg-gray-900 rounded-xl p-4">
-            <pre className="text-[13px] text-green-400 whitespace-pre-wrap font-mono leading-relaxed">{strategy.suggestedTemplate}</pre>
-          </div>
-        </div>
-
-        {/* Reasoning */}
-        {strategy.reasoning && (
-          <div className="flex items-start gap-2 text-[13px] text-gray-500 bg-gray-50 rounded-xl p-4">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-gray-400" />
-            <span>{strategy.reasoning}</span>
-          </div>
-        )}
+      <div className="text-center">
+        <p className="text-[16px] font-semibold text-gray-900 mb-1">Generating Campaign Experiment Plan</p>
+        <p className="text-[13px] text-gray-400">AI is building your 10-variant strategy — this may take 20–30 seconds</p>
       </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-gray-100">
-        <button
-          onClick={onSaveDraft}
-          disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-[13.5px] font-semibold rounded-xl shadow-[0_2px_8px_rgba(37,99,235,0.20)] hover:bg-blue-700 transition-all disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-          Save Draft
-        </button>
+      <div className="w-full max-w-xs space-y-2">
+        {GEN_STEPS.map((s, i) => (
+          <div key={s} className={`flex items-center gap-2.5 text-[13px] transition-all ${i <= step ? 'text-gray-800' : 'text-gray-300'}`}>
+            {i < step ? (
+              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+            ) : i === step ? (
+              <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+            ) : (
+              <span className="w-4 h-4 rounded-full border border-gray-200 flex-shrink-0" />
+            )}
+            {s}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   CAMPAIGN STEP 2 — CONTEXT & AI ANALYSIS
+   EXPERIMENT PLAN VIEW — FULL PLAN REVIEW BEFORE APPROVAL
+══════════════════════════════════════════════════════════════════════════════ */
+const VARIANT_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
+const PHASE_CONFIG = [
+  { color: 'blue',   bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   badge: 'bg-blue-100 text-blue-700'   },
+  { color: 'violet', bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', badge: 'bg-violet-100 text-violet-700' },
+  { color: 'amber',  bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  badge: 'bg-amber-100 text-amber-700'  },
+  { color: 'green',  bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-700',  badge: 'bg-green-100 text-green-700'  },
+];
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
+  const [activeVariant, setActiveVariant] = useState(0);
+  const [expandedSection, setExpandedSection] = useState(null);
+  const [copiedIdx, setCopiedIdx] = useState(null);
+
+  const { plan = {}, variants = [] } = experiment;
+  const phases = plan.phases || [];
+  const criteria = plan.optimizationCriteria || {};
+
+  const copyMsg = async (i, text) => {
+    await navigator.clipboard.writeText(text || '');
+    setCopiedIdx(i);
+    setTimeout(() => setCopiedIdx(null), 2000);
+  };
+
+  const toggle = (key) => setExpandedSection((s) => (s === key ? null : key));
+
+  const SectionHeader = ({ id, icon: Icon, title, sub, color = 'blue' }) => (
+    <button
+      onClick={() => toggle(id)}
+      className="w-full flex items-center gap-3 p-4 bg-white rounded-2xl border border-gray-100 hover:border-gray-200 transition-all text-left"
+    >
+      <div className={`w-9 h-9 rounded-xl bg-${color}-50 flex items-center justify-center flex-shrink-0`}>
+        <Icon className={`w-4.5 h-4.5 text-${color}-600`} />
+      </div>
+      <div className="flex-1">
+        <p className="text-[14px] font-semibold text-gray-900">{title}</p>
+        {sub && <p className="text-[12px] text-gray-400 mt-0.5">{sub}</p>}
+      </div>
+      {expandedSection === id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+    </button>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Approval banner */}
+      {!approved ? (
+        <div className="flex items-start gap-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+          <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <ShieldCheck className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-[14px] font-semibold text-amber-900">Review & Approve Campaign Plan</p>
+            <p className="text-[12.5px] text-amber-700 mt-0.5">AI has designed the full experiment below. Nothing will be sent until you explicitly confirm at the bottom of this page.</p>
+          </div>
+          <span className="text-[11px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1 rounded-full uppercase tracking-wider flex-shrink-0">
+            Awaiting Approval
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-2xl">
+          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+          <div>
+            <p className="text-[14px] font-semibold text-green-800">Campaign Approved & Scheduled</p>
+            <p className="text-[12.5px] text-green-600">First messages will be sent on {fmtDate(phases[0]?.scheduledDates?.[0])}.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Title + objective */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <FlaskConical className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-[17px] font-bold text-gray-900 leading-tight">{plan.experimentTitle || 'Campaign Experiment'}</h3>
+            <p className="text-[13.5px] text-gray-500 mt-1">{plan.objective}</p>
+          </div>
+        </div>
+        {plan.reasoning && (
+          <p className="text-[12.5px] text-gray-400 mt-4 leading-relaxed border-t border-gray-50 pt-3">{plan.reasoning}</p>
+        )}
+      </div>
+
+      {/* Summary stats */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'Audience', value: plan.totalAudience || '—', sub: 'total contacts', color: 'blue' },
+          { label: 'Variants', value: '10', sub: 'creative angles', color: 'violet' },
+          { label: 'Phases', value: '4', sub: '10 → 5 → 3 → 1', color: 'amber' },
+          { label: 'Test Days', value: '22', sub: 'then winner sends', color: 'green' },
+        ].map(({ label, value, sub, color }) => (
+          <div key={label} className={`p-4 rounded-xl bg-${color}-50 border border-${color}-100`}>
+            <p className={`text-[11px] font-semibold text-${color}-600 uppercase tracking-wider`}>{label}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
+            <p className={`text-[11.5px] text-${color}-600 mt-0.5`}>{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Experiment Progression ─────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider mb-4">Experiment Progression</p>
+        <div className="flex items-stretch gap-2">
+          {phases.map((ph, i) => {
+            const cfg = PHASE_CONFIG[i] || PHASE_CONFIG[3];
+            const scheduleDates = ph.scheduledDates || [];
+            return (
+              <div key={ph.phaseNumber} className="flex items-stretch gap-2 flex-1">
+                <div className={`flex-1 rounded-xl border ${cfg.border} ${cfg.bg} p-3.5`}>
+                  <span className={`text-[10.5px] font-bold uppercase tracking-wider ${cfg.text}`}>{ph.label}</span>
+                  <p className="text-[13px] font-semibold text-gray-900 mt-1">
+                    {ph.variantCount} variant{ph.variantCount > 1 ? 's' : ''}
+                  </p>
+                  <p className={`text-[12px] ${cfg.text} mt-0.5`}>{ph.contactsPerVariant} contacts each</p>
+                  {scheduleDates.length > 0 && (
+                    <p className="text-[11px] text-gray-400 mt-2">
+                      {scheduleDates.map(fmtDate).join(' · ')}
+                    </p>
+                  )}
+                  {i === 3 && <p className={`text-[11px] font-semibold ${cfg.text} mt-1`}>🏆 Winner sends to all</p>}
+                </div>
+                {i < phases.length - 1 && (
+                  <div className="flex items-center justify-center w-6 flex-shrink-0">
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[12px] text-gray-400 mt-4 leading-relaxed">{criteria.progressionLogic}</p>
+      </div>
+
+      {/* ── Testing Timeline ────────────────────────────────────── */}
+      <SectionHeader id="timeline" icon={Clock} title="Testing Timeline" sub="6-day alternate-day schedule across 4 phases" />
+      {expandedSection === 'timeline' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 -mt-2">
+          <div className="overflow-x-auto">
+            <div className="flex gap-1.5 min-w-max pb-2">
+              {Array.from({ length: 23 }, (_, i) => {
+                const dayNum = i + 1;
+                let phaseIdx = null;
+                let isSendDay = false;
+                let isEval = false;
+
+                phases.forEach((ph, pIdx) => {
+                  (ph.scheduledDates || []).forEach((d) => {
+                    const diff = Math.round((new Date(d) - new Date(phases[0]?.scheduledDates?.[0] || Date.now())) / 86400000) + 1;
+                    if (diff === dayNum) { phaseIdx = pIdx; isSendDay = true; }
+                  });
+                });
+
+                if ([6, 13, 20].includes(dayNum)) isEval = true;
+                if (dayNum === 22) { phaseIdx = 3; isSendDay = true; }
+
+                const cfg = phaseIdx !== null ? PHASE_CONFIG[phaseIdx] : null;
+
+                return (
+                  <div key={dayNum} className="flex flex-col items-center gap-1 w-[38px]">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-semibold
+                      ${isSendDay && cfg ? `${cfg.bg} border ${cfg.border} ${cfg.text}` :
+                        isEval ? 'bg-gray-100 border border-gray-200 text-gray-500' :
+                        'bg-gray-50 text-gray-300'}`}
+                    >
+                      {isSendDay ? <Send className="w-3.5 h-3.5" /> : isEval ? '📊' : dayNum}
+                    </div>
+                    <span className="text-[9px] text-gray-400">D{dayNum}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex gap-4 mt-3 flex-wrap">
+            {PHASE_CONFIG.slice(0, 4).map((cfg, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className={`w-3 h-3 rounded-sm ${cfg.bg} border ${cfg.border}`} />
+                <span className="text-[11.5px] text-gray-500">Phase {i + 1}</span>
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-sm bg-gray-100 border border-gray-200" />
+              <span className="text-[11.5px] text-gray-500">Evaluate</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 10 Campaign Variants ────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4.5 h-4.5 text-blue-600" />
+            <p className="text-[14px] font-semibold text-gray-900">10 Campaign Variants</p>
+          </div>
+          <p className="text-[12px] text-gray-400">Each tests a different creative angle</p>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-b border-gray-100 overflow-x-auto scrollbar-hide">
+          {variants.map((v, i) => (
+            <button
+              key={v.variantNumber || i}
+              onClick={() => setActiveVariant(i)}
+              className={`flex-shrink-0 px-4 py-2.5 text-[12.5px] font-semibold border-b-2 transition-all
+                ${activeVariant === i
+                  ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+            >
+              {v.label || `Var ${VARIANT_LABELS[i]}`}
+            </button>
+          ))}
+        </div>
+
+        {/* Active variant detail */}
+        {variants[activeVariant] && (() => {
+          const v = variants[activeVariant];
+          return (
+            <div className="p-5 space-y-4">
+              {/* Meta row */}
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
+                  <Target className="w-3 h-3" />
+                  {v.copyAngle}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+                  {v.tone}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 bg-green-50 rounded-xl border border-green-100">
+                  <p className="text-[10.5px] font-semibold text-green-600 uppercase tracking-wider mb-1">Offer</p>
+                  <p className="text-[13.5px] font-semibold text-gray-900">{v.offer || '—'}</p>
+                </div>
+                <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-100">
+                  <p className="text-[10.5px] font-semibold text-blue-600 uppercase tracking-wider mb-1">Call to Action</p>
+                  <p className="text-[13.5px] font-semibold text-gray-900">{v.cta || '—'}</p>
+                </div>
+              </div>
+
+              {/* Message */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider">WhatsApp Message</p>
+                  <button
+                    onClick={() => copyMsg(activeVariant, v.message)}
+                    className="flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700"
+                  >
+                    {copiedIdx === activeVariant ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedIdx === activeVariant ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <div className="bg-gray-900 rounded-xl p-4">
+                  <pre className="text-[13px] text-green-400 whitespace-pre-wrap font-mono leading-relaxed">{v.message}</pre>
+                </div>
+              </div>
+
+              {/* Image concept */}
+              {v.imageConceptDescription && (
+                <div className="flex items-start gap-3 p-4 bg-violet-50 rounded-xl border border-violet-100">
+                  <span className="text-lg flex-shrink-0">🎨</span>
+                  <div>
+                    <p className="text-[11px] font-semibold text-violet-600 uppercase tracking-wider mb-0.5">Image / Creative Concept</p>
+                    <p className="text-[13.5px] text-gray-700">{v.imageConceptDescription}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ── Performance Signals ─────────────────────────────────── */}
+      <SectionHeader
+        id="signals"
+        icon={BarChart2}
+        title="Performance Signals & Optimisation"
+        sub={`Primary: ${criteria.primaryMetric || 'conversions'} — ${(criteria.signals || []).length} metrics tracked`}
+        color="violet"
+      />
+      {expandedSection === 'signals' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 -mt-2 space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {(criteria.signals || []).map((s) => {
+              const labels = {
+                delivery_rate: ['📬', 'Delivery Rate', 'Message reached recipient'],
+                read_rate: ['👁️', 'Read Rate', 'Recipient opened the message'],
+                link_click_rate: ['🔗', 'Link Click Rate', 'Total link interactions'],
+                unique_clicks: ['✨', 'Unique Clicks', 'Distinct recipients who clicked'],
+                repeat_clicks: ['🔄', 'Repeat Clicks', 'Same person clicking multiple times'],
+                replies: ['💬', 'Replies', 'Customer responded to message'],
+                conversions: ['🛒', 'Conversions', 'Placed an order after receiving message'],
+                revenue: ['💰', 'Revenue', 'Actual order value attributed to this variant'],
+              };
+              const [icon, label, desc] = labels[s] || ['📊', s, ''];
+              return (
+                <div key={s} className="flex items-start gap-2.5 p-3 rounded-xl bg-gray-50">
+                  <span className="text-base flex-shrink-0">{icon}</span>
+                  <div>
+                    <p className="text-[13px] font-semibold text-gray-800">{label}</p>
+                    <p className="text-[11.5px] text-gray-400">{desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-100">
+            <p className="text-[11.5px] font-semibold text-blue-700 uppercase tracking-wider mb-1">Progression Logic</p>
+            <p className="text-[13px] text-gray-700">{criteria.progressionLogic}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tracking Setup ──────────────────────────────────────── */}
+      <SectionHeader
+        id="tracking"
+        icon={Link2}
+        title="Unique Tracking Links"
+        sub="Every contact gets a personalised tracked link"
+        color="green"
+      />
+      {expandedSection === 'tracking' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 -mt-2 space-y-3">
+          <div className="flex items-start gap-3 p-4 bg-green-50 rounded-xl border border-green-100">
+            <Link2 className="w-4.5 h-4.5 text-green-600 flex-shrink-0 mt-0.5" />
+            <p className="text-[13.5px] text-gray-700">{plan.trackingExplanation}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ['Customer identity', 'Each link is tied to a specific phone number'],
+              ['Variant attribution', 'Click tells us exactly which message they received'],
+              ['Repeat detection', 'Second+ clicks flagged as repeat vs unique'],
+              ['Conversion tracking', 'Downstream orders linked back to the campaign'],
+            ].map(([t, d]) => (
+              <div key={t} className="flex items-start gap-2 p-3 bg-gray-50 rounded-xl">
+                <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[12.5px] font-semibold text-gray-800">{t}</p>
+                  <p className="text-[11.5px] text-gray-400">{d}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="p-3 bg-gray-900 rounded-xl">
+            <p className="text-[11px] font-semibold text-gray-400 mb-1 uppercase tracking-wider">Example tracked link format</p>
+            <code className="text-[12.5px] text-green-400 font-mono">https://picoso.in/api/t/a3f9c12e</code>
+            <p className="text-[11px] text-gray-500 mt-1">↳ redirects to your URL while recording the click event</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm & Start ─────────────────────────────────────── */}
+      {!approved && (
+        <div className="bg-white rounded-2xl border-2 border-blue-200 p-6 space-y-4">
+          <div className="space-y-2">
+            {[
+              '10 unique creative variants generated',
+              '4-phase testing plan (10 → 5 → 3 → 1)',
+              'Alternate-day schedule over 22 days',
+              'Unique tracking links per contact + variant',
+              'Optimising for conversions + revenue',
+            ].map((item) => (
+              <div key={item} className="flex items-center gap-2.5 text-[13.5px] text-gray-700">
+                <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                {item}
+              </div>
+            ))}
+          </div>
+          <p className="text-[12.5px] text-gray-400">
+            First send will go out on <strong className="text-gray-700">{fmtDate(phases[0]?.scheduledDates?.[0])}</strong>. You can pause at any time from the Campaigns dashboard.
+          </p>
+          <button
+            onClick={onApprove}
+            disabled={approving}
+            className="w-full flex items-center justify-center gap-3 py-4 bg-blue-600 text-white text-[15px] font-bold rounded-2xl shadow-[0_4px_20px_rgba(37,99,235,0.35)] hover:bg-blue-700 transition-all disabled:opacity-60"
+          >
+            {approving ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Confirming…</>
+            ) : (
+              <><Play className="w-5 h-5" /> Confirm & Start Campaign</>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CAMPAIGN STEP 2 — CONTEXT → EXPERIMENT PLAN
 ══════════════════════════════════════════════════════════════════════════════ */
 function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
-  const [name, setName]           = useState('');
-  const [context, setContext]     = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [strategy, setStrategy]   = useState(null);
+  const [name, setName]             = useState('');
+  const [context, setContext]       = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [experiment, setExperiment] = useState(null);
   const [campaignId, setCampaignId] = useState(null);
-  const [error, setError]         = useState('');
-  const [saving, setSaving]       = useState(false);
-  const [saved, setSaved]         = useState(false);
+  const [error, setError]           = useState('');
+  const [approving, setApproving]   = useState(false);
+  const [approved, setApproved]     = useState(false);
 
   const examplePrompts = [
     'These are our repeat customers and we want to encourage them to order again.',
@@ -746,13 +1073,12 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
     'Festival season is coming — announce a special seasonal menu.',
   ];
 
-  const analyze = async () => {
+  const generatePlan = async () => {
     if (!context.trim()) { setError('Please describe your campaign goal above.'); return; }
     setError('');
-    setAnalyzing(true);
-    setStrategy(null);
+    setGenerating(true);
+    setExperiment(null);
     try {
-      // Create or update campaign draft
       let id = campaignId;
       if (!id) {
         const res = await wpMarketing.createCampaign({
@@ -763,54 +1089,51 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
         id = res.data.campaign._id;
         setCampaignId(id);
       } else {
-        await wpMarketing.updateCampaign(id, { name: name.trim() || `Campaign — ${selectedList.name}`, context });
+        await wpMarketing.updateCampaign(id, {
+          name: name.trim() || `Campaign — ${selectedList.name}`,
+          contactListId: selectedList._id,
+          context,
+        });
       }
-
-      const sampleContacts = (selectedList.contacts || []).slice(0, 5).map((c) => ({
-        name: c.name,
-        orderCount: c.orderCount,
-        totalSpend: c.totalSpend,
-        tags: c.tags,
-      }));
-
-      const res = await wpMarketing.analyzeCampaign(id, {
-        context,
-        listName: selectedList.name,
-        contactCount: selectedList.contactCount ?? selectedList.contacts?.length ?? 0,
-        sampleContacts,
-        campaignId: id,
-      });
-      setStrategy(res.data.strategy);
+      const res = await wpMarketing.generatePlan(id);
+      setExperiment(res.data.experiment);
     } catch (e) {
-      setError(e?.response?.data?.error || 'AI analysis failed — please try again.');
+      setError(e?.response?.data?.error || 'Plan generation failed — please try again.');
     } finally {
-      setAnalyzing(false);
+      setGenerating(false);
     }
   };
 
-  const saveDraft = async () => {
-    setSaving(true);
+  const approvePlan = async () => {
+    if (!campaignId) return;
+    setApproving(true);
     try {
-      if (campaignId) {
-        await wpMarketing.updateCampaign(campaignId, { status: 'strategy_ready' });
-      }
-      setSaved(true);
-      setTimeout(() => onDraftSaved(), 1200);
-    } catch {
-      setSaving(false);
+      const res = await wpMarketing.approvePlan(campaignId);
+      setExperiment(res.data.experiment);
+      setApproved(true);
+      setTimeout(() => onDraftSaved(), 2000);
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Approval failed');
+      setApproving(false);
     }
   };
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       {/* Step header */}
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={onBack} className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+        <button
+          onClick={onBack}
+          disabled={generating || approved}
+          className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-30"
+        >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
           <p className="text-[11.5px] font-semibold text-blue-600 uppercase tracking-widest mb-0.5">Step 2 of 2</p>
-          <h2 className="text-lg font-semibold text-gray-900">Campaign Context</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            {experiment ? 'Campaign Experiment Plan' : 'Campaign Context'}
+          </h2>
         </div>
       </div>
 
@@ -829,110 +1152,92 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
         </div>
       </div>
 
-      {/* Selected list badge */}
-      <div className="flex items-center gap-2 mb-5 p-3.5 bg-blue-50 rounded-xl border border-blue-100">
-        <Users className="w-4 h-4 text-blue-600 flex-shrink-0" />
-        <span className="text-[13.5px] font-medium text-blue-800">{selectedList.name}</span>
-        <span className="text-[12px] text-blue-500 ml-1">
-          — {selectedList.contactCount ?? selectedList.contacts?.length ?? 0} contacts selected
-        </span>
-      </div>
-
-      {/* Campaign name (optional) */}
-      <div className="mb-4">
-        <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Campaign name <span className="text-gray-400 font-normal">(optional)</span></label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={`Campaign — ${selectedList.name}`}
-          className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-
-      {/* Context */}
-      <div className="mb-5">
-        <label className="block text-[13px] font-semibold text-gray-900 mb-1">
-          Describe your campaign goal
-        </label>
-        <p className="text-[12.5px] text-gray-400 mb-3">
-          Write naturally — explain who these contacts are, what you want them to do, and any relevant context. The AI will use this along with their order data to build the full strategy.
-        </p>
-        <textarea
-          value={context}
-          onChange={(e) => { setContext(e.target.value); setError(''); setStrategy(null); }}
-          rows={5}
-          placeholder="e.g. These are our repeat customers and we want to encourage them to order again. It's been 2–3 weeks since most of them last ordered. Offer them a 10% discount to come back."
-          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none leading-relaxed"
-        />
-        {/* Quick prompts */}
-        <div className="flex flex-wrap gap-2 mt-2">
-          {examplePrompts.map((p) => (
+      {generating ? (
+        <PlanGeneratingScreen />
+      ) : experiment ? (
+        /* ── Plan view ─────────────────────── */
+        <div>
+          {/* Edit context link */}
+          {!approved && (
             <button
-              key={p}
-              onClick={() => { setContext(p); setError(''); setStrategy(null); }}
-              className="text-[11.5px] text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+              onClick={() => { setExperiment(null); setGenerating(false); }}
+              className="flex items-center gap-1.5 text-[12.5px] text-gray-400 hover:text-gray-600 mb-4 transition-colors"
             >
-              {p.slice(0, 50)}…
+              <RefreshCw className="w-3.5 h-3.5" />
+              Edit context and regenerate plan
             </button>
-          ))}
-        </div>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 text-red-500 text-[13px] mb-4">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {/* Analyze button */}
-      {!strategy && (
-        <button
-          onClick={analyze}
-          disabled={analyzing || !context.trim()}
-          className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-blue-600 text-white text-[14px] font-semibold rounded-xl shadow-[0_2px_12px_rgba(37,99,235,0.30)] hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {analyzing ? (
-            <>
-              <Loader2 className="w-4.5 h-4.5 animate-spin" />
-              Analyzing with AI…
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4.5 h-4.5" />
-              Analyze & Build Strategy
-            </>
           )}
-        </button>
-      )}
-
-      {/* Re-analyze */}
-      {strategy && !saved && (
-        <button
-          onClick={() => { setStrategy(null); setAnalyzing(false); }}
-          className="flex items-center gap-2 text-[13px] text-gray-400 hover:text-gray-600 mb-5 transition-colors"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Edit context and re-analyze
-        </button>
-      )}
-
-      {/* Strategy result */}
-      {strategy && !saved && (
-        <div className="mt-5">
-          <StrategyCard strategy={strategy} onSaveDraft={saveDraft} saving={saving} />
+          <ExperimentPlanView
+            experiment={experiment}
+            onApprove={approvePlan}
+            approving={approving}
+            approved={approved}
+          />
         </div>
-      )}
-
-      {/* Saved confirmation */}
-      {saved && (
-        <div className="flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-200">
-          <CheckCircle2 className="w-5 h-5 text-green-600" />
-          <div>
-            <p className="text-[14px] font-semibold text-green-800">Campaign draft saved!</p>
-            <p className="text-[12.5px] text-green-600">Redirecting to campaigns…</p>
+      ) : (
+        /* ── Context input ─────────────────── */
+        <>
+          {/* Selected list badge */}
+          <div className="flex items-center gap-2 mb-5 p-3.5 bg-blue-50 rounded-xl border border-blue-100">
+            <Users className="w-4 h-4 text-blue-600 flex-shrink-0" />
+            <span className="text-[13.5px] font-medium text-blue-800">{selectedList.name}</span>
+            <span className="text-[12px] text-blue-500 ml-1">
+              — {selectedList.contactCount ?? selectedList.contacts?.length ?? 0} contacts selected
+            </span>
           </div>
-        </div>
+
+          <div className="mb-4">
+            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Campaign name <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={`Campaign — ${selectedList.name}`}
+              className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="mb-5">
+            <label className="block text-[13px] font-semibold text-gray-900 mb-1">Describe your campaign goal</label>
+            <p className="text-[12.5px] text-gray-400 mb-3">
+              Write naturally — explain who these contacts are, what you want them to do, and any context. The AI will use this to design a full 10-variant experiment with automatic audience segmentation, testing schedule, and tracking.
+            </p>
+            <textarea
+              value={context}
+              onChange={(e) => { setContext(e.target.value); setError(''); }}
+              rows={5}
+              placeholder={`e.g. These are our repeat customers and we want to encourage them to order again. It's been 2–3 weeks since most of them last ordered. Offer them a 10% discount to come back.`}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none leading-relaxed"
+            />
+            <div className="flex flex-wrap gap-2 mt-2">
+              {examplePrompts.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { setContext(p); setError(''); }}
+                  className="text-[11.5px] text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  {p.slice(0, 50)}…
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-500 text-[13px] mb-4">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={generatePlan}
+            disabled={!context.trim()}
+            className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-blue-600 text-white text-[14px] font-semibold rounded-xl shadow-[0_2px_12px_rgba(37,99,235,0.30)] hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FlaskConical className="w-4.5 h-4.5" />
+            Generate Campaign Experiment Plan
+          </button>
+          <p className="text-center text-[12px] text-gray-400 mt-2">AI will design 10 creative variants · testing schedule · tracking setup</p>
+        </>
       )}
     </div>
   );
