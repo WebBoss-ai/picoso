@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import routes from './routes/routes.js';
 import { DeliveryPartner, User, Campaign } from './models/Model.js';
+import { WpClient } from './models/wpMarketingModels.js';
 
 dotenv.config();
 
@@ -68,12 +69,32 @@ async function seedCampaign1() {
   }
 }
 
+async function seedWpClients() {
+  const exists = await WpClient.findOne({ slug: 'client-001' });
+  if (!exists) {
+    await WpClient.create({
+      slug: 'client-001',
+      name: 'Picoso',
+      pin: '0095',
+      active: true,
+      workspace: {
+        businessName: 'Picoso',
+        businessType: 'Food Delivery',
+        industry: 'F&B',
+        timezone: 'Asia/Kolkata',
+      },
+    });
+    console.log('✅ WP Marketing client seeded — Picoso (PIN: 0095)');
+  }
+}
+
 mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('✅ MongoDB Connected');
     await seedDeliveryPartners();
     await ensureTestUserAddress();
     await seedCampaign1();
+    await seedWpClients();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 

@@ -252,4 +252,31 @@ export const adminReferrals = {
   updateSettings:   (data)   => api.put('/admin/referrals/settings', data),
 };
 
+// ── WP Marketing Platform (per-client PIN) ────────────────────────────────
+const wpMarketingApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+});
+wpMarketingApi.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const pin = sessionStorage.getItem('picoso_wp_pin');
+    if (pin) config.headers['x-wp-pin'] = pin;
+  }
+  return config;
+});
+
+export const wpMarketing = {
+  verifyPin:         (pin)     => wpMarketingApi.post('/wp-marketing/verify-pin', {}, { headers: { 'x-wp-pin': pin } }),
+  getOverview:       ()        => wpMarketingApi.get('/wp-marketing/overview'),
+  getContactLists:   ()        => wpMarketingApi.get('/wp-marketing/contacts'),
+  createContactList: (data)    => wpMarketingApi.post('/wp-marketing/contacts', data),
+  getContactList:    (id)      => wpMarketingApi.get(`/wp-marketing/contacts/${id}`),
+  deleteContactList: (id)      => wpMarketingApi.delete(`/wp-marketing/contacts/${id}`),
+  addContacts:       (id, data) => wpMarketingApi.post(`/wp-marketing/contacts/${id}/members`, data),
+  getCampaigns:      ()        => wpMarketingApi.get('/wp-marketing/campaigns'),
+  createCampaign:    (data)    => wpMarketingApi.post('/wp-marketing/campaigns', data),
+  updateCampaign:    (id, data) => wpMarketingApi.put(`/wp-marketing/campaigns/${id}`, data),
+  deleteCampaign:    (id)      => wpMarketingApi.delete(`/wp-marketing/campaigns/${id}`),
+  analyzeCampaign:   (id, data) => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/analyze`, data),
+};
+
 export default api;

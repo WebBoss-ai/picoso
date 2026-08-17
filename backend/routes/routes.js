@@ -10,6 +10,8 @@ import * as marketing from '../controllers/marketingController.js';
 import { uploadToS3 } from '../utils/s3.js';
 import llmRouter from '../llm/routes.js';
 import platformRouter from '../llm/routes/platform.js';
+import * as wpMarketing from '../controllers/wpMarketingController.js';
+import { requireWpPin } from '../middleware/wpMarketingAuth.js';
 
 const router = express.Router();
 
@@ -207,6 +209,22 @@ router.delete('/marketing/campaigns/:id',   requireMarketingPin, marketing.delet
 // Logs & stats
 router.get('/marketing/logs',               requireMarketingPin, marketing.getLogs);
 router.get('/marketing/stats',              requireMarketingPin, marketing.getStats);
+
+// ── WP Marketing Platform (per-client PIN) ────────────────────────────────
+router.post('/wp-marketing/verify-pin',            requireWpPin, wpMarketing.verifyPin);
+router.get('/wp-marketing/overview',               requireWpPin, wpMarketing.getOverview);
+// Contact lists
+router.get('/wp-marketing/contacts',               requireWpPin, wpMarketing.getContactLists);
+router.post('/wp-marketing/contacts',              requireWpPin, wpMarketing.createContactList);
+router.get('/wp-marketing/contacts/:id',           requireWpPin, wpMarketing.getContactList);
+router.delete('/wp-marketing/contacts/:id',        requireWpPin, wpMarketing.deleteContactList);
+router.post('/wp-marketing/contacts/:id/members',  requireWpPin, wpMarketing.addContactsToList);
+// Campaign drafts
+router.get('/wp-marketing/campaigns',              requireWpPin, wpMarketing.getCampaigns);
+router.post('/wp-marketing/campaigns',             requireWpPin, wpMarketing.createCampaign);
+router.put('/wp-marketing/campaigns/:id',          requireWpPin, wpMarketing.updateCampaign);
+router.delete('/wp-marketing/campaigns/:id',       requireWpPin, wpMarketing.deleteCampaign);
+router.post('/wp-marketing/campaigns/:id/analyze', requireWpPin, wpMarketing.analyzeCampaign);
 
 // ── Picoso Intelligence (/llm console) — self-contained module ───────────────
 router.use('/llm', llmRouter);
