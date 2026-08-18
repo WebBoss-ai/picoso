@@ -24,7 +24,9 @@ const client = axios.create({
 client.interceptors.response.use(
   (res) => res.data,
   (err) => {
-    const msg = err.response?.data?.message || err.message || 'CampaignBot API error';
+    const status = err.response?.status;
+    const msg    = err.response?.data?.message || err.message || 'CampaignBot API error';
+    console.error(`[CampaignBot] ${status || 'ERR'} ${err.config?.method?.toUpperCase()} ${err.config?.url} — ${msg}`);
     throw new Error(msg);
   }
 );

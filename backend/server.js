@@ -13,6 +13,25 @@ const app = express();
 
 app.use(cors());
 
+/* ── Request logger ─────────────────────────────────────────────────────────
+   Logs method, path, status code, response time, and (for /api/wp-marketing
+   and /api/webhooks routes) the presence/absence of auth headers so issues
+   with missing PINs are immediately visible in server output.
+─────────────────────────────────────────────────────────────────────────── */
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms   = Date.now() - start;
+    const isWp = req.path.startsWith('/api/wp-marketing') || req.path.startsWith('/api/webhooks');
+    const pin  = req.headers['x-wp-pin'] ? '[pin:set]' : '[pin:MISSING]';
+    const auth = req.headers.authorization ? '[auth:set]' : '';
+    const tag  = isWp ? ` ${pin}${auth}` : '';
+    const color = res.statusCode >= 500 ? '\x1b[31m' : res.statusCode >= 400 ? '\x1b[33m' : '\x1b[32m';
+    console.log(`${color}${req.method} ${req.path} → ${res.statusCode}\x1b[0m  ${ms}ms${tag}`);
+  });
+  next();
+});
+
 // Capture raw body for HMAC webhook verification before JSON parsing
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/webhooks/')) {

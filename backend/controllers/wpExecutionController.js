@@ -12,9 +12,12 @@ import * as bot    from '../services/campaignBot.js';
 
 export const getWaStatus = async (req, res) => {
   try {
+    console.log(`[WP Exec] getWaStatus — client: ${req.wpClient?.slug}`);
     const status = await bot.testConnection();
+    console.log(`[WP Exec] WA status: ${JSON.stringify(status)}`);
     res.json({ success: true, ...status });
   } catch (err) {
+    console.error('[WP Exec] getWaStatus error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -23,9 +26,12 @@ export const getTemplates = async (req, res) => {
   try {
     const page  = parseInt(req.query.page  || '1',  10);
     const limit = parseInt(req.query.limit || '20', 10);
+    console.log(`[WP Exec] getTemplates — client: ${req.wpClient?.slug} page:${page} limit:${limit}`);
     const data  = await bot.fetchTemplates(page, limit);
+    console.log(`[WP Exec] Templates fetched: ${data?.total ?? 0} total`);
     res.json({ success: true, ...data });
   } catch (err) {
+    console.error('[WP Exec] getTemplates error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
