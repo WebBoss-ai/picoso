@@ -175,8 +175,98 @@ const wpTrackingLinkSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-export const WpClient = mongoose.models.WpClient || mongoose.model('WpClient', wpClientSchema);
-export const WpContactList = mongoose.models.WpContactList || mongoose.model('WpContactList', wpContactListSchema);
-export const WpCampaignDraft = mongoose.models.WpCampaignDraft || mongoose.model('WpCampaignDraft', wpCampaignDraftSchema);
-export const WpExperiment = mongoose.models.WpExperiment || mongoose.model('WpExperiment', wpExperimentSchema);
-export const WpTrackingLink = mongoose.models.WpTrackingLink || mongoose.model('WpTrackingLink', wpTrackingLinkSchema);
+/* ── WpCampaignRun ─────────────────────────────────────────────────────────
+   One record per execution cycle (e.g. Phase 1 Run 2). Tracks which variants
+   ran, aggregate delivery stats, and the AI-generated post-run analysis.
+────────────────────────────────────────────────────────────────────────── */
+const wpRunMetricsSchema = new mongoose.Schema({
+  sent:         { type: Number, default: 0 },
+  delivered:    { type: Number, default: 0 },
+  read:         { type: Number, default: 0 },
+  clicks:       { type: Number, default: 0 },
+  uniqueClicks: { type: Number, default: 0 },
+  replies:      { type: Number, default: 0 },
+  conversions:  { type: Number, default: 0 },
+  revenue:      { type: Number, default: 0 },
+}, { _id: false });
+
+const wpRunAiAnalysisSchema = new mongoose.Schema({
+  summary:             { type: String, default: '' },
+  variantRankings:     [{ variantNumber: Number, label: String, score: Number, reason: String }],
+  advancementDecision: { type: String, default: '' },
+  advancedVariants:    [Number],
+  eliminatedVariants:  [Number],
+  generatedAt:         { type: Date, default: null },
+}, { _id: false });
+
+const wpCampaignRunSchema = new mongoose.Schema({
+  clientId:       { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient',    required: true },
+  experimentId:   { type: mongoose.Schema.Types.ObjectId, ref: 'WpExperiment', required: true },
+  phaseNumber:    { type: Number, required: true },
+  runNumber:      { type: Number, required: true },
+  status: {
+    type: String,
+    enum: ['pending', 'running', 'completed', 'failed', 'analyzed'],
+    default: 'pending',
+  },
+  variantNumbers:     [{ type: Number }],
+  contactCount:       { type: Number, default: 0 },
+  campaignBotRefId:   { type: String, default: null },
+  scheduledAt:        { type: Date, default: null },
+  startedAt:          { type: Date, default: null },
+  completedAt:        { type: Date, default: null },
+  metrics:            { type: wpRunMetricsSchema, default: () => ({}) },
+  aiAnalysis:         { type: wpRunAiAnalysisSchema, default: null },
+  createdAt:          { type: Date, default: Date.now },
+});
+
+/* ── WpMessageLog ──────────────────────────────────────────────────────────
+   Per-message record. Connects every outbound message to the exact contact,
+   variant, and run. Updated in real time as delivery webhooks arrive.
+────────────────────────────────────────────────────────────────────────── */
+const wpMessageLogSchema = new mongoose.Schema({
+  clientId:         { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient' },
+  experimentId:     { type: mongoose.Schema.Types.ObjectId, ref: 'WpExperiment' },
+  campaignRunId:    { type: mongoose.Schema.Types.ObjectId, ref: 'WpCampaignRun' },
+  variantNumber:    { type: Number },
+  phaseNumber:      { type: Number },
+  runNumber:        { type: Number },
+  contactPhone:     { type: String, default: '' },
+  contactName:      { type: String, default: '' },
+  wamid:            { type: String, default: null, index: true }, // WhatsApp message ID
+  campaignBotRefId: { type: String, default: null },
+  templateName:     { type: String, default: '' },
+  status: {
+    type: String,
+    enum: ['queued', 'sent', 'delivered', 'read', 'failed'],
+    default: 'queued',
+    index: true,
+  },
+  sentAt:       { type: Date, default: null },
+  deliveredAt:  { type: Date, default: null },
+  readAt:       { type: Date, default: null },
+  failedAt:     { type: Date, default: null },
+  failureTitle: { type: String, default: null },
+  failureMsg:   { type: String, default: null },
+  // Tracking link
+  trackingShortCode: { type: String, default: null },
+  trackingUrl:       { type: String, default: null },
+  // Engagement
+  clicked:      { type: Boolean, default: false },
+  totalClicks:  { type: Number, default: 0 },
+  firstClickAt: { type: Date, default: null },
+  replied:      { type: Boolean, default: false },
+  // Conversion
+  converted:          { type: Boolean, default: false },
+  conversionOrderId:  { type: String, default: null },
+  conversionValue:    { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const WpClient         = mongoose.models.WpClient         || mongoose.model('WpClient',         wpClientSchema);
+export const WpContactList    = mongoose.models.WpContactList    || mongoose.model('WpContactList',    wpContactListSchema);
+export const WpCampaignDraft  = mongoose.models.WpCampaignDraft  || mongoose.model('WpCampaignDraft',  wpCampaignDraftSchema);
+export const WpExperiment     = mongoose.models.WpExperiment     || mongoose.model('WpExperiment',     wpExperimentSchema);
+export const WpTrackingLink   = mongoose.models.WpTrackingLink   || mongoose.model('WpTrackingLink',   wpTrackingLinkSchema);
+export const WpCampaignRun    = mongoose.models.WpCampaignRun    || mongoose.model('WpCampaignRun',    wpCampaignRunSchema);
+export const WpMessageLog     = mongoose.models.WpMessageLog     || mongoose.model('WpMessageLog',     wpMessageLogSchema);

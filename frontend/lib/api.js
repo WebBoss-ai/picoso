@@ -281,6 +281,16 @@ export const wpMarketing = {
   generatePlan:      (id)      => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/generate-plan`),
   getPlan:           (id)      => wpMarketingApi.get(`/wp-marketing/campaigns/${id}/plan`),
   approvePlan:       (id)      => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/approve-plan`),
+  getExperiment:     (campaignId) => wpMarketingApi.get(`/wp-marketing/campaigns/${campaignId}/experiment`),
+  // Phase 3 — WhatsApp
+  getWaStatus:       ()        => wpMarketingApi.get('/wp-marketing/wa/status'),
+  getTemplates:      (page, limit) => wpMarketingApi.get('/wp-marketing/wa/templates', { params: { page, limit } }),
+  sendTestMessage:   (data)    => wpMarketingApi.post('/wp-marketing/wa/test-send', data),
+  // Phase 3 — Execution
+  getDashboard:      (expId)   => wpMarketingApi.get(`/wp-marketing/experiments/${expId}/dashboard`),
+  executeRun:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/execute`, data),
+  analyzeRun:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/analyze`, data),
+  advancePhase:      (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/advance`, data),
 };
 
 export default api;

@@ -10,7 +10,9 @@ import * as marketing from '../controllers/marketingController.js';
 import { uploadToS3 } from '../utils/s3.js';
 import llmRouter from '../llm/routes.js';
 import platformRouter from '../llm/routes/platform.js';
-import * as wpMarketing from '../controllers/wpMarketingController.js';
+import * as wpMarketing  from '../controllers/wpMarketingController.js';
+import * as wpExecution  from '../controllers/wpExecutionController.js';
+import * as wpWebhook    from '../controllers/wpWebhookController.js';
 import { requireWpPin } from '../middleware/wpMarketingAuth.js';
 
 const router = express.Router();
@@ -233,6 +235,21 @@ router.post('/wp-marketing/campaigns/:id/approve-plan',    requireWpPin, wpMarke
 router.post('/wp-marketing/tracking-links',                requireWpPin, wpMarketing.createTrackingLink);
 // Public click tracking — no PIN, used by WhatsApp link recipients
 router.get('/t/:code',                                     wpMarketing.handleTrackClick);
+
+// ── WP Marketing — WhatsApp / Templates ───────────────────────────────────
+router.get('/wp-marketing/wa/status',                      requireWpPin, wpExecution.getWaStatus);
+router.get('/wp-marketing/wa/templates',                   requireWpPin, wpExecution.getTemplates);
+router.post('/wp-marketing/wa/test-send',                  requireWpPin, wpExecution.sendTestMessage);
+
+// ── WP Marketing — Experiments (Phase 3 execution) ───────────────────────
+router.get('/wp-marketing/experiments/:id/dashboard',      requireWpPin, wpExecution.getDashboard);
+router.post('/wp-marketing/experiments/:id/execute',       requireWpPin, wpExecution.executeRun);
+router.post('/wp-marketing/experiments/:id/analyze',       requireWpPin, wpExecution.analyzeRun);
+router.post('/wp-marketing/experiments/:id/advance',       requireWpPin, wpExecution.advancePhase);
+router.get('/wp-marketing/campaigns/:id/experiment',       requireWpPin, wpExecution.getExperimentByCampaign);
+
+// ── CampaignBot Webhooks — public, HMAC-secured ───────────────────────────
+router.post('/webhooks/campaignbot',                       wpWebhook.handleWebhook);
 
 // ── Picoso Intelligence (/llm console) — self-contained module ───────────────
 router.use('/llm', llmRouter);

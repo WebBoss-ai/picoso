@@ -9,6 +9,10 @@ import {
   Clock, MessageSquare, TrendingUp, Send, Eye, RefreshCw,
   FlaskConical, ShieldCheck, BarChart2, Layers, Link2,
   ChevronDown, ChevronUp, Play,
+  // Phase 3
+  Wifi, WifiOff, ShoppingCart, DollarSign, Inbox, Repeat2,
+  ListChecks, Trophy, Palette, Signal, ArrowRight,
+  Activity, SortAsc, Table2, Info,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
 
@@ -255,7 +259,7 @@ function Overview({ client, onNavigate }) {
     <div className="p-8 max-w-5xl">
       <div className="mb-7">
         <h2 className="text-xl font-semibold text-gray-900">
-          Good day, {client?.workspace?.businessName || client?.name} 👋
+          Good day, {client?.workspace?.businessName || client?.name}
         </h2>
         <p className="text-[13.5px] text-gray-400 mt-1">Here's what's happening in your workspace.</p>
       </div>
@@ -783,7 +787,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
                       {scheduleDates.map(fmtDate).join(' · ')}
                     </p>
                   )}
-                  {i === 3 && <p className={`text-[11px] font-semibold ${cfg.text} mt-1`}>🏆 Winner sends to all</p>}
+                  {i === 3 && <p className={`text-[11px] font-semibold ${cfg.text} mt-1 flex items-center gap-1`}><Trophy className="w-3 h-3" /> Winner sends to all</p>}
                 </div>
                 {i < phases.length - 1 && (
                   <div className="flex items-center justify-center w-6 flex-shrink-0">
@@ -828,7 +832,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
                         isEval ? 'bg-gray-100 border border-gray-200 text-gray-500' :
                         'bg-gray-50 text-gray-300'}`}
                     >
-                      {isSendDay ? <Send className="w-3.5 h-3.5" /> : isEval ? '📊' : dayNum}
+                      {isSendDay ? <Send className="w-3.5 h-3.5" /> : isEval ? <BarChart2 className="w-3 h-3" /> : dayNum}
                     </div>
                     <span className="text-[9px] text-gray-400">D{dayNum}</span>
                   </div>
@@ -925,7 +929,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
               {/* Image concept */}
               {v.imageConceptDescription && (
                 <div className="flex items-start gap-3 p-4 bg-violet-50 rounded-xl border border-violet-100">
-                  <span className="text-lg flex-shrink-0">🎨</span>
+                  <Palette className="w-4.5 h-4.5 text-violet-500 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-[11px] font-semibold text-violet-600 uppercase tracking-wider mb-0.5">Image / Creative Concept</p>
                     <p className="text-[13.5px] text-gray-700">{v.imageConceptDescription}</p>
@@ -950,19 +954,19 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
           <div className="grid grid-cols-2 gap-2">
             {(criteria.signals || []).map((s) => {
               const labels = {
-                delivery_rate: ['📬', 'Delivery Rate', 'Message reached recipient'],
-                read_rate: ['👁️', 'Read Rate', 'Recipient opened the message'],
-                link_click_rate: ['🔗', 'Link Click Rate', 'Total link interactions'],
-                unique_clicks: ['✨', 'Unique Clicks', 'Distinct recipients who clicked'],
-                repeat_clicks: ['🔄', 'Repeat Clicks', 'Same person clicking multiple times'],
-                replies: ['💬', 'Replies', 'Customer responded to message'],
-                conversions: ['🛒', 'Conversions', 'Placed an order after receiving message'],
-                revenue: ['💰', 'Revenue', 'Actual order value attributed to this variant'],
+                delivery_rate:   [Inbox,        'Delivery Rate',    'Message reached recipient'],
+                read_rate:       [Eye,           'Read Rate',        'Recipient opened the message'],
+                link_click_rate: [Link2,         'Link Click Rate',  'Total link interactions'],
+                unique_clicks:   [Target,        'Unique Clicks',    'Distinct recipients who clicked'],
+                repeat_clicks:   [Repeat2,       'Repeat Clicks',    'Same person clicking multiple times'],
+                replies:         [MessageSquare, 'Replies',          'Customer responded to message'],
+                conversions:     [ShoppingCart,  'Conversions',      'Placed an order after receiving message'],
+                revenue:         [DollarSign,    'Revenue',          'Order value attributed to this variant'],
               };
-              const [icon, label, desc] = labels[s] || ['📊', s, ''];
+              const [IconComp, label, desc] = labels[s] || [BarChart2, s, ''];
               return (
                 <div key={s} className="flex items-start gap-2.5 p-3 rounded-xl bg-gray-50">
-                  <span className="text-base flex-shrink-0">{icon}</span>
+                  <IconComp className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-[13px] font-semibold text-gray-800">{label}</p>
                     <p className="text-[11.5px] text-gray-400">{desc}</p>
@@ -1253,6 +1257,7 @@ function CampaignsSection({ initialView }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [deleting, setDeleting] = useState(null);
+  const [dashCampaignId, setDashCampaignId] = useState(null);
 
   const loadCampaigns = useCallback(() => {
     setLoading(true);
@@ -1288,6 +1293,15 @@ function CampaignsSection({ initialView }) {
     completed:      'bg-violet-100 text-violet-700',
     paused:         'bg-orange-100 text-orange-700',
   };
+
+  if (view === 'dashboard' && dashCampaignId) {
+    return (
+      <CampaignDashboard
+        campaignId={dashCampaignId}
+        onBack={() => { setView('list'); setDashCampaignId(null); }}
+      />
+    );
+  }
 
   if (view === 'create') {
     if (step === 1) {
@@ -1376,13 +1390,24 @@ function CampaignsSection({ initialView }) {
                     {new Date(c.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}
                   </td>
                   <td className="px-4 py-3.5">
-                    <button
-                      onClick={() => handleDelete(c._id)}
-                      disabled={deleting === c._id}
-                      className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-all disabled:opacity-50"
-                    >
-                      {deleting === c._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {['scheduled', 'running', 'completed'].includes(c.status) && (
+                        <button
+                          onClick={() => { setDashCampaignId(c._id); setView('dashboard'); }}
+                          className="px-3 py-1.5 text-[12px] font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          <Activity className="w-3 h-3" />
+                          Dashboard
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDelete(c._id)}
+                        disabled={deleting === c._id}
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-all disabled:opacity-50"
+                      >
+                        {deleting === c._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1546,6 +1571,639 @@ function ContactsSection() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   CAMPAIGN EXECUTION DASHBOARD
+══════════════════════════════════════════════════════════════════════════════ */
+
+function MetricCard({ label, value, sub, color = 'blue' }) {
+  const colors = {
+    blue:   'bg-blue-50 text-blue-700',
+    green:  'bg-green-50 text-green-700',
+    violet: 'bg-violet-50 text-violet-700',
+    amber:  'bg-amber-50 text-amber-700',
+    rose:   'bg-rose-50 text-rose-700',
+    teal:   'bg-teal-50 text-teal-700',
+  };
+  return (
+    <div className={`rounded-2xl p-4 ${colors[color]}`}>
+      <p className="text-[11.5px] font-semibold uppercase tracking-wider opacity-70">{label}</p>
+      <p className="text-2xl font-bold mt-1">{value}</p>
+      {sub && <p className="text-[12px] opacity-70 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function VariantRow({ v, rank }) {
+  const statusColors = { active: 'text-blue-600', top5: 'text-amber-600', top3: 'text-violet-600', winner: 'text-green-600', eliminated: 'text-gray-400' };
+  return (
+    <tr className="border-b border-gray-50 last:border-0 hover:bg-gray-50/40 transition-colors">
+      <td className="px-4 py-3 text-[13px] text-gray-400 font-mono">#{rank}</td>
+      <td className="px-4 py-3">
+        <p className="text-[13px] font-semibold text-gray-900">{v.label}</p>
+        <p className="text-[11.5px] text-gray-400">{v.copyAngle}</p>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <span className={`text-[11.5px] font-semibold capitalize ${statusColors[v.status] || 'text-gray-500'}`}>{v.status}</span>
+      </td>
+      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.sent}</td>
+      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.deliveryRate}%</td>
+      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.readRate}%</td>
+      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.clickRate}%</td>
+      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.conversionRate}%</td>
+      <td className="px-4 py-3 text-center text-[13px] font-semibold text-gray-800">
+        {v.revenue > 0 ? `₹${v.revenue.toLocaleString('en-IN')}` : '—'}
+      </td>
+    </tr>
+  );
+}
+
+function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, onRefresh }) {
+  const [executing,  setExecuting]  = useState(false);
+  const [analyzing,  setAnalyzing]  = useState(false);
+  const [advancing,  setAdvancing]  = useState(false);
+  const [execError,  setExecError]  = useState('');
+  const [analysis,   setAnalysis]   = useState(null);
+
+  // Template config state for execute
+  const [tmplName,    setTmplName]    = useState('');
+  const [tmplId,      setTmplId]      = useState('');
+  const [hasUrlBtn,   setHasUrlBtn]   = useState(false);
+  const [showExecForm, setShowExecForm] = useState(false);
+
+  const phaseRuns = (runs || []).filter((r) => r.phaseNumber === phase.phaseNumber);
+  const completedRuns = phaseRuns.filter((r) => ['completed', 'analyzed'].includes(r.status));
+  const canExecute   = phase.status !== 'completed' && completedRuns.length < phase.rounds && experimentStatus !== 'completed';
+  const canAnalyze   = completedRuns.length === phase.rounds && !phaseRuns.find((r) => r.aiAnalysis);
+  const latestRun    = phaseRuns[phaseRuns.length - 1];
+  const latestAnalysis = latestRun?.aiAnalysis;
+
+  const handleExecute = async () => {
+    if (!tmplName.trim()) { setExecError('Template name is required'); return; }
+    setExecError(''); setExecuting(true);
+    try {
+      await wpMarketing.executeRun(experimentId, {
+        phaseIndex: phaseIndex,
+        templateConfig: { templateId: tmplId, templateName: tmplName, hasUrlButton: hasUrlBtn },
+      });
+      setShowExecForm(false);
+      onRefresh();
+    } catch (err) {
+      setExecError(err?.response?.data?.error || 'Execution failed');
+    }
+    setExecuting(false);
+  };
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    try {
+      const r = await wpMarketing.analyzeRun(experimentId, { phaseNumber: phase.phaseNumber });
+      setAnalysis(r.data.analysis);
+      onRefresh();
+    } catch (err) {
+      setExecError(err?.response?.data?.error || 'Analysis failed');
+    }
+    setAnalyzing(false);
+  };
+
+  const handleAdvance = async () => {
+    const src = latestAnalysis || analysis;
+    if (!src) return;
+    setAdvancing(true);
+    try {
+      await wpMarketing.advancePhase(experimentId, {
+        advancedNums:   src.advancedVariants,
+        eliminatedNums: src.eliminatedVariants,
+        nextCount:      src.advancedVariants?.length || 1,
+      });
+      onRefresh();
+    } catch (err) {
+      setExecError(err?.response?.data?.error || 'Advancement failed');
+    }
+    setAdvancing(false);
+  };
+
+  const phaseStatusBadge = {
+    pending:   'bg-gray-100 text-gray-500',
+    running:   'bg-amber-100 text-amber-700',
+    completed: 'bg-green-100 text-green-700',
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100">
+      {/* Phase header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+        <div>
+          <p className="text-[14px] font-semibold text-gray-900">{phase.label}</p>
+          <p className="text-[12px] text-gray-400 mt-0.5">
+            {phase.variantCount} variants · {phase.contactsPerVariant} contacts each · {phase.rounds} runs
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
+            {completedRuns.length}/{phase.rounds} runs
+          </span>
+          <span className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full ${phaseStatusBadge[phase.status] || 'bg-gray-100 text-gray-500'}`}>
+            {phase.status}
+          </span>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Run history */}
+        {phaseRuns.map((run) => (
+          <div key={run._id} className="p-4 bg-gray-50 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[13px] font-semibold text-gray-800">Run {run.runNumber}</p>
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${run.status === 'analyzed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                {run.status}
+              </span>
+            </div>
+            {run.metrics?.sent > 0 && (
+              <div className="grid grid-cols-4 gap-2 text-center mt-3">
+                {[
+                  ['Sent', run.metrics.sent],
+                  ['Delivered', run.metrics.delivered],
+                  ['Read', run.metrics.read],
+                  ['Conversions', run.metrics.conversions],
+                ].map(([l, v]) => (
+                  <div key={l} className="bg-white rounded-lg px-2 py-1.5">
+                    <p className="text-[10px] text-gray-400">{l}</p>
+                    <p className="text-[14px] font-bold text-gray-800">{v}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {run.aiAnalysis?.summary && (
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-1">AI Analysis</p>
+                <p className="text-[12.5px] text-gray-700 leading-relaxed">{run.aiAnalysis.summary}</p>
+                {run.aiAnalysis.advancementDecision && (
+                  <p className="text-[12px] font-semibold text-blue-700 mt-2">{run.aiAnalysis.advancementDecision}</p>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Execute run form */}
+        {canExecute && showExecForm && (
+          <div className="p-4 border border-blue-100 rounded-xl bg-blue-50/50 space-y-3">
+            <p className="text-[13px] font-semibold text-gray-900">Execute Run {completedRuns.length + 1}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11.5px] font-medium text-gray-600 block mb-1">Template Name *</label>
+                <input
+                  value={tmplName} onChange={(e) => setTmplName(e.target.value)}
+                  placeholder="e.g. picoso_promo"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11.5px] font-medium text-gray-600 block mb-1">Template ID (optional)</label>
+                <input
+                  value={tmplId} onChange={(e) => setTmplId(e.target.value)}
+                  placeholder="e.g. 1610629016778422"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white"
+                />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={hasUrlBtn} onChange={(e) => setHasUrlBtn(e.target.checked)} className="rounded" />
+              Template has a URL button (tracking link will be injected)
+            </label>
+            {execError && <p className="text-[12.5px] text-red-600">{execError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={handleExecute} disabled={executing}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-60"
+              >
+                {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                {executing ? 'Sending…' : 'Send Messages'}
+              </button>
+              <button onClick={() => setShowExecForm(false)} className="px-4 py-2 text-[13px] text-gray-500 hover:text-gray-700">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Action row */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {canExecute && !showExecForm && (
+            <button
+              onClick={() => setShowExecForm(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              <Play className="w-3.5 h-3.5" />
+              Execute Run {completedRuns.length + 1}
+            </button>
+          )}
+          {canAnalyze && (
+            <button
+              onClick={handleAnalyze} disabled={analyzing}
+              className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white text-[13px] font-semibold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-60"
+            >
+              {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+              {analyzing ? 'Analysing…' : 'Analyse Results'}
+            </button>
+          )}
+          {(latestAnalysis?.advancedVariants || analysis?.advancedNums) && experimentStatus !== 'completed' && (
+            <button
+              onClick={handleAdvance} disabled={advancing}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60"
+            >
+              {advancing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+              {advancing ? 'Advancing…' : 'Advance to Next Phase'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CampaignDashboard({ campaignId, onBack }) {
+  const [loading,    setLoading]    = useState(true);
+  const [data,       setData]       = useState(null);
+  const [expId,      setExpId]      = useState(null);
+  const [error,      setError]      = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const expRes = await wpMarketing.getExperiment(campaignId);
+      const eid = expRes.data?._id;
+      setExpId(eid);
+      const dash = await wpMarketing.getDashboard(eid);
+      setData(dash.data);
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not load dashboard');
+    }
+    setLoading(false);
+  }, [campaignId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return (
+    <div className="p-8 flex justify-center py-24"><Loader2 className="w-5 h-5 text-blue-500 animate-spin" /></div>
+  );
+
+  if (error) return (
+    <div className="p-8">
+      <button onClick={onBack} className="flex items-center gap-2 text-[13px] text-gray-500 hover:text-gray-700 mb-6">
+        <ArrowLeft className="w-4 h-4" /> Back to Campaigns
+      </button>
+      <div className="bg-red-50 rounded-2xl border border-red-100 p-6 text-center">
+        <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
+        <p className="text-[14px] font-semibold text-red-700">{error}</p>
+        <p className="text-[13px] text-red-500 mt-1">The experiment plan may not be approved yet.</p>
+      </div>
+    </div>
+  );
+
+  const { experiment, overall, variants = [], runs = [] } = data || {};
+  const statusColors = { approved: 'bg-amber-100 text-amber-700', running: 'bg-green-100 text-green-700', completed: 'bg-violet-100 text-violet-700' };
+
+  // Sort variants by conversionRate + clickRate for display
+  const sorted = [...variants].sort((a, b) => (b.conversionRate + b.clickRate) - (a.conversionRate + a.clickRate));
+
+  return (
+    <div className="p-8 max-w-6xl">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-7">
+        <button onClick={onBack} className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300 transition-all">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold text-gray-900">{experiment?.title || 'Campaign Dashboard'}</h2>
+            <span className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full capitalize ${statusColors[experiment?.status] || 'bg-gray-100 text-gray-500'}`}>
+              {experiment?.status}
+            </span>
+          </div>
+          <p className="text-[13px] text-gray-400 mt-0.5">{experiment?.objective}</p>
+        </div>
+        <button onClick={load} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 transition-all">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Overall metrics */}
+      <div className="grid grid-cols-3 gap-3 mb-7">
+        <MetricCard label="Messages Sent"   value={overall?.totalMessages?.toLocaleString('en-IN') || 0}  color="blue"   sub={`${overall?.deliveryRate || 0}% delivered`} />
+        <MetricCard label="Read"            value={overall?.read?.toLocaleString('en-IN') || 0}            color="teal"   sub={`${overall?.readRate || 0}% read rate`} />
+        <MetricCard label="Unique Clicks"   value={overall?.uniqueClicks?.toLocaleString('en-IN') || 0}   color="amber"  sub={`${overall?.clickRate || 0}% click rate`} />
+        <MetricCard label="Conversions"     value={overall?.conversions?.toLocaleString('en-IN') || 0}    color="green"  sub={`${overall?.conversionRate || 0}% conversion rate`} />
+        <MetricCard label="Revenue"         value={overall?.revenue > 0 ? `₹${overall.revenue.toLocaleString('en-IN')}` : '₹0'}  color="violet" />
+        <MetricCard label="Experiment Stage" value={`Phase ${experiment?.phases?.findIndex((p) => p.status === 'running') + 1 || (experiment?.status === 'completed' ? 'Complete' : '—')}`} color="rose" />
+      </div>
+
+      {/* Variant performance table */}
+      {sorted.length > 0 && (
+        <div className="mb-7">
+          <div className="flex items-center gap-2 mb-3">
+            <Table2 className="w-4 h-4 text-gray-400" />
+            <p className="text-[14px] font-semibold text-gray-900">Variant Rankings</p>
+            <span className="text-[12px] text-gray-400">(sorted by conversion + click rate)</span>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  {['#', 'Variant', 'Stage', 'Sent', 'Delivery', 'Read', 'Click', 'Conv.', 'Revenue'].map((h) => (
+                    <th key={h} className="px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((v, i) => <VariantRow key={v.variantNumber} v={v} rank={i + 1} />)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Phase breakdown */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Layers className="w-4 h-4 text-gray-400" />
+          <p className="text-[14px] font-semibold text-gray-900">Phase Execution</p>
+        </div>
+        <div className="space-y-4">
+          {(experiment?.phases || []).map((phase, pi) => (
+            <PhasePanel
+              key={phase.phaseNumber}
+              phase={phase}
+              phaseIndex={pi}
+              runs={runs}
+              experimentId={expId}
+              experimentStatus={experiment?.status}
+              onRefresh={load}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   WHATSAPP SECTION
+══════════════════════════════════════════════════════════════════════════════ */
+
+function TemplateCard({ tpl, onSelect }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 hover:border-gray-200 transition-all">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[13.5px] font-semibold text-gray-900">{tpl.template_name}</p>
+            <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{tpl.language}</span>
+            <span className={`text-[10.5px] font-medium px-2 py-0.5 rounded-full ${tpl.meta_status === 'APPROVED' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+              {tpl.meta_status}
+            </span>
+            {tpl.category && (
+              <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{tpl.category}</span>
+            )}
+          </div>
+          <p className="text-[12.5px] text-gray-500 mt-1 font-mono">ID: {tpl.template_id}</p>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {onSelect && (
+            <button
+              onClick={() => onSelect(tpl)}
+              className="px-3 py-1.5 bg-blue-600 text-white text-[12px] font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Select
+            </button>
+          )}
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+          >
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {tpl.template_body && (
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Body</p>
+              <p className="text-[13px] text-gray-700 whitespace-pre-line">{tpl.template_body}</p>
+            </div>
+          )}
+          {tpl.buttons?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {tpl.buttons.map((b, i) => (
+                <span key={i} className="flex items-center gap-1.5 text-[12px] px-3 py-1 bg-blue-50 text-blue-700 rounded-lg">
+                  <Link2 className="w-3 h-3" />
+                  {b.type}: {b.text}
+                </span>
+              ))}
+            </div>
+          )}
+          {tpl.media_type && (
+            <p className="text-[12px] text-gray-400">Media header: {tpl.media_type}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WhatsAppSection() {
+  const [status,      setStatus]      = useState(null);
+  const [statusLoad,  setStatusLoad]  = useState(true);
+  const [templates,   setTemplates]   = useState([]);
+  const [tplLoading,  setTplLoading]  = useState(false);
+  const [tplPage,     setTplPage]     = useState(1);
+  const [tplTotal,    setTplTotal]    = useState(0);
+  const [search,      setSearch]      = useState('');
+  const [testPhone,   setTestPhone]   = useState('');
+  const [testMsg,     setTestMsg]     = useState('');
+  const [testSending, setTestSending] = useState(false);
+  const [testResult,  setTestResult]  = useState(null);
+
+  const checkStatus = useCallback(async () => {
+    setStatusLoad(true);
+    try {
+      const r = await wpMarketing.getWaStatus();
+      setStatus(r.data);
+    } catch {
+      setStatus({ connected: false, error: 'Connection check failed' });
+    }
+    setStatusLoad(false);
+  }, []);
+
+  const loadTemplates = useCallback(async (page = 1) => {
+    setTplLoading(true);
+    try {
+      const r = await wpMarketing.getTemplates(page, 20);
+      setTemplates(r.data?.data || []);
+      setTplTotal(r.data?.total || 0);
+      setTplPage(page);
+    } catch {}
+    setTplLoading(false);
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+    loadTemplates(1);
+  }, [checkStatus, loadTemplates]);
+
+  const handleTestSend = async () => {
+    if (!testPhone || !testMsg) return;
+    setTestSending(true); setTestResult(null);
+    try {
+      const r = await wpMarketing.sendTestMessage({ recipientPhone: testPhone, recipientName: 'Test', messageContent: testMsg });
+      setTestResult({ ok: true, msg: 'Message sent successfully' });
+    } catch (err) {
+      setTestResult({ ok: false, msg: err?.response?.data?.error || 'Send failed' });
+    }
+    setTestSending(false);
+  };
+
+  const filtered = search
+    ? templates.filter((t) => t.template_name?.toLowerCase().includes(search.toLowerCase()))
+    : templates;
+
+  return (
+    <div className="p-8 max-w-4xl">
+      <div className="mb-7">
+        <h2 className="text-xl font-semibold text-gray-900">WhatsApp</h2>
+        <p className="text-[13.5px] text-gray-400 mt-0.5">API connection status, template library, and test messaging</p>
+      </div>
+
+      {/* Connection status */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${statusLoad ? 'bg-gray-100' : status?.connected ? 'bg-green-100' : 'bg-red-100'}`}>
+              {statusLoad ? <Loader2 className="w-5 h-5 text-gray-400 animate-spin" /> : status?.connected ? <Wifi className="w-5 h-5 text-green-600" /> : <WifiOff className="w-5 h-5 text-red-500" />}
+            </div>
+            <div>
+              <p className="text-[14px] font-semibold text-gray-900">picoso_api_1</p>
+              <p className={`text-[12.5px] font-medium ${statusLoad ? 'text-gray-400' : status?.connected ? 'text-green-600' : 'text-red-500'}`}>
+                {statusLoad ? 'Checking…' : status?.connected ? `Connected — ${status.templateCount ?? 0} templates available` : status?.error || 'Not connected'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={checkStatus}
+            disabled={statusLoad}
+            className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${statusLoad ? 'animate-spin' : ''}`} />
+            Recheck
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          <div className="bg-gray-50 rounded-xl py-2.5 px-3">
+            <p className="text-[10.5px] text-gray-400 font-medium uppercase tracking-wider">Service</p>
+            <p className="text-[13px] font-semibold text-gray-800 mt-0.5">picoso_api_1</p>
+          </div>
+          <div className="bg-gray-50 rounded-xl py-2.5 px-3">
+            <p className="text-[10.5px] text-gray-400 font-medium uppercase tracking-wider">Endpoint</p>
+            <p className="text-[12px] font-semibold text-gray-800 mt-0.5 truncate">campaignbot.online</p>
+          </div>
+          <div className="bg-gray-50 rounded-xl py-2.5 px-3">
+            <p className="text-[10.5px] text-gray-400 font-medium uppercase tracking-wider">Auth</p>
+            <p className="text-[13px] font-semibold text-gray-800 mt-0.5">Bearer Token</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Test send */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-5">
+        <p className="text-[14px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Send className="w-4 h-4 text-gray-400" />
+          Test Send
+        </p>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <input
+            value={testPhone} onChange={(e) => setTestPhone(e.target.value)}
+            placeholder="+919999999999"
+            className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-300"
+          />
+          <input
+            value={testMsg} onChange={(e) => setTestMsg(e.target.value)}
+            placeholder="Message content"
+            className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-300"
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleTestSend}
+            disabled={testSending || !testPhone || !testMsg}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {testSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            {testSending ? 'Sending…' : 'Send Text Message'}
+          </button>
+          {testResult && (
+            <span className={`text-[13px] font-medium ${testResult.ok ? 'text-green-600' : 'text-red-600'}`}>
+              {testResult.ok ? <Check className="w-4 h-4 inline mr-1" /> : <X className="w-4 h-4 inline mr-1" />}
+              {testResult.msg}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Template library */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[14px] font-semibold text-gray-900 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-gray-400" />
+            Template Library
+            {tplTotal > 0 && <span className="text-[12px] text-gray-400 font-normal">({tplTotal} total)</span>}
+          </p>
+          <button onClick={() => loadTemplates(1)} disabled={tplLoading} className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all">
+            <RefreshCw className={`w-3.5 h-3.5 ${tplLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        <div className="relative mb-3">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search templates…"
+            className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-[13.5px] bg-white focus:outline-none focus:border-blue-300"
+          />
+        </div>
+
+        {tplLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 text-blue-500 animate-spin" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <FileText className="w-8 h-8 mx-auto mb-3 opacity-30" />
+            <p className="text-[13.5px]">{status?.connected === false ? 'Connect to load templates' : 'No templates found'}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((t) => <TemplateCard key={t.template_id} tpl={t} />)}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {tplTotal > 20 && (
+          <div className="flex items-center justify-center gap-3 mt-4">
+            <button disabled={tplPage === 1 || tplLoading} onClick={() => loadTemplates(tplPage - 1)}
+              className="px-3 py-1.5 text-[13px] border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">
+              Prev
+            </button>
+            <span className="text-[13px] text-gray-500">Page {tplPage} of {Math.ceil(tplTotal / 20)}</span>
+            <button disabled={tplPage >= Math.ceil(tplTotal / 20) || tplLoading} onClick={() => loadTemplates(tplPage + 1)}
+              className="px-3 py-1.5 text-[13px] border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">
+              Next
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
    PLACEHOLDER SECTIONS
 ══════════════════════════════════════════════════════════════════════════════ */
 function PlaceholderSection({ icon: Icon, title, description, badge = 'Coming Soon' }) {
@@ -1618,27 +2276,15 @@ function Dashboard({ client, onLogout }) {
       case 'contacts':
         return <ContactsSection />;
       case 'templates':
-        return (
-          <PlaceholderSection
-            icon={FileText}
-            title="Message Templates"
-            description="Build and manage reusable WhatsApp message templates with variables, media, and personalisation."
-          />
-        );
+        return <WhatsAppSection />;
       case 'whatsapp':
-        return (
-          <PlaceholderSection
-            icon={MessageCircle}
-            title="WhatsApp Connection"
-            description="Connect and manage your WhatsApp number — QR code scanning, session status, and message delivery."
-          />
-        );
+        return <WhatsAppSection />;
       case 'analytics':
         return (
           <PlaceholderSection
             icon={TrendingUp}
             title="Campaign Analytics"
-            description="Track delivery rates, opens, replies, and conversions across all your campaigns with rich visualisations."
+            description="Aggregate analytics across all campaigns — open rates, revenue attribution, cohort comparison, and trends."
           />
         );
       case 'settings':

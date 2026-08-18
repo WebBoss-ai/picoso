@@ -522,7 +522,7 @@ Schema:
         ],
         callToAction: 'Order now and enjoy a special deal',
         timing: 'Tuesday–Thursday, 11 AM–1 PM IST',
-        suggestedTemplate: `Hi {{name}}! 👋 It's been a while — we miss you at Picoso!\n\nCome back for a delicious, healthy meal today. 🥗\n\nReply ORDER to get started, or visit picoso.in 🚀`,
+        suggestedTemplate: `Hi {{name}}, it's been a while — we miss you at Picoso!\n\nCome back for a delicious, healthy meal today.\n\nReply ORDER to get started, or visit picoso.in`,
         reasoning: 'A friendly, personalised message with a clear CTA works best for re-engagement campaigns.',
       };
     }

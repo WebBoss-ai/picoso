@@ -12,6 +12,22 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
+
+// Capture raw body for HMAC webhook verification before JSON parsing
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/webhooks/')) {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      req.rawBody = raw;
+      try { req.body = JSON.parse(raw || '{}'); } catch { req.body = {}; }
+      next();
+    });
+  } else {
+    next();
+  }
+});
+
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
