@@ -118,17 +118,38 @@ export async function fetchTemplates(page = 1, limit = 20) {
 /**
  * Upload media to WhatsApp via CampaignBot.
  * fileBuffer: Buffer, mimeType: string, filename: string
- * Returns { data: { media_id: "..." } }
+ * Returns { status: true, data: { media_id: "..." } }
+ *
+ * Uses native fetch + FormData (Node 18+) because axios struggles with
+ * multipart boundaries when the body is a browser-style FormData.
  */
 export async function uploadMedia(fileBuffer, mimeType, filename) {
-  const { FormData, Blob } = await import('buffer');
-
+  const blob = new Blob([fileBuffer], { type: mimeType });
   const form = new FormData();
-  form.append('file', new Blob([fileBuffer], { type: mimeType }), filename);
+  form.append('file', blob, filename);
 
-  return client.post('/v1/whatsapp/media/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  console.log(`[CampaignBot] → POST /v1/whatsapp/media/upload | file:${filename} type:${mimeType} size:${fileBuffer.length}`);
+
+  const response = await fetch(`${BASE_URL}/v1/whatsapp/media/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization:       `Bearer ${API_KEY}`,
+      'x-business-ref-id': BUSINESS_REF_ID,
+      'x-whatsapp-ref-id': WHATSAPP_REF_ID,
+    },
+    body: form,
   });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const msg = data?.message || `Upload failed with status ${response.status}`;
+    console.error(`[CampaignBot] uploadMedia error ${response.status}: ${msg}`);
+    throw new Error(msg);
+  }
+
+  console.log(`[CampaignBot] uploadMedia success — media_id: ${data?.data?.media_id}`);
+  return data;
 }
 
 /* ── Connectivity check ──────────────────────────────────────────────────── */

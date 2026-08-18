@@ -13,6 +13,11 @@ import {
   Wifi, WifiOff, ShoppingCart, DollarSign, Inbox, Repeat2,
   ListChecks, Trophy, Palette, Signal, ArrowRight,
   Activity, SortAsc, Table2, Info,
+  // WhatsApp & Templates
+  Upload, Image, Film, Music, FileUp, Filter, Tag, Globe,
+  Hash, LayoutList, ChevronLeft, Smartphone, Bold, Type,
+  AlignLeft, ExternalLink, Paperclip, MessageSquarePlus,
+  ToggleLeft, ToggleRight, ClipboardList, SquareStack,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
 
@@ -1945,65 +1950,131 @@ function CampaignDashboard({ campaignId, onBack }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   WHATSAPP SECTION
+   TEMPLATE CARD (shared between Templates section and execution section)
 ══════════════════════════════════════════════════════════════════════════════ */
 
-function TemplateCard({ tpl, onSelect }) {
+function TemplateCard({ tpl, onSelect, onSend }) {
   const [expanded, setExpanded] = useState(false);
+
+  const paramCount = (tpl.template_body?.match(/\{\{\d+\}\}/g) || []).length;
+  const hasMedia   = !!tpl.media_type;
+  const urlButtons = (tpl.buttons || []).filter((b) => b.type === 'URL');
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-4 hover:border-gray-200 transition-all">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-[13.5px] font-semibold text-gray-900">{tpl.template_name}</p>
-            <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{tpl.language}</span>
-            <span className={`text-[10.5px] font-medium px-2 py-0.5 rounded-full ${tpl.meta_status === 'APPROVED' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
-              {tpl.meta_status}
-            </span>
-            {tpl.category && (
-              <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{tpl.category}</span>
-            )}
+    <div className="bg-white rounded-2xl border border-gray-100 hover:border-gray-200 transition-all overflow-hidden">
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <p className="text-[13.5px] font-semibold text-gray-900">{tpl.template_name}</p>
+              <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{tpl.language}</span>
+              <span className={`text-[10.5px] font-medium px-2 py-0.5 rounded-full ${tpl.meta_status === 'APPROVED' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+                {tpl.meta_status}
+              </span>
+              {tpl.category && (
+                <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{tpl.category}</span>
+              )}
+              {hasMedia && (
+                <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">{tpl.media_type}</span>
+              )}
+            </div>
+            <p className="text-[12px] text-gray-400 font-mono">ID: {tpl.template_id}</p>
           </div>
-          <p className="text-[12.5px] text-gray-500 mt-1 font-mono">ID: {tpl.template_id}</p>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {onSelect && (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {onSend && (
+              <button
+                onClick={() => onSend(tpl)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-[12px] font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Send className="w-3 h-3" />
+                Send
+              </button>
+            )}
+            {onSelect && (
+              <button
+                onClick={() => onSelect(tpl)}
+                className="px-3 py-1.5 border border-gray-200 text-gray-600 text-[12px] font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Select
+              </button>
+            )}
             <button
-              onClick={() => onSelect(tpl)}
-              className="px-3 py-1.5 bg-blue-600 text-white text-[12px] font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={() => setExpanded((e) => !e)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
             >
-              Select
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
+          </div>
+        </div>
+
+        {/* Quick stats */}
+        <div className="flex items-center gap-3 mt-2">
+          {paramCount > 0 && (
+            <span className="text-[11px] text-gray-400 flex items-center gap-1">
+              <Hash className="w-3 h-3" />{paramCount} variable{paramCount > 1 ? 's' : ''}
+            </span>
           )}
-          <button
-            onClick={() => setExpanded((e) => !e)}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
-          >
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
+          {tpl.buttons?.length > 0 && (
+            <span className="text-[11px] text-gray-400 flex items-center gap-1">
+              <ExternalLink className="w-3 h-3" />{tpl.buttons.length} button{tpl.buttons.length > 1 ? 's' : ''}
+            </span>
+          )}
+          {tpl.createdAt && (
+            <span className="text-[11px] text-gray-400 flex items-center gap-1">
+              <Clock className="w-3 h-3" />{new Date(tpl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          )}
         </div>
       </div>
 
       {expanded && (
-        <div className="mt-3 space-y-2">
+        <div className="border-t border-gray-100 p-4 space-y-3 bg-gray-50/50">
           {tpl.template_body && (
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Body</p>
-              <p className="text-[13px] text-gray-700 whitespace-pre-line">{tpl.template_body}</p>
+            <div>
+              <p className="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <AlignLeft className="w-3 h-3" /> Body
+              </p>
+              <div className="bg-white rounded-xl border border-gray-100 p-3">
+                <p className="text-[13px] text-gray-700 whitespace-pre-line leading-relaxed">{tpl.template_body}</p>
+              </div>
+            </div>
+          )}
+          {hasMedia && (
+            <div>
+              <p className="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <Paperclip className="w-3 h-3" /> Header
+              </p>
+              <div className="flex items-center gap-2 bg-white rounded-xl border border-gray-100 p-3">
+                {tpl.media_type === 'IMAGE'    && <Image    className="w-4 h-4 text-violet-500" />}
+                {tpl.media_type === 'VIDEO'    && <Film     className="w-4 h-4 text-violet-500" />}
+                {tpl.media_type === 'AUDIO'    && <Music    className="w-4 h-4 text-violet-500" />}
+                {tpl.media_type === 'DOCUMENT' && <FileText className="w-4 h-4 text-violet-500" />}
+                <span className="text-[13px] text-gray-600">{tpl.media_type?.toLowerCase()} header</span>
+                {tpl.media_gcp_url && (
+                  <a href={tpl.media_gcp_url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[12px] text-blue-600 hover:underline flex items-center gap-1">
+                    Preview <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
           )}
           {tpl.buttons?.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {tpl.buttons.map((b, i) => (
-                <span key={i} className="flex items-center gap-1.5 text-[12px] px-3 py-1 bg-blue-50 text-blue-700 rounded-lg">
-                  <Link2 className="w-3 h-3" />
-                  {b.type}: {b.text}
-                </span>
-              ))}
+            <div>
+              <p className="text-[10.5px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <ExternalLink className="w-3 h-3" /> Buttons
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {tpl.buttons.map((b, i) => (
+                  <span key={i} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg">
+                    {b.type === 'URL'          && <ExternalLink   className="w-3 h-3 text-blue-500" />}
+                    {b.type === 'PHONE_NUMBER' && <Smartphone     className="w-3 h-3 text-green-500" />}
+                    {b.type === 'QUICK_REPLY'  && <MessageSquare  className="w-3 h-3 text-violet-500" />}
+                    <span className="font-medium">{b.text}</span>
+                    <span className="text-gray-400">({b.type})</span>
+                  </span>
+                ))}
+              </div>
             </div>
-          )}
-          {tpl.media_type && (
-            <p className="text-[12px] text-gray-400">Media header: {tpl.media_type}</p>
           )}
         </div>
       )}
@@ -2011,194 +2082,1230 @@ function TemplateCard({ tpl, onSelect }) {
   );
 }
 
-function WhatsAppSection() {
-  const [status,      setStatus]      = useState(null);
-  const [statusLoad,  setStatusLoad]  = useState(true);
-  const [templates,   setTemplates]   = useState([]);
-  const [tplLoading,  setTplLoading]  = useState(false);
-  const [tplPage,     setTplPage]     = useState(1);
-  const [tplTotal,    setTplTotal]    = useState(0);
-  const [search,      setSearch]      = useState('');
-  const [testPhone,   setTestPhone]   = useState('');
-  const [testMsg,     setTestMsg]     = useState('');
-  const [testSending, setTestSending] = useState(false);
-  const [testResult,  setTestResult]  = useState(null);
+/* ══════════════════════════════════════════════════════════════════════════════
+   TEMPLATE SEND MODAL
+══════════════════════════════════════════════════════════════════════════════ */
 
-  const checkStatus = useCallback(async () => {
-    setStatusLoad(true);
+function TemplateSendModal({ tpl, onClose }) {
+  const paramCount  = (tpl.template_body?.match(/\{\{\d+\}\}/g) || []).length;
+  const urlButtons  = (tpl.buttons || []).filter((b) => b.type === 'URL');
+  const hasMedia    = !!tpl.media_type;
+
+  const [phone,          setPhone]         = useState('');
+  const [name,           setName]          = useState('');
+  const [params,         setParams]        = useState(Array(paramCount).fill(''));
+  const [useHeader,      setUseHeader]     = useState(hasMedia);
+  const [headerType,     setHeaderType]    = useState((tpl.media_type || 'IMAGE').toLowerCase());
+  const [headerMediaId,  setHeaderMediaId] = useState('');
+  const [headerText,     setHeaderText]    = useState('');
+  const [headerFilename, setHeaderFilename]= useState('');
+  const [useDynBtn,      setUseDynBtn]     = useState(urlButtons.length > 0);
+  const [dynBtnValues,   setDynBtnValues]  = useState(urlButtons.map(() => ''));
+  const [sending,        setSending]       = useState(false);
+  const [result,         setResult]        = useState(null);
+  const [error,          setError]         = useState('');
+
+  const updateParam = (i, v) => setParams((p) => { const n = [...p]; n[i] = v; return n; });
+  const updateDynBtn = (i, v) => setDynBtnValues((a) => { const n = [...a]; n[i] = v; return n; });
+
+  const handleSend = async () => {
+    setError(''); setResult(null);
+    if (!phone.trim()) { setError('Recipient phone is required'); return; }
+    if (!phone.startsWith('+')) { setError('Phone must start with country code e.g. +91...'); return; }
+
+    let dynamicHeader;
+    if (useHeader && hasMedia) {
+      if (headerType === 'text') {
+        if (!headerText.trim()) { setError('Header text is required'); return; }
+        dynamicHeader = { type: 'text', text: headerText.trim() };
+      } else {
+        if (!headerMediaId.trim()) { setError('Media ID is required for header'); return; }
+        dynamicHeader = {
+          type:     headerType,
+          mediaId:  headerMediaId.trim(),
+          filename: headerFilename.trim() || undefined,
+        };
+      }
+    }
+
+    const dynamicButtons = useDynBtn && urlButtons.length > 0
+      ? urlButtons.map((_, i) => ({ type: 'url', index: i, variableValue: dynBtnValues[i] })).filter((b) => b.variableValue)
+      : undefined;
+
+    setSending(true);
+    try {
+      const r = await wpMarketing.sendMessage({
+        recipientPhone:  phone.trim(),
+        recipientName:   name.trim() || undefined,
+        messageType:     'template',
+        templateName:    tpl.template_name,
+        languageCode:    tpl.language || 'en_US',
+        templateParams:  params.filter(Boolean),
+        dynamicHeader,
+        dynamicButtons,
+      });
+      setResult({ ok: true, messageId: r.data?.result?.payload?.messageId });
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message || 'Send failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-[0_8px_48px_rgba(0,0,0,0.14)] border border-gray-100 w-full max-w-lg my-4">
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-[15px] font-semibold text-gray-900">Send Template Message</h3>
+            <p className="text-[12.5px] text-gray-400 mt-0.5 font-mono">{tpl.template_name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Preview */}
+          {tpl.template_body && (
+            <div className="bg-green-50 rounded-xl p-3 border border-green-100">
+              <p className="text-[10.5px] font-semibold text-green-700 uppercase tracking-wider mb-1.5">Template Preview</p>
+              <p className="text-[13px] text-gray-700 whitespace-pre-line">{tpl.template_body}</p>
+            </div>
+          )}
+
+          {/* Recipient */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Phone * <span className="text-gray-400 font-normal">(with country code)</span></label>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+919999999999"
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+            </div>
+            <div>
+              <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Name <span className="text-gray-400 font-normal">(optional)</span></label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Recipient name"
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+            </div>
+          </div>
+
+          {/* Template params */}
+          {paramCount > 0 && (
+            <div>
+              <label className="block text-[12.5px] font-medium text-gray-700 mb-2">Template Variables</label>
+              <div className="space-y-2">
+                {params.map((v, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-[12px] font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded-lg w-8 text-center flex-shrink-0">{`{{${i + 1}}}`}</span>
+                    <input value={v} onChange={(e) => updateParam(i, e.target.value)} placeholder={`Variable ${i + 1} value`}
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Dynamic header */}
+          {hasMedia && (
+            <div className="border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[13px] font-semibold text-gray-800 flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-gray-400" />
+                  Dynamic Header <span className="text-[11px] text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full ml-1">{tpl.media_type}</span>
+                </p>
+                <button onClick={() => setUseHeader((v) => !v)} className={`text-[12px] font-medium px-3 py-1 rounded-lg transition-colors ${useHeader ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {useHeader ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+              {useHeader && (
+                <div className="space-y-2">
+                  {tpl.media_type !== 'TEXT' && (
+                    <>
+                      <input value={headerMediaId} onChange={(e) => setHeaderMediaId(e.target.value)} placeholder="Media ID from Meta (media object ID)"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                      {tpl.media_type === 'DOCUMENT' && (
+                        <input value={headerFilename} onChange={(e) => setHeaderFilename(e.target.value)} placeholder="Filename e.g. invoice_july.pdf"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                      )}
+                    </>
+                  )}
+                  {tpl.media_type === 'TEXT' && (
+                    <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} placeholder="Dynamic header text"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Dynamic URL buttons */}
+          {urlButtons.length > 0 && (
+            <div className="border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[13px] font-semibold text-gray-800 flex items-center gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                  Dynamic URL Buttons
+                </p>
+                <button onClick={() => setUseDynBtn((v) => !v)} className={`text-[12px] font-medium px-3 py-1 rounded-lg transition-colors ${useDynBtn ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {useDynBtn ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+              {useDynBtn && urlButtons.map((b, i) => (
+                <div key={i} className="flex items-center gap-2 mb-2">
+                  <span className="text-[12px] text-gray-500 truncate max-w-[120px]">{b.text}</span>
+                  <input value={dynBtnValues[i]} onChange={(e) => updateDynBtn(i, e.target.value)} placeholder="URL variable value e.g. ORD-1234"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Result */}
+          {result?.ok && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl p-3">
+              <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+              <div>
+                <p className="text-[13px] font-semibold text-green-700">Message sent successfully!</p>
+                {result.messageId && <p className="text-[11.5px] text-green-600 font-mono mt-0.5 break-all">{result.messageId}</p>}
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl p-3">
+              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <p className="text-[13px] text-red-700">{error}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+          <button onClick={onClose} className="px-4 py-2 text-[13px] text-gray-500 hover:text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleSend}
+            disabled={sending || result?.ok}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            {sending ? 'Sending…' : 'Send Template'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TEMPLATES SECTION
+══════════════════════════════════════════════════════════════════════════════ */
+
+function TemplatesSection() {
+  const [templates,  setTemplates]  = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [total,      setTotal]      = useState(0);
+  const [page,       setPage]       = useState(1);
+  const LIMIT = 20;
+
+  const [search,     setSearch]     = useState('');
+  const [catFilter,  setCatFilter]  = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const [sendModal,  setSendModal]  = useState(null); // template to send
+
+  const loadTemplates = useCallback(async (p = 1) => {
+    setLoading(true);
+    try {
+      const r = await wpMarketing.getTemplates(p, LIMIT);
+      const data = r.data;
+      setTemplates(data?.data || []);
+      setTotal(data?.total || 0);
+      setPage(p);
+    } catch (err) {
+      console.error('getTemplates error', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadTemplates(1); }, [loadTemplates]);
+
+  const categories = [...new Set(templates.map((t) => t.category).filter(Boolean))];
+  const statuses   = [...new Set(templates.map((t) => t.meta_status).filter(Boolean))];
+
+  const filtered = templates.filter((t) => {
+    if (search     && !t.template_name?.toLowerCase().includes(search.toLowerCase())) return false;
+    if (catFilter  && t.category   !== catFilter)  return false;
+    if (statusFilter && t.meta_status !== statusFilter) return false;
+    return true;
+  });
+
+  const totalPages = Math.ceil(total / LIMIT);
+
+  return (
+    <div className="p-8 max-w-5xl">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Template Library</h2>
+          <p className="text-[13.5px] text-gray-400 mt-0.5">
+            {loading ? 'Loading…' : `${total} approved template${total !== 1 ? 's' : ''} from your WhatsApp Business account`}
+          </p>
+        </div>
+        <button
+          onClick={() => loadTemplates(page)}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by template name…"
+            className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-[13.5px] bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        {categories.length > 0 && (
+          <select
+            value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">All Categories</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        {statuses.length > 0 && (
+          <select
+            value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">All Statuses</option>
+            {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        {(search || catFilter || statusFilter) && (
+          <button onClick={() => { setSearch(''); setCatFilter(''); setStatusFilter(''); }}
+            className="text-[13px] text-gray-400 hover:text-gray-700 flex items-center gap-1 px-2">
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        )}
+      </div>
+
+      {/* Template list */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-20 text-gray-400">
+          <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
+          <p className="text-[14px] font-medium">No templates found</p>
+          <p className="text-[13px] mt-1">
+            {search || catFilter || statusFilter ? 'Try clearing the filters' : 'No approved templates in your WhatsApp Business account'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((t) => (
+            <TemplateCard
+              key={t.template_id}
+              tpl={t}
+              onSend={() => setSendModal(t)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-6">
+          <button
+            disabled={page === 1 || loading}
+            onClick={() => loadTemplates(page - 1)}
+            className="flex items-center gap-1.5 px-3 py-2 text-[13px] border border-gray-200 rounded-xl disabled:opacity-40 hover:bg-gray-50 transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Prev
+          </button>
+          <span className="text-[13px] text-gray-500 font-medium">Page {page} of {totalPages}</span>
+          <button
+            disabled={page >= totalPages || loading}
+            onClick={() => loadTemplates(page + 1)}
+            className="flex items-center gap-1.5 px-3 py-2 text-[13px] border border-gray-200 rounded-xl disabled:opacity-40 hover:bg-gray-50 transition-colors"
+          >
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Send modal */}
+      {sendModal && (
+        <TemplateSendModal tpl={sendModal} onClose={() => setSendModal(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   WHATSAPP SECTION — FULL REWRITE WITH ALL MESSAGE TYPES
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* — helpers — */
+const MSG_TYPES = [
+  { id: 'text',     label: 'Text',     icon: Type },
+  { id: 'image',    label: 'Image',    icon: Image },
+  { id: 'video',    label: 'Video',    icon: Film },
+  { id: 'audio',    label: 'Audio',    icon: Music },
+  { id: 'document', label: 'Document', icon: FileText },
+  { id: 'template', label: 'Template', icon: SquareStack },
+];
+
+function WaTab({ id, label, icon: Icon, active, onClick }) {
+  return (
+    <button
+      onClick={() => onClick(id)}
+      className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium rounded-xl transition-all ${
+        active ? 'bg-blue-600 text-white shadow-[0_2px_8px_rgba(37,99,235,0.25)]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+      }`}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+    </button>
+  );
+}
+
+/* — Connection Tab — */
+function WaConnectionTab() {
+  const [status,     setStatus]    = useState(null);
+  const [loading,    setLoading]   = useState(true);
+
+  const check = useCallback(async () => {
+    setLoading(true);
     try {
       const r = await wpMarketing.getWaStatus();
       setStatus(r.data);
     } catch {
       setStatus({ connected: false, error: 'Connection check failed' });
+    } finally {
+      setLoading(false);
     }
-    setStatusLoad(false);
   }, []);
 
-  const loadTemplates = useCallback(async (page = 1) => {
-    setTplLoading(true);
-    try {
-      const r = await wpMarketing.getTemplates(page, 20);
-      setTemplates(r.data?.data || []);
-      setTplTotal(r.data?.total || 0);
-      setTplPage(page);
-    } catch {}
-    setTplLoading(false);
-  }, []);
-
-  useEffect(() => {
-    checkStatus();
-    loadTemplates(1);
-  }, [checkStatus, loadTemplates]);
-
-  const handleTestSend = async () => {
-    if (!testPhone || !testMsg) return;
-    setTestSending(true); setTestResult(null);
-    try {
-      const r = await wpMarketing.sendTestMessage({ recipientPhone: testPhone, recipientName: 'Test', messageContent: testMsg });
-      setTestResult({ ok: true, msg: 'Message sent successfully' });
-    } catch (err) {
-      setTestResult({ ok: false, msg: err?.response?.data?.error || 'Send failed' });
-    }
-    setTestSending(false);
-  };
-
-  const filtered = search
-    ? templates.filter((t) => t.template_name?.toLowerCase().includes(search.toLowerCase()))
-    : templates;
+  useEffect(() => { check(); }, [check]);
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-7">
-        <h2 className="text-xl font-semibold text-gray-900">WhatsApp</h2>
-        <p className="text-[13.5px] text-gray-400 mt-0.5">API connection status, template library, and test messaging</p>
-      </div>
-
-      {/* Connection status */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-5">
-        <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      {/* Status card */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${statusLoad ? 'bg-gray-100' : status?.connected ? 'bg-green-100' : 'bg-red-100'}`}>
-              {statusLoad ? <Loader2 className="w-5 h-5 text-gray-400 animate-spin" /> : status?.connected ? <Wifi className="w-5 h-5 text-green-600" /> : <WifiOff className="w-5 h-5 text-red-500" />}
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${loading ? 'bg-gray-100' : status?.connected ? 'bg-green-100' : 'bg-red-100'}`}>
+              {loading
+                ? <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                : status?.connected
+                  ? <Wifi className="w-5 h-5 text-green-600" />
+                  : <WifiOff className="w-5 h-5 text-red-500" />}
             </div>
             <div>
-              <p className="text-[14px] font-semibold text-gray-900">picoso_api_1</p>
-              <p className={`text-[12.5px] font-medium ${statusLoad ? 'text-gray-400' : status?.connected ? 'text-green-600' : 'text-red-500'}`}>
-                {statusLoad ? 'Checking…' : status?.connected ? `Connected — ${status.templateCount ?? 0} templates available` : status?.error || 'Not connected'}
+              <p className="text-[14.5px] font-semibold text-gray-900">CampaignBot API</p>
+              <p className={`text-[13px] font-medium ${loading ? 'text-gray-400' : status?.connected ? 'text-green-600' : 'text-red-500'}`}>
+                {loading
+                  ? 'Checking connection…'
+                  : status?.connected
+                    ? `Connected — ${status.templateCount ?? 0} templates available`
+                    : status?.error || 'Not connected'}
               </p>
             </div>
           </div>
           <button
-            onClick={checkStatus}
-            disabled={statusLoad}
+            onClick={check}
+            disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${statusLoad ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Recheck
           </button>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          <div className="bg-gray-50 rounded-xl py-2.5 px-3">
-            <p className="text-[10.5px] text-gray-400 font-medium uppercase tracking-wider">Service</p>
-            <p className="text-[13px] font-semibold text-gray-800 mt-0.5">picoso_api_1</p>
+
+        {/* Details grid */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Service ID',   value: 'picoso_api_1' },
+            { label: 'Endpoint',     value: 'campaignbot.online' },
+            { label: 'Auth',         value: 'Bearer Token' },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-gray-50 rounded-xl py-3 px-3 text-center">
+              <p className="text-[10.5px] text-gray-400 font-semibold uppercase tracking-wider">{label}</p>
+              <p className="text-[12.5px] font-semibold text-gray-800 mt-0.5 truncate">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Status indicator legend */}
+      {status && !loading && (
+        <div className={`rounded-2xl border p-4 ${status.connected ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex items-center gap-2">
+            {status.connected
+              ? <><CheckCircle2 className="w-4 h-4 text-green-600" /><p className="text-[13px] font-medium text-green-700">API is operational. You can send messages and access templates.</p></>
+              : <><AlertCircle className="w-4 h-4 text-red-500" /><p className="text-[13px] font-medium text-red-700">{status.error || 'Unable to reach the CampaignBot API. Check credentials.'}</p></>
+            }
           </div>
-          <div className="bg-gray-50 rounded-xl py-2.5 px-3">
-            <p className="text-[10.5px] text-gray-400 font-medium uppercase tracking-wider">Endpoint</p>
-            <p className="text-[12px] font-semibold text-gray-800 mt-0.5 truncate">campaignbot.online</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* — Send Message Tab — */
+function WaSendTab({ preloadedTemplates }) {
+  const [msgType,        setMsgType]        = useState('text');
+  const [phone,          setPhone]          = useState('');
+  const [name,           setName]           = useState('');
+  // text
+  const [textContent,    setTextContent]    = useState('');
+  const [replyToId,      setReplyToId]      = useState('');
+  // media
+  const [mediaId,        setMediaId]        = useState('');
+  const [caption,        setCaption]        = useState('');
+  const [docFilename,    setDocFilename]    = useState('');
+  // template
+  const [tplName,        setTplName]        = useState('');
+  const [langCode,       setLangCode]       = useState('en_US');
+  const [tplParams,      setTplParams]      = useState(['']);
+  const [useDynHeader,   setUseDynHeader]   = useState(false);
+  const [dynHdrType,     setDynHdrType]     = useState('image');
+  const [dynHdrMediaId,  setDynHdrMediaId]  = useState('');
+  const [dynHdrText,     setDynHdrText]     = useState('');
+  const [dynHdrFilename, setDynHdrFilename] = useState('');
+  const [useDynBtns,     setUseDynBtns]     = useState(false);
+  const [dynBtns,        setDynBtns]        = useState([{ index: 0, variableValue: '' }]);
+
+  const [sending,  setSending]  = useState(false);
+  const [result,   setResult]   = useState(null);
+  const [error,    setError]    = useState('');
+
+  // When a preloaded template is selected from dropdown
+  const handleTplSelect = (e) => {
+    const tpl = preloadedTemplates?.find((t) => t.template_name === e.target.value);
+    if (tpl) {
+      setTplName(tpl.template_name);
+      setLangCode(tpl.language || 'en_US');
+      const count = (tpl.template_body?.match(/\{\{\d+\}\}/g) || []).length;
+      setTplParams(Array(Math.max(count, 1)).fill(''));
+    } else {
+      setTplName(e.target.value);
+    }
+  };
+
+  const addParam = () => setTplParams((p) => [...p, '']);
+  const removeParam = (i) => setTplParams((p) => p.filter((_, idx) => idx !== i));
+  const updateParam = (i, v) => setTplParams((p) => { const n = [...p]; n[i] = v; return n; });
+  const addDynBtn = () => setDynBtns((b) => [...b, { index: b.length, variableValue: '' }]);
+  const removeDynBtn = (i) => setDynBtns((b) => b.filter((_, idx) => idx !== i));
+  const updateDynBtn = (i, v) => setDynBtns((b) => { const n = [...b]; n[i] = { ...n[i], variableValue: v }; return n; });
+
+  const handleSend = async () => {
+    setError(''); setResult(null);
+    if (!phone.trim()) { setError('Recipient phone is required'); return; }
+    if (!phone.startsWith('+')) { setError('Phone must include country code e.g. +91...'); return; }
+
+    const base = { recipientPhone: phone.trim(), recipientName: name.trim() || undefined, messageType: msgType };
+    let payload = { ...base };
+
+    if (msgType === 'text') {
+      if (!textContent.trim()) { setError('Message content is required'); return; }
+      payload.messageContent = textContent.trim();
+      if (replyToId.trim()) payload.replyToMessageId = { id: replyToId.trim() };
+
+    } else if (['image', 'video', 'audio', 'document'].includes(msgType)) {
+      if (!mediaId.trim()) { setError('Media ID (from Meta) is required'); return; }
+      payload.mediaUrl = mediaId.trim();
+      if (caption.trim())      payload.caption  = caption.trim();
+      if (msgType === 'document' && docFilename.trim()) payload.filename = docFilename.trim();
+
+    } else if (msgType === 'template') {
+      if (!tplName.trim()) { setError('Template name is required'); return; }
+      payload.templateName   = tplName.trim();
+      payload.languageCode   = langCode;
+      payload.templateParams = tplParams.filter(Boolean);
+
+      if (useDynHeader) {
+        if (dynHdrType === 'text') {
+          if (!dynHdrText.trim()) { setError('Header text is required'); return; }
+          payload.dynamicHeader = { type: 'text', text: dynHdrText.trim() };
+        } else {
+          if (!dynHdrMediaId.trim()) { setError('Header media ID is required'); return; }
+          payload.dynamicHeader = { type: dynHdrType, mediaId: dynHdrMediaId.trim() };
+          if (dynHdrFilename.trim()) payload.dynamicHeader.filename = dynHdrFilename.trim();
+        }
+      }
+
+      if (useDynBtns) {
+        const validBtns = dynBtns.filter((b) => b.variableValue.trim());
+        if (validBtns.length > 0) {
+          payload.dynamicButtons = validBtns.map((b) => ({ type: 'url', index: b.index, variableValue: b.variableValue.trim() }));
+        }
+      }
+    }
+
+    setSending(true);
+    try {
+      const r = await wpMarketing.sendMessage(payload);
+      setResult({ ok: true, messageId: r.data?.result?.payload?.messageId });
+    } catch (err) {
+      const msg = err?.response?.data?.error || err.message || 'Send failed';
+      setError(msg);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const inp = 'w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
+
+  return (
+    <div className="space-y-4">
+      {/* Message type selector */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-4">
+        <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider mb-3">Message Type</p>
+        <div className="flex flex-wrap gap-2">
+          {MSG_TYPES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => { setMsgType(id); setResult(null); setError(''); }}
+              className={`flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium rounded-xl border transition-all ${
+                msgType === id
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Common fields */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider mb-3">Recipient</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Phone * <span className="text-gray-400 font-normal">(with country code)</span></label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+919999999999" className={inp} />
           </div>
-          <div className="bg-gray-50 rounded-xl py-2.5 px-3">
-            <p className="text-[10.5px] text-gray-400 font-medium uppercase tracking-wider">Auth</p>
-            <p className="text-[13px] font-semibold text-gray-800 mt-0.5">Bearer Token</p>
+          <div>
+            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Name <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Recipient name" className={inp} />
           </div>
         </div>
       </div>
 
-      {/* Test send */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-5">
-        <p className="text-[14px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Send className="w-4 h-4 text-gray-400" />
-          Test Send
-        </p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <input
-            value={testPhone} onChange={(e) => setTestPhone(e.target.value)}
-            placeholder="+919999999999"
-            className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-300"
-          />
-          <input
-            value={testMsg} onChange={(e) => setTestMsg(e.target.value)}
-            placeholder="Message content"
-            className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-300"
-          />
+      {/* Type-specific fields */}
+      {msgType === 'text' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+          <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Message Content</p>
+          <textarea value={textContent} onChange={(e) => setTextContent(e.target.value)} rows={4} placeholder="Hello! This is a test message."
+            className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" />
+          <div>
+            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Reply To Message ID <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input value={replyToId} onChange={(e) => setReplyToId(e.target.value)} placeholder="wamid.HBg..." className={inp} />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleTestSend}
-            disabled={testSending || !testPhone || !testMsg}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {testSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-            {testSending ? 'Sending…' : 'Send Text Message'}
-          </button>
-          {testResult && (
-            <span className={`text-[13px] font-medium ${testResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-              {testResult.ok ? <Check className="w-4 h-4 inline mr-1" /> : <X className="w-4 h-4 inline mr-1" />}
-              {testResult.msg}
-            </span>
+      )}
+
+      {['image', 'video', 'audio', 'document'].includes(msgType) && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+          <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Media Details</p>
+          <div>
+            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Media Object ID * <span className="text-gray-400 font-normal">(from Meta / after upload)</span></label>
+            <input value={mediaId} onChange={(e) => setMediaId(e.target.value)} placeholder="174509235678912" className={`${inp} font-mono`} />
+          </div>
+          <div>
+            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Caption <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Check this out!" className={inp} />
+          </div>
+          {msgType === 'document' && (
+            <div>
+              <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Filename <span className="text-gray-400 font-normal">(shown to recipient)</span></label>
+              <input value={docFilename} onChange={(e) => setDocFilename(e.target.value)} placeholder="invoice_july.pdf" className={inp} />
+            </div>
           )}
         </div>
+      )}
+
+      {msgType === 'template' && (
+        <div className="space-y-4">
+          {/* Template name */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+            <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Template</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Template Name *</label>
+                {preloadedTemplates?.length > 0 ? (
+                  <select value={tplName} onChange={handleTplSelect} className={inp}>
+                    <option value="">Select a template…</option>
+                    {preloadedTemplates.map((t) => (
+                      <option key={t.template_id} value={t.template_name}>{t.template_name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder="order_update" className={inp} />
+                )}
+              </div>
+              <div>
+                <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Language Code</label>
+                <input value={langCode} onChange={(e) => setLangCode(e.target.value)} placeholder="en_US" className={inp} />
+              </div>
+            </div>
+          </div>
+
+          {/* Template params */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-2">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Template Variables</p>
+              <button onClick={addParam} className="text-[12px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+            {tplParams.map((v, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-[12px] font-mono bg-gray-100 text-gray-600 px-2 py-1.5 rounded-lg w-10 text-center flex-shrink-0">{`{{${i + 1}}}`}</span>
+                <input value={v} onChange={(e) => updateParam(i, e.target.value)} placeholder={`Variable ${i + 1}`}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                {tplParams.length > 1 && (
+                  <button onClick={() => removeParam(i)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Dynamic header */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5" /> Dynamic Header <span className="font-normal text-gray-400">(optional)</span>
+              </p>
+              <button onClick={() => setUseDynHeader((v) => !v)}
+                className={`text-[12px] font-medium px-3 py-1 rounded-lg transition-colors ${useDynHeader ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                {useDynHeader ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+            {useDynHeader && (
+              <div className="space-y-2">
+                <select value={dynHdrType} onChange={(e) => setDynHdrType(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                  <option value="text">Text</option>
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                  <option value="document">Document</option>
+                </select>
+                {dynHdrType === 'text' ? (
+                  <input value={dynHdrText} onChange={(e) => setDynHdrText(e.target.value)} placeholder="Dynamic header text e.g. Order Alert"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                ) : (
+                  <>
+                    <input value={dynHdrMediaId} onChange={(e) => setDynHdrMediaId(e.target.value)} placeholder="Media ID from Meta"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    {dynHdrType === 'document' && (
+                      <input value={dynHdrFilename} onChange={(e) => setDynHdrFilename(e.target.value)} placeholder="Filename e.g. invoice_july.pdf"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Dynamic URL buttons */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                <ExternalLink className="w-3.5 h-3.5" /> Dynamic URL Buttons <span className="font-normal text-gray-400">(optional)</span>
+              </p>
+              <button onClick={() => setUseDynBtns((v) => !v)}
+                className={`text-[12px] font-medium px-3 py-1 rounded-lg transition-colors ${useDynBtns ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                {useDynBtns ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+            {useDynBtns && (
+              <div className="space-y-2">
+                {dynBtns.map((b, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-[12px] text-gray-500 flex-shrink-0">Button {b.index}</span>
+                    <input value={b.variableValue} onChange={(e) => updateDynBtn(i, e.target.value)} placeholder="URL variable value e.g. ORD-1234"
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    {dynBtns.length > 1 && (
+                      <button onClick={() => removeDynBtn(i)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button onClick={addDynBtn} className="text-[12px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 mt-1">
+                  <Plus className="w-3.5 h-3.5" /> Add button
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Result / Error */}
+      {result?.ok && (
+        <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-2xl p-4">
+          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-[13.5px] font-semibold text-green-700">Message sent successfully!</p>
+            {result.messageId && (
+              <p className="text-[12px] text-green-600 font-mono mt-1 break-all">{result.messageId}</p>
+            )}
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[13.5px] text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* Send button */}
+      <button
+        onClick={handleSend}
+        disabled={sending}
+        className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white text-[14px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-[0_2px_8px_rgba(37,99,235,0.25)]"
+      >
+        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+        {sending ? 'Sending…' : `Send ${MSG_TYPES.find((m) => m.id === msgType)?.label || ''} Message`}
+      </button>
+    </div>
+  );
+}
+
+/* — Bulk Send Tab — */
+function WaBulkTab({ preloadedTemplates }) {
+  const [templateId,   setTemplateId]   = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [campName,     setCampName]     = useState('');
+  const [campDesc,     setCampDesc]     = useState('');
+  const [langCode,     setLangCode]     = useState('en_US');
+  const [useDynHdr,    setUseDynHdr]    = useState(false);
+  const [dynHdrType,   setDynHdrType]   = useState('image');
+  const [dynHdrMediaId,setDynHdrMediaId]= useState('');
+  const [dynHdrFile,   setDynHdrFile]   = useState('');
+  const [pasteMode,    setPasteMode]    = useState(true);
+  const [rawRecipients,setRawRecipients]= useState('');
+  const [recipients,   setRecipients]   = useState([{ phone: '', name: '', params: '' }]);
+  const [sending,      setSending]      = useState(false);
+  const [result,       setResult]       = useState(null);
+  const [error,        setError]        = useState('');
+
+  const handleTplSelect = (e) => {
+    const tpl = preloadedTemplates?.find((t) => t.template_id === e.target.value);
+    if (tpl) {
+      setTemplateId(tpl.template_id);
+      setTemplateName(tpl.template_name);
+      setLangCode(tpl.language || 'en_US');
+    }
+  };
+
+  const parseRaw = (raw) => {
+    return raw.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+      const parts = line.split(/[\t,|]+/).map((p) => p.trim());
+      const phoneRaw = parts.find((p) => /\d{7,}/.test(p.replace(/\D/g, ''))) || '';
+      const phone = phoneRaw.startsWith('+') ? phoneRaw : (phoneRaw ? `+91${phoneRaw.replace(/\D/g, '').slice(-10)}` : '');
+      const nameStr = parts.find((p) => p && !/^\d/.test(p) && p !== phoneRaw) || '';
+      const params = parts.filter((p) => p !== phoneRaw && p !== nameStr);
+      return { phone, name: nameStr, templateParams: params };
+    }).filter((r) => r.phone);
+  };
+
+  const addRow = () => setRecipients((r) => [...r, { phone: '', name: '', params: '' }]);
+  const removeRow = (i) => setRecipients((r) => r.filter((_, idx) => idx !== i));
+  const updateRow = (i, field, value) => setRecipients((r) => { const n = [...r]; n[i] = { ...n[i], [field]: value }; return n; });
+
+  const handleSend = async () => {
+    setError(''); setResult(null);
+    if (!templateId.trim())   { setError('Template is required'); return; }
+    if (!campName.trim())     { setError('Campaign name is required'); return; }
+
+    let finalRecipients;
+    if (pasteMode) {
+      finalRecipients = parseRaw(rawRecipients);
+      if (!finalRecipients.length) { setError('No valid recipients found in pasted text'); return; }
+    } else {
+      finalRecipients = recipients.filter((r) => r.phone.trim()).map((r) => ({
+        phone:          r.phone.trim(),
+        name:           r.name.trim() || undefined,
+        templateParams: r.params ? r.params.split(',').map((p) => p.trim()).filter(Boolean) : [],
+      }));
+      if (!finalRecipients.length) { setError('Add at least one recipient with a phone number'); return; }
+    }
+
+    let dynamicHeader;
+    if (useDynHdr) {
+      if (!dynHdrMediaId.trim()) { setError('Header media ID is required'); return; }
+      dynamicHeader = { type: dynHdrType, mediaId: dynHdrMediaId.trim() };
+      if (dynHdrFile.trim()) dynamicHeader.filename = dynHdrFile.trim();
+    }
+
+    setSending(true);
+    try {
+      const r = await wpMarketing.sendBulkTemplate({
+        templateId:          templateId.trim(),
+        templateName:        templateName.trim(),
+        campaignName:        campName.trim(),
+        campaignDescription: campDesc.trim(),
+        languageCode:        langCode,
+        dynamicHeader,
+        recipients:          finalRecipients,
+      });
+      setResult(r.data?.result || r.data);
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message || 'Bulk send failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const inp = 'w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
+
+  return (
+    <div className="space-y-4">
+      {/* Template */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Template</p>
+        {preloadedTemplates?.length > 0 ? (
+          <select value={templateId} onChange={handleTplSelect} className={inp}>
+            <option value="">Select a template…</option>
+            {preloadedTemplates.map((t) => (
+              <option key={t.template_id} value={t.template_id}>{t.template_name} ({t.template_id})</option>
+            ))}
+          </select>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <input value={templateId} onChange={(e) => setTemplateId(e.target.value)} placeholder="Template ID e.g. 1610629016778422" className={`${inp} font-mono`} />
+            <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="Template name e.g. order_update" className={inp} />
+          </div>
+        )}
+        <input value={langCode} onChange={(e) => setLangCode(e.target.value)} placeholder="Language code e.g. en_US" className={inp} />
       </div>
 
-      {/* Template library */}
-      <div>
+      {/* Campaign info */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Campaign</p>
+        <input value={campName} onChange={(e) => setCampName(e.target.value)} placeholder="Campaign name *" className={inp} />
+        <input value={campDesc} onChange={(e) => setCampDesc(e.target.value)} placeholder="Campaign description (optional)" className={inp} />
+      </div>
+
+      {/* Dynamic header */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-[14px] font-semibold text-gray-900 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-gray-400" />
-            Template Library
-            {tplTotal > 0 && <span className="text-[12px] text-gray-400 font-normal">({tplTotal} total)</span>}
+          <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+            <Paperclip className="w-3.5 h-3.5" /> Media Header <span className="font-normal text-gray-400">(optional)</span>
           </p>
-          <button onClick={() => loadTemplates(1)} disabled={tplLoading} className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all">
-            <RefreshCw className={`w-3.5 h-3.5 ${tplLoading ? 'animate-spin' : ''}`} />
+          <button onClick={() => setUseDynHdr((v) => !v)}
+            className={`text-[12px] font-medium px-3 py-1 rounded-lg transition-colors ${useDynHdr ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+            {useDynHdr ? 'Enabled' : 'Disabled'}
           </button>
         </div>
-
-        <div className="relative mb-3">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search templates…"
-            className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-[13.5px] bg-white focus:outline-none focus:border-blue-300"
-          />
-        </div>
-
-        {tplLoading ? (
-          <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 text-blue-500 animate-spin" /></div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <FileText className="w-8 h-8 mx-auto mb-3 opacity-30" />
-            <p className="text-[13.5px]">{status?.connected === false ? 'Connect to load templates' : 'No templates found'}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map((t) => <TemplateCard key={t.template_id} tpl={t} />)}
+        {useDynHdr && (
+          <div className="space-y-2">
+            <select value={dynHdrType} onChange={(e) => setDynHdrType(e.target.value)} className={inp}>
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+              <option value="document">Document</option>
+            </select>
+            <input value={dynHdrMediaId} onChange={(e) => setDynHdrMediaId(e.target.value)} placeholder="Media ID from Meta *"
+              className={`${inp} font-mono`} />
+            {dynHdrType === 'document' && (
+              <input value={dynHdrFile} onChange={(e) => setDynHdrFile(e.target.value)} placeholder="Filename e.g. promo_banner.jpg" className={inp} />
+            )}
           </div>
         )}
+      </div>
 
-        {/* Pagination */}
-        {tplTotal > 20 && (
-          <div className="flex items-center justify-center gap-3 mt-4">
-            <button disabled={tplPage === 1 || tplLoading} onClick={() => loadTemplates(tplPage - 1)}
-              className="px-3 py-1.5 text-[13px] border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">
-              Prev
+      {/* Recipients */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider">Recipients</p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPasteMode(true)}
+              className={`text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors ${pasteMode ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+              Paste
             </button>
-            <span className="text-[13px] text-gray-500">Page {tplPage} of {Math.ceil(tplTotal / 20)}</span>
-            <button disabled={tplPage >= Math.ceil(tplTotal / 20) || tplLoading} onClick={() => loadTemplates(tplPage + 1)}
-              className="px-3 py-1.5 text-[13px] border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">
-              Next
+            <button onClick={() => setPasteMode(false)}
+              className={`text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors ${!pasteMode ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+              Manual
+            </button>
+          </div>
+        </div>
+
+        {pasteMode ? (
+          <div>
+            <textarea
+              value={rawRecipients} onChange={(e) => setRawRecipients(e.target.value)}
+              rows={6}
+              placeholder={`Paste recipients here (one per line):\nRahul, +919999999999, Param1, Param2\nPriya, +918888888888, Hello, ORD-1234\n+917777777777, Alice, ORD-5678`}
+              className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13px] font-mono placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+            <p className="text-[11.5px] text-gray-400 mt-1.5">Format: Name, Phone, Param1, Param2, … — comma/tab/pipe separated. Country code auto-added as +91 if missing.</p>
+            {rawRecipients && (
+              <p className="text-[12px] text-gray-500 mt-1.5 font-medium">{parseRaw(rawRecipients).length} valid recipient{parseRaw(rawRecipients).length !== 1 ? 's' : ''} detected</p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 mb-1">
+              <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider">Phone *</p>
+              <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider">Name</p>
+              <p className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wider">Params (comma-sep)</p>
+              <span />
+            </div>
+            {recipients.map((r, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
+                <input value={r.phone} onChange={(e) => updateRow(i, 'phone', e.target.value)} placeholder="+919999999999"
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <input value={r.name} onChange={(e) => updateRow(i, 'name', e.target.value)} placeholder="Name"
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <input value={r.params} onChange={(e) => updateRow(i, 'params', e.target.value)} placeholder="Value1, Value2"
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <button onClick={() => removeRow(i)} disabled={recipients.length === 1}
+                  className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-30">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+            <button onClick={addRow} className="text-[12.5px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 mt-1">
+              <Plus className="w-3.5 h-3.5" /> Add recipient
             </button>
           </div>
         )}
       </div>
+
+      {/* Result / Error */}
+      {result && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 space-y-1">
+          <p className="text-[13.5px] font-semibold text-green-700 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Bulk campaign enqueued!
+          </p>
+          {result?.payload?.campaignRefId && <p className="text-[12px] text-green-600 font-mono">Campaign ID: {result.payload.campaignRefId}</p>}
+          {result?.payload?.enqueuedCount != null && <p className="text-[12px] text-green-600">{result.payload.enqueuedCount} messages enqueued</p>}
+        </div>
+      )}
+      {error && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[13.5px] text-red-700">{error}</p>
+        </div>
+      )}
+
+      <button
+        onClick={handleSend}
+        disabled={sending}
+        className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white text-[14px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-[0_2px_8px_rgba(37,99,235,0.25)]"
+      >
+        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+        {sending ? 'Sending bulk messages…' : 'Send Bulk Campaign'}
+      </button>
+    </div>
+  );
+}
+
+/* — Media Upload Tab — */
+function WaMediaTab() {
+  const [file,     setFile]     = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading,setUploading]= useState(false);
+  const [mediaId,  setMediaId]  = useState('');
+  const [copied,   setCopied]   = useState(false);
+  const [error,    setError]    = useState('');
+  const fileRef = useRef(null);
+
+  const ACCEPTED = 'image/jpeg,image/png,image/webp,video/mp4,audio/ogg,audio/mpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  const handleFile = (f) => {
+    if (!f) return;
+    setFile(f); setMediaId(''); setError('');
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  };
+
+  const handleUpload = async () => {
+    if (!file) { setError('Please select a file'); return; }
+    setError(''); setMediaId(''); setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const r = await wpMarketing.uploadMedia(form);
+      const id = r.data?.data?.media_id || r.data?.media_id;
+      if (!id) throw new Error('No media_id returned from server');
+      setMediaId(id);
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mediaId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const getFileIcon = (type) => {
+    if (type?.startsWith('image')) return <Image className="w-6 h-6 text-violet-500" />;
+    if (type?.startsWith('video')) return <Film className="w-6 h-6 text-blue-500" />;
+    if (type?.startsWith('audio')) return <Music className="w-6 h-6 text-green-500" />;
+    return <FileText className="w-6 h-6 text-amber-500" />;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <p className="text-[12.5px] font-semibold text-gray-500 uppercase tracking-wider mb-4">Upload Media to WhatsApp</p>
+
+        {/* Drop zone */}
+        <div
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
+            dragOver ? 'border-blue-400 bg-blue-50' : file ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          {file ? (
+            <div className="flex flex-col items-center gap-2">
+              {getFileIcon(file.type)}
+              <p className="text-[14px] font-semibold text-gray-900">{file.name}</p>
+              <p className="text-[12.5px] text-gray-500">{file.type} · {formatSize(file.size)}</p>
+              <p className="text-[12px] text-blue-600">Click to change file</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <Upload className="w-8 h-8 text-gray-300" />
+              <p className="text-[14px] font-medium text-gray-600">Drop file here or click to browse</p>
+              <p className="text-[12.5px] text-gray-400">Images, Videos, Audio, Documents · Max 50 MB</p>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept={ACCEPTED} onChange={(e) => handleFile(e.target.files[0])} className="hidden" />
+
+        {/* Supported formats */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {[
+            { icon: Image,    label: 'Images',    formats: 'JPEG, PNG, WebP' },
+            { icon: Film,     label: 'Videos',    formats: 'MP4' },
+            { icon: Music,    label: 'Audio',     formats: 'OGG, MP3' },
+            { icon: FileText, label: 'Documents', formats: 'PDF, DOC, DOCX' },
+          ].map(({ icon: Icon, label, formats }) => (
+            <div key={label} className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
+              <Icon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <div>
+                <p className="text-[12px] font-medium text-gray-700">{label}</p>
+                <p className="text-[11px] text-gray-400">{formats}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={handleUpload}
+          disabled={!file || uploading}
+          className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white text-[14px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+        >
+          {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+          {uploading ? 'Uploading…' : 'Upload to WhatsApp'}
+        </button>
+      </div>
+
+      {/* Result */}
+      {mediaId && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
+          <p className="text-[13.5px] font-semibold text-green-700 flex items-center gap-2 mb-3">
+            <CheckCircle2 className="w-4 h-4" />
+            Media uploaded successfully!
+          </p>
+          <p className="text-[12.5px] text-gray-600 mb-2">Use this Media ID in messages and template headers:</p>
+          <div className="flex items-center gap-2 bg-white rounded-xl border border-green-200 px-3 py-2.5">
+            <p className="flex-1 text-[13.5px] font-mono text-gray-800 break-all">{mediaId}</p>
+            <button onClick={handleCopy} className="flex items-center gap-1.5 text-[12px] font-medium text-gray-500 hover:text-gray-800 transition-colors flex-shrink-0">
+              {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[13.5px] text-red-700">{error}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* — WhatsApp Section shell — */
+function WhatsAppSection() {
+  const [activeTab,  setActiveTab]  = useState('connection');
+  const [templates,  setTemplates]  = useState([]);
+
+  useEffect(() => {
+    wpMarketing.getTemplates(1, 100).then((r) => {
+      setTemplates(r.data?.data || []);
+    }).catch(() => {});
+  }, []);
+
+  const TABS = [
+    { id: 'connection', label: 'Connection', icon: Wifi },
+    { id: 'send',       label: 'Send Message', icon: Send },
+    { id: 'bulk',       label: 'Bulk Send',   icon: SquareStack },
+    { id: 'media',      label: 'Media Upload', icon: Upload },
+  ];
+
+  return (
+    <div className="p-8 max-w-3xl">
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-gray-900">WhatsApp</h2>
+        <p className="text-[13.5px] text-gray-400 mt-0.5">Send messages, manage media, and monitor API connection</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1.5 mb-6 flex-wrap">
+        {TABS.map((t) => <WaTab key={t.id} {...t} active={activeTab === t.id} onClick={setActiveTab} />)}
+      </div>
+
+      {activeTab === 'connection' && <WaConnectionTab />}
+      {activeTab === 'send'       && <WaSendTab       preloadedTemplates={templates} />}
+      {activeTab === 'bulk'       && <WaBulkTab        preloadedTemplates={templates} />}
+      {activeTab === 'media'      && <WaMediaTab />}
     </div>
   );
 }
@@ -2276,7 +3383,7 @@ function Dashboard({ client, onLogout }) {
       case 'contacts':
         return <ContactsSection />;
       case 'templates':
-        return <WhatsAppSection />;
+        return <TemplatesSection />;
       case 'whatsapp':
         return <WhatsAppSection />;
       case 'analytics':

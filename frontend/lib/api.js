@@ -286,6 +286,13 @@ export const wpMarketing = {
   getWaStatus:       ()        => wpMarketingApi.get('/wp-marketing/wa/status'),
   getTemplates:      (page, limit) => wpMarketingApi.get('/wp-marketing/wa/templates', { params: { page, limit } }),
   sendTestMessage:   (data)    => wpMarketingApi.post('/wp-marketing/wa/test-send', data),
+  sendMessage:       (data)    => wpMarketingApi.post('/wp-marketing/wa/send', data),
+  sendBulkTemplate:  (data)    => wpMarketingApi.post('/wp-marketing/wa/bulk-send', data),
+  uploadMedia:       (formData) => wpMarketingApi.post('/wp-marketing/wa/media/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    maxContentLength: 50 * 1024 * 1024,
+    maxBodyLength:    50 * 1024 * 1024,
+  }),
   // Phase 3 — Execution
   getDashboard:      (expId)   => wpMarketingApi.get(`/wp-marketing/experiments/${expId}/dashboard`),
   executeRun:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/execute`, data),

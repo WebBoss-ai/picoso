@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import * as controller from '../controllers/controller.js';
 import * as agentController from '../controllers/agentController.js';
 import * as breakfast from '../controllers/breakfastController.js';
@@ -237,9 +238,14 @@ router.post('/wp-marketing/tracking-links',                requireWpPin, wpMarke
 router.get('/t/:code',                                     wpMarketing.handleTrackClick);
 
 // ── WP Marketing — WhatsApp / Templates ───────────────────────────────────
+const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
 router.get('/wp-marketing/wa/status',                      requireWpPin, wpExecution.getWaStatus);
 router.get('/wp-marketing/wa/templates',                   requireWpPin, wpExecution.getTemplates);
 router.post('/wp-marketing/wa/test-send',                  requireWpPin, wpExecution.sendTestMessage);
+router.post('/wp-marketing/wa/send',                       requireWpPin, wpExecution.sendMessage);
+router.post('/wp-marketing/wa/bulk-send',                  requireWpPin, wpExecution.sendBulkTemplate);
+router.post('/wp-marketing/wa/media/upload',               requireWpPin, memUpload.single('file'), wpExecution.uploadMedia);
 
 // ── WP Marketing — Experiments (Phase 3 execution) ───────────────────────
 router.get('/wp-marketing/experiments/:id/dashboard',      requireWpPin, wpExecution.getDashboard);
