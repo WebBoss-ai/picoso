@@ -9,24 +9,34 @@
 
 import axios from 'axios';
 
-const BASE_URL  = process.env.CAMPAIGNBOT_API_URL || 'https://service.api.campaignbot.online';
-const API_KEY   = process.env.CAMPAIGNBOT_API_KEY  || '8c226a84bf474b0dffae2efb7b69f05f3fefada3a16c115ffeb45b7a53cc34ab';
+const BASE_URL          = process.env.CAMPAIGNBOT_API_URL      || 'https://service.api.campaignbot.online';
+const API_KEY           = process.env.CAMPAIGNBOT_API_KEY      || '8c226a84bf474b0dffae2efb7b69f05f3fefada3a16c115ffeb45b7a53cc34ab';
+const BUSINESS_REF_ID   = process.env.CAMPAIGNBOT_BUSINESS_REF || 'picoso_api_1';
+const WHATSAPP_REF_ID   = process.env.CAMPAIGNBOT_WA_REF       || API_KEY;
 
 const client = axios.create({
   baseURL: BASE_URL,
   timeout: 60000,
   headers: {
-    Authorization: `Bearer ${API_KEY}`,
-    'Content-Type': 'application/json',
+    Authorization:       `Bearer ${API_KEY}`,
+    'x-business-ref-id': BUSINESS_REF_ID,
+    'x-whatsapp-ref-id': WHATSAPP_REF_ID,
+    'Content-Type':      'application/json',
   },
+});
+
+client.interceptors.request.use((config) => {
+  console.log(`[CampaignBot] → ${config.method?.toUpperCase()} ${config.url} | biz-ref:${config.headers['x-business-ref-id']} wa-ref:${String(config.headers['x-whatsapp-ref-id']).slice(0,8)}…`);
+  return config;
 });
 
 client.interceptors.response.use(
   (res) => res.data,
   (err) => {
-    const status = err.response?.status;
-    const msg    = err.response?.data?.message || err.message || 'CampaignBot API error';
-    console.error(`[CampaignBot] ${status || 'ERR'} ${err.config?.method?.toUpperCase()} ${err.config?.url} — ${msg}`);
+    const status   = err.response?.status;
+    const body     = JSON.stringify(err.response?.data || {});
+    const msg      = err.response?.data?.message || err.message || 'CampaignBot API error';
+    console.error(`[CampaignBot] ${status || 'ERR'} ${err.config?.method?.toUpperCase()} ${err.config?.url} — ${msg} | body:${body}`);
     throw new Error(msg);
   }
 );

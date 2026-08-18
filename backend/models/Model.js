@@ -386,7 +386,6 @@ const friendReferralSchema = new mongoose.Schema({
   totalRewardsEarned: { type: Number, default: 0 },
   createdAt:        { type: Date, default: Date.now },
 });
-friendReferralSchema.index({ code: 1 });
 friendReferralSchema.index({ referrerPhone: 1 });
 friendReferralSchema.index({ referrerId: 1 });
 
