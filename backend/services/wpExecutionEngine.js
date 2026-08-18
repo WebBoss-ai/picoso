@@ -6,7 +6,7 @@
 
 import crypto from 'crypto';
 import {
-  WpExperiment, WpContactList, WpMessageLog, WpCampaignRun, WpTrackingLink,
+  WpExperiment, WpContactList, WpMessageLog, WpCampaignRun, WpTrackingLink, WpScheduledJob,
 } from '../models/wpMarketingModels.js';
 import { sendTemplate } from './campaignBot.js';
 import { CohereProvider } from '../llm/provider/cohere.js';
@@ -206,6 +206,15 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
   const list = await WpContactList.findById(experiment.contactListId).lean();
   if (!list?.contacts?.length) throw new Error('Contact list is empty');
 
+  // Minimum 10 contacts per active variant
+  const minRequired = activeVariants.length * 10;
+  if (list.contacts.length < minRequired) {
+    throw new Error(
+      `Need at least ${minRequired} contacts for Phase ${phaseIndex + 1} with ${activeVariants.length} variants ` +
+      `(minimum 10 per variant). Contact list has ${list.contacts.length} contacts.`,
+    );
+  }
+
   const maxPerVariant = phase.contactsPerVariant || Math.ceil(list.contacts.length / activeVariants.length);
   const allocations = allocateContacts(list.contacts, activeVariants.length, maxPerVariant);
 
@@ -363,6 +372,132 @@ export async function saveTemplateConfig(experimentId, config, clientId) {
 
   await WpExperiment.updateOne({ _id: experimentId }, { $set: { ...fields, updatedAt: new Date() } });
   return WpExperiment.findById(experimentId);
+}
+
+/* ── One-click phase start with full schedule ────────────────────────────── */
+
+/**
+ * Create WpScheduledJob records for every round in a phase.
+ * If runSchedules[0].sendNow = true, Run 1 fires immediately in the background.
+ */
+export async function startPhaseWithSchedule(experimentId, phaseNumber, clientId, runSchedules, templateConfig = {}) {
+  const experiment = await WpExperiment.findOne({ _id: experimentId, clientId });
+  if (!experiment) throw new Error('Experiment not found');
+
+  const phaseIndex = phaseNumber - 1;
+  const phase = experiment.plan.phases[phaseIndex];
+  if (!phase) throw new Error(`Phase ${phaseNumber} not found`);
+  if (phase.status !== 'running') {
+    throw new Error(`Phase ${phaseNumber} must be approved before starting (current: ${phase.status})`);
+  }
+
+  // Check for existing non-cancelled jobs
+  const existingJobs = await WpScheduledJob.countDocuments({
+    experimentId, phaseNumber, status: { $ne: 'cancelled' },
+  });
+  if (existingJobs > 0) throw new Error(`Phase ${phaseNumber} has already been scheduled`);
+
+  // Validate minimum contacts (10 per active variant)
+  const activeVariants = activeVariantsForPhase(experiment.variants, phaseIndex);
+  if (activeVariants.length === 0) throw new Error('No active variants for this phase');
+  const list = await WpContactList.findById(experiment.contactListId).lean();
+  const contactCount = list?.contacts?.length || 0;
+  const minRequired = activeVariants.length * 10;
+  if (contactCount < minRequired) {
+    throw new Error(
+      `Need at least ${minRequired} contacts for Phase ${phaseNumber} with ${activeVariants.length} variants ` +
+      `(minimum 10 per variant). Contact list has ${contactCount} contacts.`,
+    );
+  }
+
+  // Validate & persist template config
+  const tmpl = resolveTemplateConfig(experiment, templateConfig);
+  if (!tmpl.templateName) throw new Error('WhatsApp template name is required');
+
+  await WpExperiment.updateOne({ _id: experimentId }, {
+    $set: {
+      'plan.templateConfig.templateId':     tmpl.templateId,
+      'plan.templateConfig.templateName':   tmpl.templateName,
+      'plan.templateConfig.languageCode':   tmpl.languageCode,
+      'plan.templateConfig.hasUrlButton':   tmpl.hasUrlButton,
+      'plan.templateConfig.destinationUrl': tmpl.destinationUrl,
+      updatedAt: new Date(),
+    },
+  });
+
+  const createdJobs = [];
+  let run1Job = null;
+
+  for (const sched of runSchedules) {
+    const isSendNow = sched.runNumber === 1 && sched.sendNow;
+    const job = await WpScheduledJob.create({
+      clientId:    experiment.clientId,
+      experimentId,
+      phaseNumber,
+      phaseIndex,
+      runNumber:   sched.runNumber,
+      scheduledAt: new Date(sched.scheduledAt),
+      status:      isSendNow ? 'running' : 'pending',
+      templateConfig: {
+        templateId:     tmpl.templateId,
+        templateName:   tmpl.templateName,
+        languageCode:   tmpl.languageCode,
+        hasUrlButton:   tmpl.hasUrlButton,
+        destinationUrl: tmpl.destinationUrl,
+      },
+    });
+    createdJobs.push(job.toObject());
+    if (isSendNow) run1Job = job;
+  }
+
+  // Fire Run 1 asynchronously if sendNow
+  if (run1Job) {
+    const jobId = run1Job._id;
+    setImmediate(async () => {
+      try {
+        const run = await executePhaseRun(experimentId, phaseIndex, tmpl);
+        await WpScheduledJob.findByIdAndUpdate(jobId, {
+          status: 'completed', executedAt: new Date(), runId: run._id,
+        });
+        console.log(`[PhaseStart] Phase ${phaseNumber} Run 1 completed — ${run.contactCount} sent`);
+      } catch (err) {
+        await WpScheduledJob.findByIdAndUpdate(jobId, { status: 'failed', error: err.message });
+        console.error(`[PhaseStart] Phase ${phaseNumber} Run 1 failed: ${err.message}`);
+      }
+    });
+  }
+
+  return createdJobs;
+}
+
+/* ── Scheduled job helpers ───────────────────────────────────────────────── */
+
+export async function getExperimentSchedule(experimentId, clientId) {
+  const experiment = await WpExperiment.findOne({ _id: experimentId, clientId });
+  if (!experiment) throw new Error('Experiment not found');
+  return WpScheduledJob.find({ experimentId }).sort({ scheduledAt: 1 }).lean();
+}
+
+export async function cancelScheduledJob(jobId, clientId) {
+  const job = await WpScheduledJob.findById(jobId);
+  if (!job) throw new Error('Scheduled job not found');
+  if (job.status !== 'pending') {
+    throw new Error(`Can only cancel pending jobs (current status: ${job.status})`);
+  }
+  const exp = await WpExperiment.findOne({ _id: job.experimentId, clientId });
+  if (!exp) throw new Error('Access denied');
+  await WpScheduledJob.findByIdAndUpdate(jobId, { status: 'cancelled' });
+}
+
+export async function updateJobScheduledTime(jobId, newScheduledAt, clientId) {
+  const job = await WpScheduledJob.findById(jobId);
+  if (!job) throw new Error('Scheduled job not found');
+  if (job.status !== 'pending') {
+    throw new Error(`Can only reschedule pending jobs (current status: ${job.status})`);
+  }
+  const exp = await WpExperiment.findOne({ _id: job.experimentId, clientId });
+  if (!exp) throw new Error('Access denied');
+  await WpScheduledJob.findByIdAndUpdate(jobId, { scheduledAt: new Date(newScheduledAt) });
 }
 
 /* ── AI analysis of a completed phase ───────────────────────────────────── */
@@ -537,10 +672,11 @@ export async function advanceToNextPhase(experimentId, advancedNums, eliminatedN
 /* ── Aggregate dashboard snapshot ────────────────────────────────────────── */
 
 export async function buildDashboardSnapshot(experimentId) {
-  const [experiment, runs, totalLogs] = await Promise.all([
+  const [experiment, runs, totalLogs, scheduledJobs] = await Promise.all([
     WpExperiment.findById(experimentId),
     WpCampaignRun.find({ experimentId }).sort({ createdAt: 1 }).lean(),
     WpMessageLog.countDocuments({ experimentId }),
+    WpScheduledJob.find({ experimentId }).sort({ scheduledAt: 1 }).lean(),
   ]);
 
   if (!experiment) throw new Error('Experiment not found');
@@ -629,5 +765,6 @@ export async function buildDashboardSnapshot(experimentId) {
     },
     variants,
     runs,
+    scheduledJobs,
   };
 }

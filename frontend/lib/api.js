@@ -299,6 +299,12 @@ export const wpMarketing = {
   analyzeRun:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/analyze`, data),
   advancePhase:      (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/advance`, data),
   approvePhase:      (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/approve-phase`, data),
+  // One-click phase scheduling
+  startPhase:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/start-phase`, data),
+  getSchedule:       (expId)   => wpMarketingApi.get(`/wp-marketing/experiments/${expId}/schedule`),
+  // Scheduled job management
+  cancelJob:         (jobId)   => wpMarketingApi.delete(`/wp-marketing/scheduled-jobs/${jobId}`),
+  updateJobTime:     (jobId, data) => wpMarketingApi.put(`/wp-marketing/scheduled-jobs/${jobId}`, data),
   updateVariant:     (expId, variantNum, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/variants/${variantNum}`, data),
   saveTemplateConfig:(expId, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/template-config`, data),
 };

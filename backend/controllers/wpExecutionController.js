@@ -335,3 +335,88 @@ export const getExperimentByCampaign = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+/* ── Scheduling ──────────────────────────────────────────────────────────── */
+
+/**
+ * POST /wp-marketing/experiments/:id/start-phase
+ * One-click phase start: creates WpScheduledJob records for all runs.
+ * Run 1 fires immediately in background if runSchedules[0].sendNow = true.
+ */
+export const startPhase = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phaseNumber, runSchedules, templateConfig } = req.body;
+
+    if (!phaseNumber || !Array.isArray(runSchedules) || !runSchedules.length) {
+      return res.status(400).json({ error: 'phaseNumber and runSchedules[] are required' });
+    }
+
+    const jobs = await engine.startPhaseWithSchedule(
+      id,
+      phaseNumber,
+      req.wpClient._id.toString(),
+      runSchedules,
+      templateConfig || {},
+    );
+
+    res.json({
+      success: true,
+      jobs,
+      message: `Phase ${phaseNumber} scheduled — ${jobs.length} run${jobs.length !== 1 ? 's' : ''} queued`,
+    });
+  } catch (err) {
+    const isClient = /already|required|Need at least|must be approved|No active/.test(err.message);
+    res.status(isClient ? 400 : 500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /wp-marketing/experiments/:id/schedule
+ * Returns all WpScheduledJob records for this experiment.
+ */
+export const getSchedule = async (req, res) => {
+  try {
+    const jobs = await engine.getExperimentSchedule(
+      req.params.id,
+      req.wpClient._id.toString(),
+    );
+    res.json({ success: true, jobs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * DELETE /wp-marketing/scheduled-jobs/:jobId
+ * Cancel a pending scheduled job.
+ */
+export const cancelJob = async (req, res) => {
+  try {
+    await engine.cancelScheduledJob(req.params.jobId, req.wpClient._id.toString());
+    res.json({ success: true });
+  } catch (err) {
+    const isClient = /only cancel|Access denied/.test(err.message);
+    res.status(isClient ? 400 : 500).json({ error: err.message });
+  }
+};
+
+/**
+ * PUT /wp-marketing/scheduled-jobs/:jobId
+ * Reschedule a pending job to a new scheduledAt datetime.
+ */
+export const updateJobTime = async (req, res) => {
+  try {
+    const { scheduledAt } = req.body;
+    if (!scheduledAt) return res.status(400).json({ error: 'scheduledAt is required' });
+    await engine.updateJobScheduledTime(
+      req.params.jobId,
+      scheduledAt,
+      req.wpClient._id.toString(),
+    );
+    res.json({ success: true });
+  } catch (err) {
+    const isClient = /only reschedule|Access denied/.test(err.message);
+    res.status(isClient ? 400 : 500).json({ error: err.message });
+  }
+};

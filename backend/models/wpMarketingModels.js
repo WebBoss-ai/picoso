@@ -87,8 +87,10 @@ const wpPhaseSchema = new mongoose.Schema({
   rounds:            { type: Number, default: 3 },
   daySpread:         { type: Number, default: 6 },
   scheduledDates:    [{ type: Date }],
+  defaultSendTime:   { type: String, default: '10:00' }, // HH:mm, used for scheduling
   status: { type: String, enum: ['pending', 'running', 'completed'], default: 'pending' },
   approvedAt: { type: Date, default: null },
+  startedAt:  { type: Date, default: null },
 }, { _id: false });
 
 const wpVariantMetricsSchema = new mongoose.Schema({
@@ -114,6 +116,7 @@ const wpVariantSchema = new mongoose.Schema({
   message:                 { type: String, default: '' },
   mediaS3Url:              { type: String, default: '' },
   mediaWaId:               { type: String, default: '' },
+  scheduledSendTime:       { type: String, default: '10:00' }, // HH:mm, editable per variant
   status: {
     type: String,
     enum: ['active', 'top5', 'top3', 'winner', 'eliminated'],
@@ -273,6 +276,36 @@ const wpMessageLogSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+/* ── WpScheduledJob ────────────────────────────────────────────────────────
+   One record per run within a phase. Created when a phase is started via the
+   "one-click" flow. Pending jobs are picked up by the background scheduler
+   and executed when scheduledAt <= now.
+────────────────────────────────────────────────────────────────────────── */
+const wpScheduledJobSchema = new mongoose.Schema({
+  clientId:     { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient',     required: true },
+  experimentId: { type: mongoose.Schema.Types.ObjectId, ref: 'WpExperiment', required: true },
+  phaseNumber:  { type: Number, required: true },
+  phaseIndex:   { type: Number, required: true },
+  runNumber:    { type: Number, required: true },
+  scheduledAt:  { type: Date, required: true },
+  status: {
+    type: String,
+    enum: ['pending', 'running', 'completed', 'failed', 'cancelled'],
+    default: 'pending',
+  },
+  executedAt: { type: Date, default: null },
+  runId:      { type: mongoose.Schema.Types.ObjectId, ref: 'WpCampaignRun', default: null },
+  error:      { type: String, default: null },
+  templateConfig: {
+    templateId:     { type: String, default: '' },
+    templateName:   { type: String, default: '' },
+    languageCode:   { type: String, default: 'en_US' },
+    hasUrlButton:   { type: Boolean, default: false },
+    destinationUrl: { type: String, default: 'https://picoso.in' },
+  },
+  createdAt: { type: Date, default: Date.now },
+});
+
 export const WpClient         = mongoose.models.WpClient         || mongoose.model('WpClient',         wpClientSchema);
 export const WpContactList    = mongoose.models.WpContactList    || mongoose.model('WpContactList',    wpContactListSchema);
 export const WpCampaignDraft  = mongoose.models.WpCampaignDraft  || mongoose.model('WpCampaignDraft',  wpCampaignDraftSchema);
@@ -280,3 +313,4 @@ export const WpExperiment     = mongoose.models.WpExperiment     || mongoose.mod
 export const WpTrackingLink   = mongoose.models.WpTrackingLink   || mongoose.model('WpTrackingLink',   wpTrackingLinkSchema);
 export const WpCampaignRun    = mongoose.models.WpCampaignRun    || mongoose.model('WpCampaignRun',    wpCampaignRunSchema);
 export const WpMessageLog     = mongoose.models.WpMessageLog     || mongoose.model('WpMessageLog',     wpMessageLogSchema);
+export const WpScheduledJob   = mongoose.models.WpScheduledJob   || mongoose.model('WpScheduledJob',   wpScheduledJobSchema);

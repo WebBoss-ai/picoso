@@ -253,9 +253,15 @@ router.post('/wp-marketing/experiments/:id/execute',       requireWpPin, wpExecu
 router.post('/wp-marketing/experiments/:id/analyze',       requireWpPin, wpExecution.analyzeRun);
 router.post('/wp-marketing/experiments/:id/advance',       requireWpPin, wpExecution.advancePhase);
 router.post('/wp-marketing/experiments/:id/approve-phase', requireWpPin, wpExecution.approvePhase);
+router.post('/wp-marketing/experiments/:id/start-phase',   requireWpPin, wpExecution.startPhase);
+router.get('/wp-marketing/experiments/:id/schedule',       requireWpPin, wpExecution.getSchedule);
 router.put('/wp-marketing/experiments/:id/variants/:variantNumber', requireWpPin, wpExecution.updateVariant);
 router.put('/wp-marketing/experiments/:id/template-config', requireWpPin, wpExecution.saveTemplateConfig);
 router.get('/wp-marketing/campaigns/:id/experiment',       requireWpPin, wpExecution.getExperimentByCampaign);
+
+// ── WP Marketing — Scheduled job management ───────────────────────────────
+router.delete('/wp-marketing/scheduled-jobs/:jobId',       requireWpPin, wpExecution.cancelJob);
+router.put('/wp-marketing/scheduled-jobs/:jobId',          requireWpPin, wpExecution.updateJobTime);
 
 // ── CampaignBot Webhooks — public, HMAC-secured ───────────────────────────
 router.post('/webhooks/campaignbot',                       wpWebhook.handleWebhook);

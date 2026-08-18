@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Lock, LogOut, LayoutDashboard, Megaphone, Users, FileText,
   MessageCircle, BarChart3, Settings, ChevronRight, Plus, Trash2,
@@ -18,6 +18,8 @@ import {
   Hash, LayoutList, ChevronLeft, Smartphone, Bold, Type,
   AlignLeft, ExternalLink, Paperclip, MessageSquarePlus,
   ToggleLeft, ToggleRight, ClipboardList, SquareStack,
+  // Scheduling & calendar
+  CalendarDays, BellRing, Pencil, Ban, Edit2,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
 
@@ -1696,43 +1698,79 @@ function VariantEditModal({ variant, experimentId, onClose, onSaved }) {
   );
 }
 
-function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, templateConfig, onRefresh }) {
-  const [executing,  setExecuting]  = useState(false);
-  const [analyzing,  setAnalyzing]  = useState(false);
-  const [advancing,  setAdvancing]  = useState(false);
-  const [approving,  setApproving]  = useState(false);
-  const [execError,  setExecError]  = useState('');
-  const [analysis,   setAnalysis]   = useState(null);
+const PHASE_COLORS = ['#3b82f6', '#f59e0b', '#8b5cf6', '#10b981'];
 
-  const [tmplName,    setTmplName]    = useState(templateConfig?.templateName || '');
-  const [tmplId,      setTmplId]      = useState(templateConfig?.templateId || '');
-  const [hasUrlBtn,   setHasUrlBtn]   = useState(templateConfig?.hasUrlButton ?? true);
-  const [destUrl,     setDestUrl]     = useState(templateConfig?.destinationUrl || 'https://picoso.in');
-  const [showExecForm, setShowExecForm] = useState(false);
+function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, experimentStatus, templateConfig, onRefresh }) {
+  const [analyzing,   setAnalyzing]   = useState(false);
+  const [advancing,   setAdvancing]   = useState(false);
+  const [approving,   setApproving]   = useState(false);
+  const [starting,    setStarting]    = useState(false);
+  const [execError,   setExecError]   = useState('');
+  const [analysis,    setAnalysis]    = useState(null);
+  const [showStartForm, setShowStartForm] = useState(false);
+
+  // Template config fields
+  const [tmplName,  setTmplName]  = useState(templateConfig?.templateName || '');
+  const [hasUrlBtn, setHasUrlBtn] = useState(templateConfig?.hasUrlButton ?? true);
+  const [destUrl,   setDestUrl]   = useState(templateConfig?.destinationUrl || 'https://picoso.in');
+
+  // Per-run schedule state: [{runNumber, date, time, sendNow}]
+  const [runSchedules, setRunSchedules] = useState([]);
+  // Editing a job's time
+  const [editingJobId, setEditingJobId] = useState(null);
+  const [editTime, setEditTime] = useState('');
 
   useEffect(() => {
     if (templateConfig?.templateName) setTmplName(templateConfig.templateName);
-    if (templateConfig?.templateId) setTmplId(templateConfig.templateId);
     if (templateConfig?.hasUrlButton != null) setHasUrlBtn(templateConfig.hasUrlButton);
     if (templateConfig?.destinationUrl) setDestUrl(templateConfig.destinationUrl);
   }, [templateConfig]);
 
-  const phaseRuns = (runs || []).filter((r) => r.phaseNumber === phase.phaseNumber);
+  // Build default run schedules when the form opens
+  useEffect(() => {
+    if (!showStartForm) return;
+    const now = new Date();
+    const schedules = [];
+    for (let r = 1; r <= phase.rounds; r++) {
+      const base = phase.scheduledDates?.[r - 1];
+      let dt;
+      if (base) {
+        dt = new Date(base);
+      } else {
+        dt = new Date(now);
+        dt.setDate(dt.getDate() + (r - 1) * 2);
+      }
+      dt.setHours(10, 0, 0, 0);
+      const pad = (n) => String(n).padStart(2, '0');
+      schedules.push({
+        runNumber: r,
+        date: `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`,
+        time: '10:00',
+        sendNow: r === 1,
+      });
+    }
+    setRunSchedules(schedules);
+  }, [showStartForm, phase]);
+
+  const phaseRuns  = (runs || []).filter((r) => r.phaseNumber === phase.phaseNumber);
+  const phaseJobs  = (scheduledJobs || []).filter((j) => j.phaseNumber === phase.phaseNumber);
   const completedRuns = phaseRuns.filter((r) => ['completed', 'analyzed'].includes(r.status));
-  const hasAnalysis = phaseRuns.some((r) => r.aiAnalysis?.advancedVariants?.length);
-  const latestRun    = phaseRuns[phaseRuns.length - 1];
+  const hasAnalysis   = phaseRuns.some((r) => r.aiAnalysis?.advancedVariants?.length);
+  const latestRun     = phaseRuns[phaseRuns.length - 1];
   const latestAnalysis = latestRun?.aiAnalysis;
 
   const isPending   = phase.status === 'pending';
   const isRunning   = phase.status === 'running';
   const isCompleted = phase.status === 'completed';
+  const isStarted   = phaseJobs.filter((j) => j.status !== 'cancelled').length > 0;
 
-  const canApprove   = isPending && experimentStatus !== 'completed' && experimentStatus !== 'awaiting_approval';
-  const canExecute   = isRunning && completedRuns.length < phase.rounds && experimentStatus !== 'completed';
-  const canAnalyze   = isRunning && completedRuns.length === phase.rounds && !hasAnalysis;
-  const canAdvance   = hasAnalysis && isRunning && experimentStatus !== 'completed';
+  const canApprove  = isPending && !['completed', 'awaiting_approval'].includes(experimentStatus);
+  const canStart    = isRunning && !isStarted;
+  const canAnalyze  = isRunning && isStarted && completedRuns.length >= phase.rounds && !hasAnalysis;
+  const canAdvance  = hasAnalysis && isRunning;
 
-  const handleApprovePhase = async () => {
+  // Handlers
+  const handleApprove = async () => {
     setApproving(true); setExecError('');
     try {
       await wpMarketing.approvePhase(experimentId, { phaseNumber: phase.phaseNumber });
@@ -1743,27 +1781,30 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, t
     setApproving(false);
   };
 
-  const handleExecute = async () => {
+  const handleStart = async () => {
     if (!tmplName.trim()) { setExecError('Template name is required'); return; }
-    setExecError(''); setExecuting(true);
+    setStarting(true); setExecError('');
     try {
-      await wpMarketing.saveTemplateConfig(experimentId, {
-        templateId: tmplId, templateName: tmplName, hasUrlButton: hasUrlBtn, destinationUrl: destUrl,
+      const schedules = runSchedules.map((s) => ({
+        runNumber:   s.runNumber,
+        scheduledAt: new Date(`${s.date}T${s.time}:00`).toISOString(),
+        sendNow:     s.runNumber === 1 && s.sendNow,
+      }));
+      await wpMarketing.startPhase(experimentId, {
+        phaseNumber:    phase.phaseNumber,
+        runSchedules:   schedules,
+        templateConfig: { templateName: tmplName, hasUrlButton: hasUrlBtn, destinationUrl: destUrl },
       });
-      await wpMarketing.executeRun(experimentId, {
-        phaseIndex,
-        templateConfig: { templateId: tmplId, templateName: tmplName, hasUrlButton: hasUrlBtn, destinationUrl: destUrl },
-      });
-      setShowExecForm(false);
+      setShowStartForm(false);
       onRefresh();
     } catch (err) {
-      setExecError(err?.response?.data?.error || 'Execution failed');
+      setExecError(err?.response?.data?.error || 'Failed to start phase');
     }
-    setExecuting(false);
+    setStarting(false);
   };
 
   const handleAnalyze = async () => {
-    setAnalyzing(true);
+    setAnalyzing(true); setExecError('');
     try {
       const r = await wpMarketing.analyzeRun(experimentId, { phaseNumber: phase.phaseNumber });
       setAnalysis(r.data.analysis);
@@ -1777,14 +1818,12 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, t
   const handleAdvance = async () => {
     const src = latestAnalysis || analysis;
     if (!src) return;
-    const advancedNums   = src.advancedVariants || src.advancedNums;
-    const eliminatedNums = src.eliminatedVariants || src.eliminatedNums;
-    setAdvancing(true);
+    setAdvancing(true); setExecError('');
     try {
       await wpMarketing.advancePhase(experimentId, {
-        advancedNums,
-        eliminatedNums,
-        nextCount: advancedNums?.length || 1,
+        advancedNums:   src.advancedVariants || src.advancedNums,
+        eliminatedNums: src.eliminatedVariants || src.eliminatedNums,
+        nextCount:      (src.advancedVariants || src.advancedNums)?.length || 1,
       });
       onRefresh();
     } catch (err) {
@@ -1793,167 +1832,258 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, t
     setAdvancing(false);
   };
 
-  const phaseStatusBadge = {
-    pending:   'bg-gray-100 text-gray-500',
-    running:   'bg-amber-100 text-amber-700',
-    completed: 'bg-green-100 text-green-700',
+  const handleCancelJob = async (jobId) => {
+    setExecError('');
+    try {
+      await wpMarketing.cancelJob(jobId);
+      onRefresh();
+    } catch (err) {
+      setExecError(err?.response?.data?.error || 'Cancel failed');
+    }
   };
 
-  const workflowStep = isPending ? 1 : canAdvance ? 3 : canAnalyze ? 3 : canExecute ? 2 : isCompleted ? 4 : 2;
+  const handleSaveJobTime = async (jobId) => {
+    setExecError('');
+    try {
+      const [date, time] = editTime.split('T');
+      const iso = new Date(`${date}T${time || '10:00'}:00`).toISOString();
+      await wpMarketing.updateJobTime(jobId, { scheduledAt: iso });
+      setEditingJobId(null);
+      onRefresh();
+    } catch (err) {
+      setExecError(err?.response?.data?.error || 'Reschedule failed');
+    }
+  };
+
+  // Badge helpers
+  const statusBadge = { pending: 'bg-gray-100 text-gray-500', running: 'bg-amber-100 text-amber-700', completed: 'bg-green-100 text-green-700' };
+  const jobBadge    = { pending: 'bg-zinc-100 text-zinc-500', running: 'bg-blue-100 text-blue-700', completed: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-600', cancelled: 'bg-gray-100 text-gray-400' };
+  const phaseColor  = PHASE_COLORS[phaseIndex % PHASE_COLORS.length];
+
+  const inp = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
   return (
-    <div className={`bg-white rounded-2xl border ${isRunning ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'}`}>
+    <div className={`bg-white rounded-2xl border overflow-hidden ${isRunning ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'}`}>
+      {/* Colour bar */}
+      <div className="h-1 w-full" style={{ backgroundColor: phaseColor, opacity: isCompleted ? 0.35 : 1 }} />
+
       {/* Phase header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
         <div>
           <p className="text-[14px] font-semibold text-gray-900">{phase.label}</p>
           <p className="text-[12px] text-gray-400 mt-0.5">
-            {phase.variantCount} variants · up to {phase.contactsPerVariant} contacts/variant · {phase.rounds} run{phase.rounds > 1 ? 's' : ''}
+            {phase.variantCount} variant template{phase.variantCount !== 1 ? 's' : ''} ·
+            {' '}{phase.contactsPerVariant} contacts/variant · {phase.rounds} run{phase.rounds > 1 ? 's' : ''}
           </p>
-          {isPending && (
-            <p className="text-[12px] text-amber-600 mt-1 font-medium">Awaiting your approval to start this phase</p>
-          )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
             {completedRuns.length}/{phase.rounds} runs
           </span>
-          <span className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full ${phaseStatusBadge[phase.status] || 'bg-gray-100 text-gray-500'}`}>
+          <span className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full ${statusBadge[phase.status] || 'bg-gray-100 text-gray-500'}`}>
             {phase.status}
           </span>
         </div>
       </div>
 
       <div className="p-5 space-y-4">
-        {/* Workflow indicator */}
-        {!isCompleted && (
-          <div className="flex items-center gap-2 text-[11.5px] text-gray-400">
-            {['Approve', 'Execute runs', 'Analyse & advance'].map((step, i) => (
-              <span key={step} className={`flex items-center gap-1 ${workflowStep > i + 1 ? 'text-green-600' : workflowStep === i + 1 ? 'text-blue-600 font-semibold' : ''}`}>
-                {workflowStep > i + 1 ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span className="w-4 h-4 rounded-full border border-current flex items-center justify-center text-[10px]">{i + 1}</span>}
-                {step}
-                {i < 2 && <ChevronRight className="w-3 h-3 opacity-40" />}
-              </span>
-            ))}
+
+        {/* ─── Scheduled jobs timeline ─────────────────────────────── */}
+        {isStarted && (
+          <div className="space-y-2">
+            {phaseJobs.filter((j) => j.status !== 'cancelled').map((job) => {
+              const run = phaseRuns.find((r) => r.runNumber === job.runNumber);
+              const jobDt = new Date(job.scheduledAt);
+              const fmtDate = jobDt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+              const fmtTime = jobDt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+              const isEditing = editingJobId === job._id;
+              return (
+                <div key={job._id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                  <div className="mt-0.5 flex-shrink-0">
+                    {job.status === 'completed' ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    ) : job.status === 'failed' ? (
+                      <AlertCircle className="w-4 h-4 text-red-400" />
+                    ) : job.status === 'running' ? (
+                      <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-zinc-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-[13px] font-semibold text-gray-800">Run {job.runNumber}</p>
+                      <span className={`text-[10.5px] font-medium px-1.5 py-0.5 rounded-full ${jobBadge[job.status]}`}>{job.status}</span>
+                    </div>
+                    {isEditing ? (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <input
+                          type="datetime-local"
+                          defaultValue={jobDt.toISOString().slice(0, 16)}
+                          onChange={(e) => setEditTime(e.target.value.replace('T', 'T').replace(/:\d{2}$/, ''))}
+                          className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <button onClick={() => handleSaveJobTime(job._id)} className="text-[12px] text-blue-600 font-medium hover:text-blue-800">Save</button>
+                        <button onClick={() => setEditingJobId(null)} className="text-[12px] text-gray-400 hover:text-gray-600">Cancel</button>
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-gray-500 mt-0.5">
+                        {fmtDate} · {fmtTime}
+                        {run?.metrics?.sent > 0 && ` · ${run.metrics.sent} sent`}
+                      </p>
+                    )}
+                    {job.status === 'failed' && job.error && (
+                      <p className="text-[11.5px] text-red-500 mt-1">{job.error}</p>
+                    )}
+                    {run?.aiAnalysis?.summary && (
+                      <div className="mt-2 p-2.5 bg-blue-50 rounded-lg">
+                        <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-1">AI Analysis</p>
+                        <p className="text-[12px] text-gray-700 leading-relaxed">{run.aiAnalysis.summary}</p>
+                      </div>
+                    )}
+                  </div>
+                  {job.status === 'pending' && (
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => { setEditingJobId(job._id); setEditTime(jobDt.toISOString().slice(0, 16)); }}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                        title="Reschedule"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleCancelJob(job._id)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                        title="Cancel run"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
-        {/* Run history */}
-        {phaseRuns.map((run) => (
+
+        {/* ─── Run metrics (completed runs without scheduled jobs) ── */}
+        {phaseRuns.filter((r) => !phaseJobs.find((j) => j.runNumber === r.runNumber)).map((run) => (
           <div key={run._id} className="p-4 bg-gray-50 rounded-xl">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[13px] font-semibold text-gray-800">Run {run.runNumber}</p>
-              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${run.status === 'analyzed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                {run.status}
-              </span>
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${run.status === 'analyzed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{run.status}</span>
             </div>
             {run.metrics?.sent > 0 && (
               <div className="grid grid-cols-4 gap-2 text-center mt-3">
-                {[
-                  ['Sent', run.metrics.sent],
-                  ['Delivered', run.metrics.delivered],
-                  ['Read', run.metrics.read],
-                  ['Conversions', run.metrics.conversions],
-                ].map(([l, v]) => (
+                {[['Sent', run.metrics.sent], ['Delivered', run.metrics.delivered], ['Read', run.metrics.read], ['Conversions', run.metrics.conversions]].map(([l, v]) => (
                   <div key={l} className="bg-white rounded-lg px-2 py-1.5">
                     <p className="text-[10px] text-gray-400">{l}</p>
-                    <p className="text-[14px] font-bold text-gray-800">{v}</p>
+                    <p className="text-[14px] font-bold text-gray-800">{v || 0}</p>
                   </div>
                 ))}
-              </div>
-            )}
-            {run.aiAnalysis?.summary && (
-              <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-1">AI Analysis</p>
-                <p className="text-[12.5px] text-gray-700 leading-relaxed">{run.aiAnalysis.summary}</p>
-                {run.aiAnalysis.advancementDecision && (
-                  <p className="text-[12px] font-semibold text-blue-700 mt-2">{run.aiAnalysis.advancementDecision}</p>
-                )}
               </div>
             )}
           </div>
         ))}
 
-        {/* Execute run form */}
-        {canExecute && showExecForm && (
-          <div className="p-4 border border-blue-100 rounded-xl bg-blue-50/50 space-y-3">
-            <p className="text-[13px] font-semibold text-gray-900">Execute Run {completedRuns.length + 1}</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11.5px] font-medium text-gray-600 block mb-1">Template Name *</label>
-                <input
-                  value={tmplName} onChange={(e) => setTmplName(e.target.value)}
-                  placeholder="e.g. picoso_promo"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white"
-                />
-              </div>
-              <div>
-                <label className="text-[11.5px] font-medium text-gray-600 block mb-1">Template ID (optional)</label>
-                <input
-                  value={tmplId} onChange={(e) => setTmplId(e.target.value)}
-                  placeholder="e.g. 1610629016778422"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white"
-                />
-              </div>
+        {/* ─── One-click start form ─────────────────────────────────── */}
+        {canStart && showStartForm && (
+          <div className="p-4 border border-blue-200 rounded-xl bg-blue-50/40 space-y-4">
+            <p className="text-[13px] font-semibold text-gray-900 flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-blue-500" />
+              Schedule all {phase.rounds} runs at once
+            </p>
+
+            {/* Template config */}
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">WhatsApp Base Template</p>
+              <p className="text-[11.5px] text-gray-500">
+                Each variant&apos;s unique AI-crafted message fills the body variable. One approved template powers all {phase.variantCount} variant templates.
+              </p>
+              <input value={tmplName} onChange={(e) => setTmplName(e.target.value)} placeholder="Template name (e.g. picoso_promo)" className={inp} />
+              <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
+                <input type="checkbox" checked={hasUrlBtn} onChange={(e) => setHasUrlBtn(e.target.checked)} className="rounded" />
+                Template has URL button (unique tracking link per recipient)
+              </label>
+              {hasUrlBtn && (
+                <input value={destUrl} onChange={(e) => setDestUrl(e.target.value)} placeholder="https://picoso.in" className={inp} />
+              )}
             </div>
-            <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
-              <input type="checkbox" checked={hasUrlBtn} onChange={(e) => setHasUrlBtn(e.target.checked)} className="rounded" />
-              Template has URL button (tracking link injected per recipient)
-            </label>
-            <div>
-              <label className="text-[11.5px] font-medium text-gray-600 block mb-1">Destination URL (after click)</label>
-              <input value={destUrl} onChange={(e) => setDestUrl(e.target.value)} placeholder="https://picoso.in"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white" />
+
+            {/* Run schedule inputs */}
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Run Schedule</p>
+              {runSchedules.map((s, i) => (
+                <div key={s.runNumber} className="flex items-center gap-2 p-2.5 bg-white rounded-lg border border-gray-200">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
+                    style={{ backgroundColor: phaseColor }}>
+                    {s.runNumber}
+                  </div>
+                  <span className="text-[12.5px] font-medium text-gray-600 w-10 flex-shrink-0">Run {s.runNumber}</span>
+                  <input type="date" value={s.date}
+                    onChange={(e) => setRunSchedules((prev) => prev.map((r, ri) => ri === i ? { ...r, date: e.target.value } : r))}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] flex-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <input type="time" value={s.time}
+                    onChange={(e) => setRunSchedules((prev) => prev.map((r, ri) => ri === i ? { ...r, time: e.target.value } : r))}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  {s.runNumber === 1 && (
+                    <label className="flex items-center gap-1.5 text-[12px] text-blue-600 cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={s.sendNow}
+                        onChange={(e) => setRunSchedules((prev) => prev.map((r, ri) => ri === i ? { ...r, sendNow: e.target.checked } : r))}
+                        className="rounded"
+                      />
+                      Send now
+                    </label>
+                  )}
+                </div>
+              ))}
             </div>
-            <p className="text-[11.5px] text-gray-400">Each variant uses its AI-developed offer, CTA, and message as template variables.</p>
+
             {execError && <p className="text-[12.5px] text-red-600">{execError}</p>}
+
             <div className="flex gap-2">
               <button
-                onClick={handleExecute} disabled={executing}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-60"
+                onClick={handleStart} disabled={starting}
+                className="flex items-center gap-2 px-4 py-2 text-white text-[13px] font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60"
+                style={{ backgroundColor: phaseColor }}
               >
-                {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                {executing ? 'Sending…' : 'Send Messages'}
+                {starting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                {starting ? 'Scheduling…' : `Start Phase ${phase.phaseNumber} — ${phase.rounds} run${phase.rounds !== 1 ? 's' : ''} scheduled`}
               </button>
-              <button onClick={() => setShowExecForm(false)} className="px-4 py-2 text-[13px] text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={() => { setShowStartForm(false); setExecError(''); }} className="px-4 py-2 text-[13px] text-gray-500 hover:text-gray-700">Cancel</button>
             </div>
           </div>
         )}
 
-        {/* Action row */}
+        {/* ─── Action row ───────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2 pt-1">
           {canApprove && (
-            <button
-              onClick={handleApprovePhase}
-              disabled={approving}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60"
-            >
+            <button onClick={handleApprove} disabled={approving}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60">
               {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
               {approving ? 'Approving…' : `Approve Phase ${phase.phaseNumber}`}
             </button>
           )}
-          {canExecute && !showExecForm && (
-            <button
-              onClick={() => setShowExecForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors"
-            >
-              <Play className="w-3.5 h-3.5" />
-              Execute Run {completedRuns.length + 1} of {phase.rounds}
+          {canStart && !showStartForm && (
+            <button onClick={() => { setShowStartForm(true); setExecError(''); }}
+              className="flex items-center gap-2 px-4 py-2 text-white text-[13px] font-semibold rounded-xl hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: phaseColor }}>
+              <BellRing className="w-3.5 h-3.5" />
+              Start Phase {phase.phaseNumber} — Schedule all {phase.rounds} runs
             </button>
           )}
           {canAnalyze && (
-            <button
-              onClick={handleAnalyze} disabled={analyzing}
-              className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white text-[13px] font-semibold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-60"
-            >
+            <button onClick={handleAnalyze} disabled={analyzing}
+              className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white text-[13px] font-semibold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-60">
               {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
               {analyzing ? 'Analysing…' : 'Analyse Results'}
             </button>
           )}
           {canAdvance && (
-            <button
-              onClick={handleAdvance} disabled={advancing}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60"
-            >
+            <button onClick={handleAdvance} disabled={advancing}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60">
               {advancing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
               {advancing ? 'Advancing…' : 'Advance to Next Phase'}
             </button>
@@ -1964,12 +2094,253 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, t
             </span>
           )}
         </div>
-        {execError && (
+
+        {execError && !showStartForm && (
           <div className="flex items-center gap-2 text-red-600 text-[12.5px] bg-red-50 border border-red-100 rounded-xl px-3 py-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" /> {execError}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─── Variant Template Card ────────────────────────────────────────────── */
+function VariantTemplateCard({ variant, onEdit }) {
+  const statusColor = {
+    active:     'bg-blue-50 text-blue-600',
+    top5:       'bg-amber-50 text-amber-700',
+    top3:       'bg-violet-50 text-violet-700',
+    winner:     'bg-green-50 text-green-700',
+    eliminated: 'bg-gray-100 text-gray-400',
+  };
+  return (
+    <div className={`bg-white rounded-2xl border overflow-hidden transition-all ${variant.status === 'eliminated' ? 'border-gray-100 opacity-50' : 'border-gray-200 hover:border-gray-300'}`}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-bold text-gray-900">{variant.label}</span>
+          <span className={`text-[10.5px] font-medium px-2 py-0.5 rounded-full ${statusColor[variant.status] || 'bg-gray-100 text-gray-500'}`}>{variant.status}</span>
+        </div>
+        <button onClick={() => onEdit(variant)} className="flex items-center gap-1 text-[11.5px] text-gray-400 hover:text-gray-700 transition-colors">
+          <Edit2 className="w-3 h-3" /> Edit
+        </button>
+      </div>
+      {variant.copyAngle && (
+        <div className="px-4 pt-3">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Strategy</p>
+          <p className="text-[12.5px] text-gray-700 font-medium">{variant.copyAngle}</p>
+        </div>
+      )}
+      {variant.message ? (
+        <div className="px-4 pt-3 pb-3">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Message Template</p>
+          <div className="bg-[#dcf8c6] rounded-2xl rounded-tl-sm px-3 py-2.5 max-w-[95%]">
+            <p className="text-[12px] text-[#111b21] whitespace-pre-line leading-relaxed">{variant.message}</p>
+            {variant.cta && (
+              <div className="mt-2 pt-2 border-t border-[#b5e8a0]">
+                <p className="text-[12px] font-semibold text-[#005c4b]">→ {variant.cta}</p>
+              </div>
+            )}
+            <p className="text-[10px] text-[#667781] text-right mt-1">10:00 AM ✓✓</p>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 pt-3 pb-3">
+          <p className="text-[12px] text-gray-400 italic">No message drafted yet</p>
+        </div>
+      )}
+      {variant.offer && (
+        <div className="px-4 pb-3">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Offer</p>
+          <p className="text-[12px] text-gray-600">{variant.offer}</p>
+        </div>
+      )}
+      {(variant.sent > 0 || variant.delivered > 0) && (
+        <div className="grid grid-cols-4 gap-0 border-t border-gray-100">
+          {[['Sent', variant.sent], ['Read', variant.read], ['Clicks', variant.uniqueClicks], ['Conv.', variant.conversions]].map(([l, v]) => (
+            <div key={l} className="py-2 text-center">
+              <p className="text-[10px] text-gray-400">{l}</p>
+              <p className="text-[13px] font-bold text-gray-800">{v || 0}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Campaign Calendar ─────────────────────────────────────────────────── */
+function CampaignCalendar({ scheduledJobs = [], runs = [], phases = [] }) {
+  const [viewDate,     setViewDate]     = useState(() => new Date());
+  const [selectedDay,  setSelectedDay]  = useState(null);
+
+  const year  = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  const eventMap = useMemo(() => {
+    const map = new Map();
+    const key = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+    scheduledJobs.forEach((job) => {
+      const d = new Date(job.scheduledAt);
+      const k = key(d);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push({
+        phaseNumber: job.phaseNumber,
+        label:   `Phase ${job.phaseNumber} · Run ${job.runNumber}`,
+        status:  job.status,
+        time:    d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        date:    d,
+        sent:    null,
+      });
+    });
+
+    runs.forEach((run) => {
+      const d = new Date(run.completedAt || run.startedAt);
+      if (!d || isNaN(d)) return;
+      const k = key(d);
+      if (!scheduledJobs.find((j) => j.phaseNumber === run.phaseNumber && j.runNumber === run.runNumber)) {
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push({
+          phaseNumber: run.phaseNumber,
+          label:   `Phase ${run.phaseNumber} · Run ${run.runNumber}`,
+          status:  run.status,
+          time:    null,
+          date:    d,
+          sent:    run.metrics?.sent,
+        });
+      }
+    });
+
+    return map;
+  }, [scheduledJobs, runs]);
+
+  const firstDow  = (new Date(year, month, 1).getDay() + 6) % 7; // Mon=0
+  const daysInMo  = new Date(year, month + 1, 0).getDate();
+  const cells     = [...Array(firstDow).fill(null), ...Array.from({ length: daysInMo }, (_, i) => i + 1)];
+  const today     = new Date();
+  const monthName = viewDate.toLocaleString('default', { month: 'long' });
+
+  const jobBadgeCls = {
+    pending:   'bg-zinc-700 text-zinc-300',
+    running:   'bg-blue-900 text-blue-300',
+    completed: 'bg-green-900 text-green-300',
+    failed:    'bg-red-900 text-red-300',
+    cancelled: 'bg-zinc-800 text-zinc-500',
+  };
+
+  return (
+    <div className="bg-zinc-950 rounded-3xl border border-zinc-800 p-6 mt-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-zinc-800 flex items-center justify-center">
+            <CalendarDays className="w-4.5 h-4.5 text-zinc-300" />
+          </div>
+          <div>
+            <h3 className="text-[15px] font-semibold text-white">Campaign Schedule</h3>
+            <p className="text-[12px] text-zinc-500">All scheduled & completed sends</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setViewDate(new Date(year, month - 1, 1))}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors text-lg font-light">
+            ‹
+          </button>
+          <span className="text-[13.5px] font-medium text-white min-w-[130px] text-center px-2">
+            {monthName} {year}
+          </span>
+          <button onClick={() => setViewDate(new Date(year, month + 1, 1))}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors text-lg font-light">
+            ›
+          </button>
+        </div>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+          <p key={d} className="text-center text-[11px] font-medium text-zinc-600 py-1">{d}</p>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((day, idx) => {
+          if (!day) return <div key={`e-${idx}`} />;
+          const k = `${year}-${month}-${day}`;
+          const dayEvents = eventMap.get(k) || [];
+          const isToday   = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
+          const hasEvents = dayEvents.length > 0;
+          const uniquePhases = [...new Set(dayEvents.map((e) => e.phaseNumber))];
+
+          return (
+            <button
+              key={k}
+              onClick={() => setSelectedDay(hasEvents ? { day, events: dayEvents } : null)}
+              disabled={!hasEvents}
+              className={`relative h-[52px] rounded-xl flex flex-col items-center justify-start pt-1.5 gap-0.5 transition-all
+                ${hasEvents ? 'bg-zinc-800 hover:bg-zinc-700 cursor-pointer' : 'hover:bg-zinc-900/50 cursor-default'}
+                ${isToday ? 'ring-1 ring-blue-500/60' : ''}
+              `}
+            >
+              <span className={`text-[12px] font-medium ${isToday ? 'text-blue-400' : hasEvents ? 'text-white' : 'text-zinc-600'}`}>
+                {day}
+              </span>
+              {hasEvents && (
+                <div className="flex gap-0.5 flex-wrap justify-center">
+                  {uniquePhases.slice(0, 3).map((pNum) => (
+                    <div key={pNum} className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: PHASE_COLORS[(pNum - 1) % PHASE_COLORS.length] }} />
+                  ))}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex gap-5 mt-5 flex-wrap">
+        {phases.map((p, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PHASE_COLORS[i % PHASE_COLORS.length] }} />
+            <span className="text-[11.5px] text-zinc-500">{p.label || `Phase ${i + 1}`}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Selected day popup */}
+      {selectedDay && (
+        <div className="mt-4 p-4 bg-zinc-900 rounded-xl border border-zinc-700">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[13px] font-semibold text-white">
+              {new Date(year, month, selectedDay.day).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+            <button onClick={() => setSelectedDay(null)} className="text-zinc-500 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="space-y-2">
+            {selectedDay.events.map((ev, i) => (
+              <div key={i} className="flex items-center gap-3 p-2.5 bg-zinc-800 rounded-lg">
+                <div className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: PHASE_COLORS[(ev.phaseNumber - 1) % PHASE_COLORS.length] }} />
+                <div className="flex-1">
+                  <p className="text-[12.5px] font-medium text-white">{ev.label}</p>
+                  <p className="text-[11px] text-zinc-500">
+                    {ev.time && <span>{ev.time}</span>}
+                    {ev.sent != null && ev.sent > 0 && <span> · {ev.sent} messages sent</span>}
+                  </p>
+                </div>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${jobBadgeCls[ev.status] || 'bg-zinc-700 text-zinc-400'}`}>
+                  {ev.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2025,7 +2396,7 @@ function CampaignDashboard({ campaignId, onBack }) {
     </div>
   );
 
-  const { experiment, overall, variants = [], runs = [] } = data || {};
+  const { experiment, overall, variants = [], runs = [], scheduledJobs = [] } = data || {};
   const statusColors = { approved: 'bg-amber-100 text-amber-700', running: 'bg-green-100 text-green-700', completed: 'bg-violet-100 text-violet-700' };
 
   // Sort variants by conversionRate + clickRate for display
@@ -2095,11 +2466,28 @@ function CampaignDashboard({ campaignId, onBack }) {
         </div>
       )}
 
+      {/* Variant Templates — WhatsApp message preview for each variant */}
+      {variants.length > 0 && (
+        <div className="mb-7">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare className="w-4 h-4 text-gray-400" />
+            <p className="text-[14px] font-semibold text-gray-900">Variant Templates</p>
+            <span className="text-[12px] text-gray-400">each variant = a unique WhatsApp message</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {variants.map((v) => (
+              <VariantTemplateCard key={v.variantNumber} variant={v} onEdit={setEditVariant} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Phase breakdown */}
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Layers className="w-4 h-4 text-gray-400" />
           <p className="text-[14px] font-semibold text-gray-900">Phase Execution</p>
+          <span className="text-[12px] text-gray-400">click once per phase to schedule all runs automatically</span>
         </div>
         <div className="space-y-4">
           {(experiment?.phases || []).map((phase, pi) => (
@@ -2108,6 +2496,7 @@ function CampaignDashboard({ campaignId, onBack }) {
               phase={phase}
               phaseIndex={pi}
               runs={runs}
+              scheduledJobs={scheduledJobs}
               experimentId={expId}
               experimentStatus={experiment?.status}
               templateConfig={experiment?.templateConfig}
@@ -2116,6 +2505,13 @@ function CampaignDashboard({ campaignId, onBack }) {
           ))}
         </div>
       </div>
+
+      {/* Campaign Calendar */}
+      <CampaignCalendar
+        scheduledJobs={scheduledJobs}
+        runs={runs}
+        phases={experiment?.phases || []}
+      />
 
       {editVariant && expId && (
         <VariantEditModal

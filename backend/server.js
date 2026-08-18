@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import routes from './routes/routes.js';
 import { DeliveryPartner, User, Campaign } from './models/Model.js';
 import { WpClient } from './models/wpMarketingModels.js';
+import { startScheduler } from './services/wpScheduler.js';
 
 dotenv.config();
 
@@ -130,6 +131,7 @@ mongoose.connect(process.env.MONGO_URI)
     await ensureTestUserAddress();
     await seedCampaign1();
     await seedWpClients();
+    startScheduler();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 
