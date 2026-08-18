@@ -1,12 +1,14 @@
 /**
  * WP Marketing Execution Engine
- * Handles audience allocation, bulk sends, webhook-driven metric aggregation,
- * AI-powered run analysis, and variant advancement (10 → 5 → 3 → 1).
+ * Handles audience allocation, sends, webhook-driven metrics, AI analysis,
+ * and variant advancement (10 → 5 → 3 → 1).
  */
 
 import crypto from 'crypto';
-import { WpExperiment, WpContactList, WpMessageLog, WpCampaignRun } from '../models/wpMarketingModels.js';
-import { sendBulkTemplate } from './campaignBot.js';
+import {
+  WpExperiment, WpContactList, WpMessageLog, WpCampaignRun, WpTrackingLink,
+} from '../models/wpMarketingModels.js';
+import { sendTemplate } from './campaignBot.js';
 import { CohereProvider } from '../llm/provider/cohere.js';
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -21,7 +23,11 @@ function shuffleArray(arr) {
 }
 
 function generateShortCode() {
-  return crypto.randomBytes(4).toString('hex'); // 8-char hex
+  return crypto.randomBytes(4).toString('hex');
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalisePhone(raw) {
@@ -42,27 +48,98 @@ function activeVariantsForPhase(variants, phaseIndex) {
 }
 
 /**
- * Allocate contacts evenly across active variants.
- * Returns { [variantIndex]: [contacts] }
+ * Split contacts evenly across variants (round-robin).
+ * With 2 contacts and 10 variants → 2 variants each get 1 contact.
  */
-function allocateContacts(contacts, variantCount, contactsPerVariant) {
-  const shuffled = shuffleArray(contacts);
+function allocateContacts(contacts, variantCount, maxPerVariant = Infinity) {
+  const valid = contacts.filter((c) => normalisePhone(c.phone));
+  const shuffled = shuffleArray(valid);
   const allocations = {};
-  for (let i = 0; i < variantCount; i++) {
-    const start = i * contactsPerVariant;
-    allocations[i] = shuffled.slice(start, start + contactsPerVariant);
-  }
+  for (let i = 0; i < variantCount; i++) allocations[i] = [];
+
+  shuffled.forEach((contact, idx) => {
+    const vi = idx % variantCount;
+    if (allocations[vi].length < maxPerVariant) {
+      allocations[vi].push(contact);
+    }
+  });
+
   return allocations;
 }
 
-/* ── Execute a phase run ─────────────────────────────────────────────────── */
+/** Build WhatsApp template params from the AI-developed variant copy. */
+function buildTemplateParams(variant, contact) {
+  const name = contact.name || 'Customer';
+  const personalised = (variant.message || '')
+    .replace(/\{\{name\}\}/gi, name)
+    .trim();
 
-/**
- * @param {string} experimentId
- * @param {number} phaseIndex   0-based (0 = Phase 1)
- * @param {object} templateConfig { templateId, templateName, languageCode, hasUrlButton, dynamicHeader? }
- * @returns {WpCampaignRun}
- */
+  const offer = variant.offer || '';
+  const cta   = variant.cta   || 'Order Now';
+
+  if (personalised) {
+    const lines = personalised.split('\n').filter(Boolean);
+    if (lines.length >= 3) return [name, lines.slice(0, -1).join(' ').slice(0, 500), lines[lines.length - 1].slice(0, 200)];
+    if (lines.length === 2) return [name, lines[0].slice(0, 500), lines[1].slice(0, 200)];
+    if (lines.length === 1 && !offer) return [name, lines[0].slice(0, 500), cta];
+  }
+
+  return [name, offer || personalised.slice(0, 500) || 'Special offer for you', cta];
+}
+
+/** Merge saved experiment templateConfig with per-run overrides. */
+function resolveTemplateConfig(experiment, overrides = {}) {
+  const saved = experiment.plan?.templateConfig || {};
+  return {
+    templateId:      overrides.templateId      || saved.templateId      || '',
+    templateName:    overrides.templateName    || saved.templateName    || '',
+    languageCode:    overrides.languageCode    || saved.languageCode    || 'en_US',
+    hasUrlButton:    overrides.hasUrlButton    ?? saved.hasUrlButton    ?? false,
+    destinationUrl:  overrides.destinationUrl  || saved.destinationUrl  || 'https://picoso.in',
+    dynamicHeader:   overrides.dynamicHeader   || null,
+  };
+}
+
+/* ── Phase approval ──────────────────────────────────────────────────────── */
+
+export async function approvePhase(experimentId, phaseNumber, clientId) {
+  const experiment = await WpExperiment.findOne({ _id: experimentId, clientId });
+  if (!experiment) throw new Error('Experiment not found');
+  if (!['approved', 'running'].includes(experiment.status)) {
+    throw new Error(`Experiment must be approved before activating a phase (current: ${experiment.status})`);
+  }
+
+  const phaseIndex = phaseNumber - 1;
+  const phase = experiment.plan.phases[phaseIndex];
+  if (!phase) throw new Error(`Phase ${phaseNumber} not found`);
+
+  if (phase.status === 'completed') throw new Error(`Phase ${phaseNumber} is already completed`);
+  if (phase.status === 'running') throw new Error(`Phase ${phaseNumber} is already approved and running`);
+
+  // Phase 2+ requires previous phase completed
+  if (phaseIndex > 0) {
+    const prev = experiment.plan.phases[phaseIndex - 1];
+    if (prev?.status !== 'completed') {
+      throw new Error(`Phase ${phaseNumber - 1} must be completed before approving Phase ${phaseNumber}`);
+    }
+  }
+
+  await WpExperiment.updateOne(
+    { _id: experimentId },
+    {
+      $set: {
+        [`plan.phases.${phaseIndex}.status`]:     'running',
+        [`plan.phases.${phaseIndex}.approvedAt`]: new Date(),
+        updatedAt: new Date(),
+      },
+    },
+  );
+
+  return WpExperiment.findById(experimentId);
+}
+
+/* ── Execute a phase run (one run per click) ─────────────────────────────── */
+
 export async function executePhaseRun(experimentId, phaseIndex, templateConfig = {}) {
   const experiment = await WpExperiment.findById(experimentId);
   if (!experiment) throw new Error('Experiment not found');
@@ -73,7 +150,23 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
   const phase = experiment.plan.phases[phaseIndex];
   if (!phase) throw new Error(`Phase ${phaseIndex + 1} not found in experiment plan`);
 
-  // Determine run number (how many runs have already been executed for this phase)
+  if (phase.status !== 'running') {
+    if (phase.status === 'pending') {
+      throw new Error(`Phase ${phaseIndex + 1} is not approved yet — approve this phase before executing runs`);
+    }
+    if (phase.status === 'completed') {
+      throw new Error(`Phase ${phaseIndex + 1} is already completed`);
+    }
+  }
+
+  // Block if a previous phase is still running (not completed)
+  for (let i = 0; i < phaseIndex; i++) {
+    const prev = experiment.plan.phases[i];
+    if (prev && prev.status === 'running') {
+      throw new Error(`Complete Phase ${i + 1} (analyse + advance) before running Phase ${phaseIndex + 1}`);
+    }
+  }
+
   const completedRunCount = await WpCampaignRun.countDocuments({
     experimentId,
     phaseNumber: phaseIndex + 1,
@@ -85,149 +178,195 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
     throw new Error(`Phase ${phaseIndex + 1} already has ${phase.rounds} runs completed`);
   }
 
-  // Get active variants for this phase
+  const tmpl = resolveTemplateConfig(experiment, templateConfig);
+  if (!tmpl.templateName) {
+    throw new Error('WhatsApp template name is required — set it in campaign settings or the execute form');
+  }
+
+  // Persist template config on experiment for subsequent runs
+  if (templateConfig.templateName || templateConfig.templateId) {
+    await WpExperiment.updateOne(
+      { _id: experimentId },
+      {
+        $set: {
+          'plan.templateConfig.templateId':     tmpl.templateId,
+          'plan.templateConfig.templateName':   tmpl.templateName,
+          'plan.templateConfig.languageCode':   tmpl.languageCode,
+          'plan.templateConfig.hasUrlButton': tmpl.hasUrlButton,
+          ...(templateConfig.destinationUrl ? { 'plan.templateConfig.destinationUrl': tmpl.destinationUrl } : {}),
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+
   const activeVariants = activeVariantsForPhase(experiment.variants, phaseIndex);
   if (activeVariants.length === 0) throw new Error('No active variants for this phase');
 
-  // Load contact list
   const list = await WpContactList.findById(experiment.contactListId).lean();
   if (!list?.contacts?.length) throw new Error('Contact list is empty');
 
-  // Allocate contacts
-  const allocations = allocateContacts(
-    list.contacts,
-    activeVariants.length,
-    phase.contactsPerVariant,
-  );
+  const maxPerVariant = phase.contactsPerVariant || Math.ceil(list.contacts.length / activeVariants.length);
+  const allocations = allocateContacts(list.contacts, activeVariants.length, maxPerVariant);
 
-  // Create campaign run record
   const run = await WpCampaignRun.create({
-    clientId:    experiment.clientId,
+    clientId:       experiment.clientId,
     experimentId,
-    phaseNumber: phaseIndex + 1,
+    phaseNumber:    phaseIndex + 1,
     runNumber,
-    status:      'running',
-    startedAt:   new Date(),
+    status:         'running',
+    startedAt:      new Date(),
     variantNumbers: activeVariants.map((v) => v.variantNumber),
-    scheduledAt: phase.scheduledDates?.[completedRunCount] || new Date(),
+    scheduledAt:    phase.scheduledDates?.[completedRunCount] || new Date(),
   });
 
   const API_BASE = process.env.API_PUBLIC_URL || 'https://picoso.in/api';
-  let totalSent  = 0;
+  let totalSent   = 0;
   let totalFailed = 0;
 
-  // Send messages per variant
   for (let vi = 0; vi < activeVariants.length; vi++) {
     const variant  = activeVariants[vi];
     const contacts = allocations[vi] || [];
     if (!contacts.length) continue;
 
-    // Build per-recipient data + create message log records
-    const bulkRecipients = [];
+    let variantSent   = 0;
+    let variantFailed = 0;
 
+    // Per-recipient sends for real-time delivery + per-message status
     for (const contact of contacts) {
       const phone = normalisePhone(contact.phone);
       if (!phone) continue;
 
-      const shortCode  = generateShortCode();
-      const trackingUrl = `${API_BASE}/t/${shortCode}`;
+      const shortCode     = generateShortCode();
+      const trackingUrl   = `${API_BASE}/t/${shortCode}`;
+      const tParams       = buildTemplateParams(variant, contact);
+      const dynButtons    = tmpl.hasUrlButton
+        ? [{ type: 'url', index: 0, variableValue: shortCode }]
+        : undefined;
 
-      // Create message log (queued state)
       const msgLog = await WpMessageLog.create({
-        clientId:      experiment.clientId,
+        clientId:          experiment.clientId,
         experimentId,
-        campaignRunId: run._id,
-        variantNumber: variant.variantNumber,
-        phaseNumber:   phaseIndex + 1,
+        campaignRunId:     run._id,
+        variantNumber:     variant.variantNumber,
+        phaseNumber:       phaseIndex + 1,
         runNumber,
-        contactPhone:  contact.phone,
-        contactName:   contact.name || '',
-        status:        'queued',
-        templateName:  templateConfig.templateName || '',
+        contactPhone:      contact.phone,
+        contactName:       contact.name || '',
+        status:            'queued',
+        templateName:      tmpl.templateName,
         trackingShortCode: shortCode,
         trackingUrl,
       });
 
-      // Template params: [name, offer, CTA]
-      const tParams = [
-        contact.name || 'Customer',
-        variant.offer || '',
-        variant.cta   || '',
-      ];
-
-      // Dynamic button carries the tracking short-code as URL suffix
-      const dynButtons = templateConfig.hasUrlButton
-        ? [{ type: 'url', index: 0, variableValue: shortCode }]
-        : undefined;
-
-      bulkRecipients.push({
-        phone,
-        name:           contact.name || '',
-        templateParams: tParams,
-        ...(dynButtons ? { dynamicButtons: dynButtons } : {}),
-        _logId: msgLog._id.toString(),
+      await WpTrackingLink.create({
+        shortCode,
+        clientId:      experiment.clientId,
+        experimentId,
+        variantNumber: variant.variantNumber,
+        contactPhone:  contact.phone,
+        contactName:   contact.name || '',
+        originalUrl:   tmpl.destinationUrl,
       });
+
+      const dynamicHeader = variant.mediaWaId
+        ? { type: 'image', mediaId: variant.mediaWaId, filename: 'promo.jpg' }
+        : tmpl.dynamicHeader || undefined;
+
+      try {
+        const result = await sendTemplate({
+          recipientPhone: phone,
+          recipientName:  contact.name || '',
+          templateName:   tmpl.templateName,
+          languageCode:   tmpl.languageCode,
+          templateParams: tParams,
+          dynamicHeader,
+          dynamicButtons: dynButtons,
+        });
+
+        const wamid = result?.payload?.messageId || null;
+
+        await WpMessageLog.findByIdAndUpdate(msgLog._id, {
+          $set: { status: 'sent', sentAt: new Date(), wamid },
+        });
+
+        variantSent++;
+        totalSent++;
+
+        // Small delay to avoid rate limits while keeping near-real-time delivery
+        await sleep(120);
+      } catch (err) {
+        await WpMessageLog.findByIdAndUpdate(msgLog._id, {
+          $set: { status: 'failed', failedAt: new Date(), failureMsg: err.message },
+        });
+        variantFailed++;
+        totalFailed++;
+      }
     }
 
-    // Strip internal _logId before API call
-    const apiPayload = bulkRecipients.map(({ _logId, ...r }) => r);
-
-    try {
-      const result = await sendBulkTemplate({
-        templateId:         templateConfig.templateId   || '',
-        templateName:       templateConfig.templateName || `wpm_variant_${variant.variantNumber}`,
-        campaignName:       `Exp ${experimentId.toString().slice(-6)} P${phaseIndex + 1}R${runNumber} ${variant.label}`,
-        campaignDescription: experiment.plan.experimentTitle || '',
-        languageCode:       templateConfig.languageCode || 'en_US',
-        dynamicHeader:      templateConfig.dynamicHeader,
-        recipients:         apiPayload,
-      });
-
-      const refId = result?.payload?.campaignRefId || null;
-
-      // Mark logs as sent
-      await WpMessageLog.updateMany(
-        { campaignRunId: run._id, variantNumber: variant.variantNumber },
-        { $set: { status: 'sent', sentAt: new Date(), campaignBotRefId: refId } },
-      );
-
-      // Increment variant sent counter on experiment
+    if (variantSent > 0) {
       await WpExperiment.updateOne(
         { _id: experimentId, 'variants.variantNumber': variant.variantNumber },
-        { $inc: { 'variants.$.metrics.sent': contacts.length } },
+        { $inc: { 'variants.$.metrics.sent': variantSent } },
       );
-
-      totalSent += contacts.length;
-    } catch (err) {
-      // Mark logs as failed
-      await WpMessageLog.updateMany(
-        { campaignRunId: run._id, variantNumber: variant.variantNumber },
-        { $set: { status: 'failed', failedAt: new Date(), failureMsg: err.message } },
-      );
-      totalFailed += contacts.length;
     }
   }
 
-  // Finalise run record
-  run.status       = 'completed';
+  run.status       = totalSent > 0 ? 'completed' : 'failed';
   run.completedAt  = new Date();
   run.contactCount = totalSent;
+  run.metrics      = { sent: totalSent };
   await run.save();
 
-  // Mark experiment as running
   if (experiment.status === 'approved') {
     await WpExperiment.findByIdAndUpdate(experimentId, { status: 'running' });
+  }
+
+  if (totalSent === 0 && totalFailed > 0) {
+    throw new Error(`All ${totalFailed} message(s) failed to send — check template name and API connection`);
   }
 
   return run;
 }
 
+/* ── Update variant copy ─────────────────────────────────────────────────── */
+
+export async function updateVariant(experimentId, variantNumber, updates, clientId) {
+  const allowed = ['label', 'copyAngle', 'tone', 'offer', 'cta', 'message', 'imageConceptDescription', 'mediaS3Url', 'mediaWaId'];
+  const patch = {};
+  for (const key of allowed) {
+    if (updates[key] !== undefined) patch[`variants.$.${key}`] = updates[key];
+  }
+  if (!Object.keys(patch).length) throw new Error('No valid fields to update');
+
+  const result = await WpExperiment.findOneAndUpdate(
+    { _id: experimentId, clientId, 'variants.variantNumber': variantNumber },
+    { $set: { ...patch, updatedAt: new Date() } },
+    { new: true },
+  );
+  if (!result) throw new Error('Experiment or variant not found');
+  return result.variants.find((v) => v.variantNumber === variantNumber);
+}
+
+/* ── Save template config on experiment ──────────────────────────────────── */
+
+export async function saveTemplateConfig(experimentId, config, clientId) {
+  const experiment = await WpExperiment.findOne({ _id: experimentId, clientId });
+  if (!experiment) throw new Error('Experiment not found');
+
+  const fields = {};
+  if (config.templateId      !== undefined) fields['plan.templateConfig.templateId']     = config.templateId;
+  if (config.templateName    !== undefined) fields['plan.templateConfig.templateName']   = config.templateName;
+  if (config.languageCode    !== undefined) fields['plan.templateConfig.languageCode']   = config.languageCode;
+  if (config.hasUrlButton    !== undefined) fields['plan.templateConfig.hasUrlButton']   = config.hasUrlButton;
+  if (config.destinationUrl  !== undefined) fields['plan.templateConfig.destinationUrl'] = config.destinationUrl;
+
+  await WpExperiment.updateOne({ _id: experimentId }, { $set: { ...fields, updatedAt: new Date() } });
+  return WpExperiment.findById(experimentId);
+}
+
 /* ── AI analysis of a completed phase ───────────────────────────────────── */
 
-/**
- * Compute per-variant metrics from message logs, score variants, call AI
- * for a natural-language explanation, then persist the analysis on the run.
- */
 export async function analyzePhaseResults(experimentId, phaseNumber) {
   const experiment = await WpExperiment.findById(experimentId);
   if (!experiment) throw new Error('Experiment not found');
@@ -235,7 +374,6 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
   const phase = experiment.plan.phases[phaseNumber - 1];
   if (!phase) throw new Error(`Phase ${phaseNumber} not found`);
 
-  // Get all runs for this phase that are completed
   const runs = await WpCampaignRun.find({
     experimentId,
     phaseNumber,
@@ -244,10 +382,12 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
 
   if (!runs.length) throw new Error('No completed runs found for this phase');
 
-  // Aggregate message logs across all phase runs
-  const logs = await WpMessageLog.find({ experimentId, phaseNumber }).lean();
+  const completedRuns = runs.filter((r) => r.status === 'completed' || r.status === 'analyzed');
+  if (completedRuns.length < phase.rounds) {
+    throw new Error(`Phase ${phaseNumber} needs ${phase.rounds} completed runs before analysis (${completedRuns.length} done)`);
+  }
 
-  // Build per-variant metrics map
+  const logs = await WpMessageLog.find({ experimentId, phaseNumber }).lean();
   const activeVariants = activeVariantsForPhase(experiment.variants, phaseNumber - 1);
 
   const variantStats = activeVariants.map((v) => {
@@ -265,9 +405,6 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
     const readRate       = delivered  > 0 ? (read        / delivered  * 100) : 0;
     const clickRate      = sent       > 0 ? (unique      / sent       * 100) : 0;
     const conversionRate = sent       > 0 ? (conversions / sent       * 100) : 0;
-
-    // Weighted performance score
-    // Conversions 3×, revenue (normalised) 2×, read rate 0.5×, click rate 1.5×
     const score = conversionRate * 3 + clickRate * 1.5 + readRate * 0.5 + (revenue > 0 ? 1 : 0) * 2;
 
     return {
@@ -283,17 +420,14 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
     };
   });
 
-  // Sort by score descending
   variantStats.sort((a, b) => b.score - a.score);
 
-  // Determine how many to advance
   const currentCount = phase.variantCount;
   const nextCount    = currentCount >= 10 ? 5 : currentCount >= 5 ? 3 : currentCount >= 3 ? 1 : 1;
 
   const advancedNums   = variantStats.slice(0, nextCount).map((v) => v.variantNumber);
   const eliminatedNums = variantStats.slice(nextCount).map((v) => v.variantNumber);
 
-  // AI summary via Cohere
   const llm = new CohereProvider({ maxTokens: 600, timeoutMs: 30000 });
   let summary = '';
   let advancementDecision = '';
@@ -324,7 +458,6 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
     advancementDecision = `Top ${nextCount} variants will proceed.`;
   }
 
-  // Build rankings
   const variantRankings = variantStats.map((v) => ({
     variantNumber: v.variantNumber,
     label:         v.label,
@@ -332,7 +465,6 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
     reason:        `${v.deliveryRate}% delivery, ${v.readRate}% read, ${v.clickRate}% click, ${v.conversionRate}% conversion`,
   }));
 
-  // Persist analysis on the most recent run
   const latestRun = runs[runs.length - 1];
   await WpCampaignRun.findByIdAndUpdate(latestRun._id, {
     status: 'analyzed',
@@ -350,7 +482,7 @@ export async function analyzePhaseResults(experimentId, phaseNumber) {
       summary,
       variantRankings,
       advancementDecision,
-      advancedVariants:  advancedNums,
+      advancedVariants:   advancedNums,
       eliminatedVariants: eliminatedNums,
       generatedAt: new Date(),
     },
@@ -365,7 +497,10 @@ export async function advanceToNextPhase(experimentId, advancedNums, eliminatedN
   const experiment = await WpExperiment.findById(experimentId);
   if (!experiment) throw new Error('Experiment not found');
 
-  const isWinner = nextCount === 1;
+  const currentPhaseIndex = experiment.plan.phases.findIndex((p) => p.status === 'running');
+  if (currentPhaseIndex === -1) throw new Error('No running phase found to advance from');
+
+  const isWinner = nextCount === 1 && experiment.plan.phases[currentPhaseIndex].variantCount <= 1;
 
   for (const v of experiment.variants) {
     let newStatus = v.status;
@@ -382,7 +517,19 @@ export async function advanceToNextPhase(experimentId, advancedNums, eliminatedN
     }
   }
 
-  if (isWinner) {
+  const phaseUpdates = {
+    [`plan.phases.${currentPhaseIndex}.status`]: 'completed',
+    updatedAt: new Date(),
+  };
+
+  const nextPhaseIndex = currentPhaseIndex + 1;
+  if (nextPhaseIndex < experiment.plan.phases.length && !isWinner) {
+    phaseUpdates[`plan.phases.${nextPhaseIndex}.status`] = 'pending';
+  }
+
+  await WpExperiment.updateOne({ _id: experimentId }, { $set: phaseUpdates });
+
+  if (isWinner || currentPhaseIndex === experiment.plan.phases.length - 1) {
     await WpExperiment.findByIdAndUpdate(experimentId, { status: 'completed' });
   }
 }
@@ -398,7 +545,6 @@ export async function buildDashboardSnapshot(experimentId) {
 
   if (!experiment) throw new Error('Experiment not found');
 
-  // Overall stats
   const [deliveredCount, readCount, clickCount, convCount] = await Promise.all([
     WpMessageLog.countDocuments({ experimentId, status: { $in: ['delivered', 'read'] } }),
     WpMessageLog.countDocuments({ experimentId, status: 'read' }),
@@ -413,7 +559,6 @@ export async function buildDashboardSnapshot(experimentId) {
 
   const totalRevenue = revenueResult[0]?.total || 0;
 
-  // Per-variant aggregated stats from logs
   const variantLogs = await WpMessageLog.aggregate([
     { $match: { experimentId: experiment._id } },
     {
@@ -434,7 +579,6 @@ export async function buildDashboardSnapshot(experimentId) {
   const variantStatsMap = {};
   for (const row of variantLogs) variantStatsMap[row._id] = row;
 
-  // Merge with variant metadata
   const variants = experiment.variants.map((v) => {
     const s = variantStatsMap[v.variantNumber] || {};
     return {
@@ -442,6 +586,10 @@ export async function buildDashboardSnapshot(experimentId) {
       label:         v.label,
       copyAngle:     v.copyAngle,
       tone:          v.tone,
+      offer:         v.offer,
+      cta:           v.cta,
+      message:       v.message,
+      imageConceptDescription: v.imageConceptDescription,
       status:        v.status,
       sent:          s.sent         || 0,
       delivered:     s.delivered    || 0,
@@ -465,6 +613,7 @@ export async function buildDashboardSnapshot(experimentId) {
       title:  experiment.plan.experimentTitle,
       objective: experiment.plan.objective,
       phases: experiment.plan.phases,
+      templateConfig: experiment.plan.templateConfig || {},
     },
     overall: {
       totalMessages: totalLogs,
@@ -473,7 +622,7 @@ export async function buildDashboardSnapshot(experimentId) {
       uniqueClicks:  clickCount,
       conversions:   convCount,
       revenue:       totalRevenue,
-      deliveryRate:  totalLogs > 0 ? +( deliveredCount / totalLogs * 100).toFixed(1) : 0,
+      deliveryRate:  totalLogs > 0 ? +(deliveredCount / totalLogs * 100).toFixed(1) : 0,
       readRate:      deliveredCount > 0 ? +(readCount / deliveredCount * 100).toFixed(1) : 0,
       clickRate:     totalLogs > 0 ? +(clickCount / totalLogs * 100).toFixed(1) : 0,
       conversionRate:totalLogs > 0 ? +(convCount / totalLogs * 100).toFixed(1) : 0,

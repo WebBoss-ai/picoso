@@ -252,6 +252,9 @@ router.get('/wp-marketing/experiments/:id/dashboard',      requireWpPin, wpExecu
 router.post('/wp-marketing/experiments/:id/execute',       requireWpPin, wpExecution.executeRun);
 router.post('/wp-marketing/experiments/:id/analyze',       requireWpPin, wpExecution.analyzeRun);
 router.post('/wp-marketing/experiments/:id/advance',       requireWpPin, wpExecution.advancePhase);
+router.post('/wp-marketing/experiments/:id/approve-phase', requireWpPin, wpExecution.approvePhase);
+router.put('/wp-marketing/experiments/:id/variants/:variantNumber', requireWpPin, wpExecution.updateVariant);
+router.put('/wp-marketing/experiments/:id/template-config', requireWpPin, wpExecution.saveTemplateConfig);
 router.get('/wp-marketing/campaigns/:id/experiment',       requireWpPin, wpExecution.getExperimentByCampaign);
 
 // ── CampaignBot Webhooks — public, HMAC-secured ───────────────────────────

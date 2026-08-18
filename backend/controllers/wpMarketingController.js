@@ -2,7 +2,7 @@
  * WP Marketing controller — multi-client PIN auth, contact lists, campaign drafts,
  * and AI-powered campaign strategy generation via Cohere.
  */
-import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink } from '../models/wpMarketingModels.js';
+import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink, WpMessageLog } from '../models/wpMarketingModels.js';
 import crypto from 'crypto';
 import { CohereProvider } from '../llm/provider/cohere.js';
 
@@ -292,15 +292,19 @@ Generate all 10 variants now. Make each genuinely distinct.`;
       return res.status(500).json({ error: `AI only generated ${variants.length} variants — please try again.` });
     }
 
-    // Build phase schedule (proposed, relative to "today + 1 day" when plan is generated)
+    // Build phase schedule based on actual contact list size
     const baseDate = new Date();
     baseDate.setDate(baseDate.getDate() + 1);
 
+    const perVariantP1 = Math.max(1, Math.floor(contactCount / 10));
+    const perVariantP2 = Math.max(1, Math.floor(contactCount / 5));
+    const perVariantP3 = Math.max(1, Math.floor(contactCount / 3));
+
     const phases = [
-      { phaseNumber: 1, label: 'Phase 1: 10 Variants', variantCount: 10, contactsPerVariant: 100,  totalContacts: 1000, rounds: 3, daySpread: 6,  scheduledDates: scheduleDates(baseDate, 3, 2) },
-      { phaseNumber: 2, label: 'Phase 2: Top 5',        variantCount: 5,  contactsPerVariant: 200,  totalContacts: 1000, rounds: 3, daySpread: 6,  scheduledDates: scheduleDates(new Date(baseDate.getTime() + 7 * 86400000), 3, 2) },
-      { phaseNumber: 3, label: 'Phase 3: Top 3',        variantCount: 3,  contactsPerVariant: 334,  totalContacts: 1002, rounds: 3, daySpread: 6,  scheduledDates: scheduleDates(new Date(baseDate.getTime() + 14 * 86400000), 3, 2) },
-      { phaseNumber: 4, label: 'Final: Winner',         variantCount: 1,  contactsPerVariant: contactCount, totalContacts: contactCount, rounds: 1, daySpread: 1, scheduledDates: [new Date(baseDate.getTime() + 21 * 86400000)] },
+      { phaseNumber: 1, label: 'Phase 1: 10 Variants', variantCount: 10, contactsPerVariant: perVariantP1, totalContacts: perVariantP1 * 10, rounds: 3, daySpread: 6, scheduledDates: scheduleDates(baseDate, 3, 2), status: 'pending' },
+      { phaseNumber: 2, label: 'Phase 2: Top 5',        variantCount: 5,  contactsPerVariant: perVariantP2, totalContacts: perVariantP2 * 5,  rounds: 3, daySpread: 6, scheduledDates: scheduleDates(new Date(baseDate.getTime() + 7 * 86400000), 3, 2), status: 'pending' },
+      { phaseNumber: 3, label: 'Phase 3: Top 3',        variantCount: 3,  contactsPerVariant: perVariantP3, totalContacts: perVariantP3 * 3,  rounds: 3, daySpread: 6, scheduledDates: scheduleDates(new Date(baseDate.getTime() + 14 * 86400000), 3, 2), status: 'pending' },
+      { phaseNumber: 4, label: 'Final: Winner',         variantCount: 1,  contactsPerVariant: contactCount, totalContacts: contactCount, rounds: 1, daySpread: 1, scheduledDates: [new Date(baseDate.getTime() + 21 * 86400000)], status: 'pending' },
     ];
 
     const experiment = await WpExperiment.create({
@@ -384,7 +388,7 @@ export const approvePlan = async (req, res) => {
           date.setDate(base.getDate() + d - 1);
           return date;
         }),
-        status: i === 0 ? 'running' : 'pending',
+        status: 'pending',
       };
     });
 
@@ -448,7 +452,17 @@ export const handleTrackClick = async (req, res) => {
     });
     await link.save();
 
-    // Update variant metrics if linked to an experiment
+    // Sync click to message log
+    const logUpdate = {
+      clicked: true,
+      $inc: { totalClicks: 1 },
+      ...(isRepeat ? {} : { firstClickAt: new Date() }),
+    };
+    await WpMessageLog.findOneAndUpdate(
+      { trackingShortCode: link.shortCode },
+      logUpdate,
+    );
+
     if (link.experimentId && link.variantNumber != null) {
       await WpExperiment.updateOne(
         { _id: link.experimentId, 'variants.variantNumber': link.variantNumber },

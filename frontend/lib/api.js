@@ -298,6 +298,9 @@ export const wpMarketing = {
   executeRun:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/execute`, data),
   analyzeRun:        (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/analyze`, data),
   advancePhase:      (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/advance`, data),
+  approvePhase:      (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/approve-phase`, data),
+  updateVariant:     (expId, variantNum, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/variants/${variantNum}`, data),
+  saveTemplateConfig:(expId, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/template-config`, data),
 };
 
 export default api;

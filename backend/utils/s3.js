@@ -55,6 +55,21 @@ export const uploadToS3 = multer({
 
 
 /* ===========================
+   UPLOAD BUFFER TO S3 (WP Marketing media)
+=========================== */
+export async function uploadBufferToS3(buffer, mimeType, filename) {
+  const key = `wp-marketing/${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const result = await s3.upload({
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key:    key,
+    Body:   buffer,
+    ContentType: mimeType,
+    ACL:    'public-read',
+  }).promise();
+  return { url: result.Location, key };
+}
+
+/* ===========================
    DELETE FROM S3
 =========================== */
 export const deleteFromS3 = async (imageUrl) => {

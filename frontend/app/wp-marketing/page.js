@@ -1043,7 +1043,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
             ))}
           </div>
           <p className="text-[12.5px] text-gray-400">
-            First send will go out on <strong className="text-gray-700">{fmtDate(phases[0]?.scheduledDates?.[0])}</strong>. You can pause at any time from the Campaigns dashboard.
+            After confirming, approve and execute each phase one at a time from the campaign dashboard.
           </p>
           <button
             onClick={onApprove}
@@ -1597,7 +1597,7 @@ function MetricCard({ label, value, sub, color = 'blue' }) {
   );
 }
 
-function VariantRow({ v, rank }) {
+function VariantRow({ v, rank, onEdit }) {
   const statusColors = { active: 'text-blue-600', top5: 'text-amber-600', top3: 'text-violet-600', winner: 'text-green-600', eliminated: 'text-gray-400' };
   return (
     <tr className="border-b border-gray-50 last:border-0 hover:bg-gray-50/40 transition-colors">
@@ -1617,37 +1617,142 @@ function VariantRow({ v, rank }) {
       <td className="px-4 py-3 text-center text-[13px] font-semibold text-gray-800">
         {v.revenue > 0 ? `₹${v.revenue.toLocaleString('en-IN')}` : '—'}
       </td>
+      <td className="px-4 py-3 text-center">
+        {onEdit && (
+          <button onClick={() => onEdit(v)} className="text-[12px] text-blue-600 hover:text-blue-800 font-medium">
+            Edit
+          </button>
+        )}
+      </td>
     </tr>
   );
 }
 
-function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, onRefresh }) {
+function VariantEditModal({ variant, experimentId, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    label: variant.label || '',
+    copyAngle: variant.copyAngle || '',
+    tone: variant.tone || '',
+    offer: variant.offer || '',
+    cta: variant.cta || '',
+    message: variant.message || '',
+    imageConceptDescription: variant.imageConceptDescription || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true); setError('');
+    try {
+      await wpMarketing.updateVariant(experimentId, variant.variantNumber, form);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h3 className="text-[15px] font-semibold text-gray-900">Edit {variant.label}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="px-6 py-5 space-y-3">
+          {[['label', 'Label'], ['copyAngle', 'Copy Angle'], ['tone', 'Tone'], ['offer', 'Offer'], ['cta', 'Call to Action']].map(([k, label]) => (
+            <div key={k}>
+              <label className="block text-[12px] font-medium text-gray-600 mb-1">{label}</label>
+              <input value={form[k]} onChange={(e) => set(k, e.target.value)} className={inp} />
+            </div>
+          ))}
+          <div>
+            <label className="block text-[12px] font-medium text-gray-600 mb-1">WhatsApp Message</label>
+            <textarea value={form.message} onChange={(e) => set('message', e.target.value)} rows={5}
+              className={`${inp} font-mono text-[13px] resize-none`} />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-gray-600 mb-1">Image / Creative Concept</label>
+            <textarea value={form.imageConceptDescription} onChange={(e) => set('imageConceptDescription', e.target.value)} rows={2} className={`${inp} resize-none`} />
+          </div>
+          {error && <p className="text-[13px] text-red-600">{error}</p>}
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-[13px] text-gray-500 border border-gray-200 rounded-xl">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl disabled:opacity-50">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, templateConfig, onRefresh }) {
   const [executing,  setExecuting]  = useState(false);
   const [analyzing,  setAnalyzing]  = useState(false);
   const [advancing,  setAdvancing]  = useState(false);
+  const [approving,  setApproving]  = useState(false);
   const [execError,  setExecError]  = useState('');
   const [analysis,   setAnalysis]   = useState(null);
 
-  // Template config state for execute
-  const [tmplName,    setTmplName]    = useState('');
-  const [tmplId,      setTmplId]      = useState('');
-  const [hasUrlBtn,   setHasUrlBtn]   = useState(false);
+  const [tmplName,    setTmplName]    = useState(templateConfig?.templateName || '');
+  const [tmplId,      setTmplId]      = useState(templateConfig?.templateId || '');
+  const [hasUrlBtn,   setHasUrlBtn]   = useState(templateConfig?.hasUrlButton ?? true);
+  const [destUrl,     setDestUrl]     = useState(templateConfig?.destinationUrl || 'https://picoso.in');
   const [showExecForm, setShowExecForm] = useState(false);
+
+  useEffect(() => {
+    if (templateConfig?.templateName) setTmplName(templateConfig.templateName);
+    if (templateConfig?.templateId) setTmplId(templateConfig.templateId);
+    if (templateConfig?.hasUrlButton != null) setHasUrlBtn(templateConfig.hasUrlButton);
+    if (templateConfig?.destinationUrl) setDestUrl(templateConfig.destinationUrl);
+  }, [templateConfig]);
 
   const phaseRuns = (runs || []).filter((r) => r.phaseNumber === phase.phaseNumber);
   const completedRuns = phaseRuns.filter((r) => ['completed', 'analyzed'].includes(r.status));
-  const canExecute   = phase.status !== 'completed' && completedRuns.length < phase.rounds && experimentStatus !== 'completed';
-  const canAnalyze   = completedRuns.length === phase.rounds && !phaseRuns.find((r) => r.aiAnalysis);
+  const hasAnalysis = phaseRuns.some((r) => r.aiAnalysis?.advancedVariants?.length);
   const latestRun    = phaseRuns[phaseRuns.length - 1];
   const latestAnalysis = latestRun?.aiAnalysis;
+
+  const isPending   = phase.status === 'pending';
+  const isRunning   = phase.status === 'running';
+  const isCompleted = phase.status === 'completed';
+
+  const canApprove   = isPending && experimentStatus !== 'completed' && experimentStatus !== 'awaiting_approval';
+  const canExecute   = isRunning && completedRuns.length < phase.rounds && experimentStatus !== 'completed';
+  const canAnalyze   = isRunning && completedRuns.length === phase.rounds && !hasAnalysis;
+  const canAdvance   = hasAnalysis && isRunning && experimentStatus !== 'completed';
+
+  const handleApprovePhase = async () => {
+    setApproving(true); setExecError('');
+    try {
+      await wpMarketing.approvePhase(experimentId, { phaseNumber: phase.phaseNumber });
+      onRefresh();
+    } catch (err) {
+      setExecError(err?.response?.data?.error || 'Phase approval failed');
+    }
+    setApproving(false);
+  };
 
   const handleExecute = async () => {
     if (!tmplName.trim()) { setExecError('Template name is required'); return; }
     setExecError(''); setExecuting(true);
     try {
+      await wpMarketing.saveTemplateConfig(experimentId, {
+        templateId: tmplId, templateName: tmplName, hasUrlButton: hasUrlBtn, destinationUrl: destUrl,
+      });
       await wpMarketing.executeRun(experimentId, {
-        phaseIndex: phaseIndex,
-        templateConfig: { templateId: tmplId, templateName: tmplName, hasUrlButton: hasUrlBtn },
+        phaseIndex,
+        templateConfig: { templateId: tmplId, templateName: tmplName, hasUrlButton: hasUrlBtn, destinationUrl: destUrl },
       });
       setShowExecForm(false);
       onRefresh();
@@ -1672,12 +1777,14 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
   const handleAdvance = async () => {
     const src = latestAnalysis || analysis;
     if (!src) return;
+    const advancedNums   = src.advancedVariants || src.advancedNums;
+    const eliminatedNums = src.eliminatedVariants || src.eliminatedNums;
     setAdvancing(true);
     try {
       await wpMarketing.advancePhase(experimentId, {
-        advancedNums:   src.advancedVariants,
-        eliminatedNums: src.eliminatedVariants,
-        nextCount:      src.advancedVariants?.length || 1,
+        advancedNums,
+        eliminatedNums,
+        nextCount: advancedNums?.length || 1,
       });
       onRefresh();
     } catch (err) {
@@ -1692,15 +1799,20 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
     completed: 'bg-green-100 text-green-700',
   };
 
+  const workflowStep = isPending ? 1 : canAdvance ? 3 : canAnalyze ? 3 : canExecute ? 2 : isCompleted ? 4 : 2;
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100">
+    <div className={`bg-white rounded-2xl border ${isRunning ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'}`}>
       {/* Phase header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
         <div>
           <p className="text-[14px] font-semibold text-gray-900">{phase.label}</p>
           <p className="text-[12px] text-gray-400 mt-0.5">
-            {phase.variantCount} variants · {phase.contactsPerVariant} contacts each · {phase.rounds} runs
+            {phase.variantCount} variants · up to {phase.contactsPerVariant} contacts/variant · {phase.rounds} run{phase.rounds > 1 ? 's' : ''}
           </p>
+          {isPending && (
+            <p className="text-[12px] text-amber-600 mt-1 font-medium">Awaiting your approval to start this phase</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
@@ -1713,6 +1825,18 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
       </div>
 
       <div className="p-5 space-y-4">
+        {/* Workflow indicator */}
+        {!isCompleted && (
+          <div className="flex items-center gap-2 text-[11.5px] text-gray-400">
+            {['Approve', 'Execute runs', 'Analyse & advance'].map((step, i) => (
+              <span key={step} className={`flex items-center gap-1 ${workflowStep > i + 1 ? 'text-green-600' : workflowStep === i + 1 ? 'text-blue-600 font-semibold' : ''}`}>
+                {workflowStep > i + 1 ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span className="w-4 h-4 rounded-full border border-current flex items-center justify-center text-[10px]">{i + 1}</span>}
+                {step}
+                {i < 2 && <ChevronRight className="w-3 h-3 opacity-40" />}
+              </span>
+            ))}
+          </div>
+        )}
         {/* Run history */}
         {phaseRuns.map((run) => (
           <div key={run._id} className="p-4 bg-gray-50 rounded-xl">
@@ -1773,8 +1897,14 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
             </div>
             <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
               <input type="checkbox" checked={hasUrlBtn} onChange={(e) => setHasUrlBtn(e.target.checked)} className="rounded" />
-              Template has a URL button (tracking link will be injected)
+              Template has URL button (tracking link injected per recipient)
             </label>
+            <div>
+              <label className="text-[11.5px] font-medium text-gray-600 block mb-1">Destination URL (after click)</label>
+              <input value={destUrl} onChange={(e) => setDestUrl(e.target.value)} placeholder="https://picoso.in"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white" />
+            </div>
+            <p className="text-[11.5px] text-gray-400">Each variant uses its AI-developed offer, CTA, and message as template variables.</p>
             {execError && <p className="text-[12.5px] text-red-600">{execError}</p>}
             <div className="flex gap-2">
               <button
@@ -1791,13 +1921,23 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
 
         {/* Action row */}
         <div className="flex flex-wrap gap-2 pt-1">
+          {canApprove && (
+            <button
+              onClick={handleApprovePhase}
+              disabled={approving}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60"
+            >
+              {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+              {approving ? 'Approving…' : `Approve Phase ${phase.phaseNumber}`}
+            </button>
+          )}
           {canExecute && !showExecForm && (
             <button
               onClick={() => setShowExecForm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 transition-colors"
             >
               <Play className="w-3.5 h-3.5" />
-              Execute Run {completedRuns.length + 1}
+              Execute Run {completedRuns.length + 1} of {phase.rounds}
             </button>
           )}
           {canAnalyze && (
@@ -1809,7 +1949,7 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
               {analyzing ? 'Analysing…' : 'Analyse Results'}
             </button>
           )}
-          {(latestAnalysis?.advancedVariants || analysis?.advancedNums) && experimentStatus !== 'completed' && (
+          {canAdvance && (
             <button
               onClick={handleAdvance} disabled={advancing}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60"
@@ -1818,7 +1958,17 @@ function PhasePanel({ phase, phaseIndex, runs, experimentId, experimentStatus, o
               {advancing ? 'Advancing…' : 'Advance to Next Phase'}
             </button>
           )}
+          {isCompleted && (
+            <span className="flex items-center gap-1.5 text-[13px] text-green-600 font-medium px-3 py-2">
+              <CheckCircle2 className="w-4 h-4" /> Phase completed
+            </span>
+          )}
         </div>
+        {execError && (
+          <div className="flex items-center gap-2 text-red-600 text-[12.5px] bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {execError}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1829,9 +1979,12 @@ function CampaignDashboard({ campaignId, onBack }) {
   const [data,       setData]       = useState(null);
   const [expId,      setExpId]      = useState(null);
   const [error,      setError]      = useState('');
+  const [editVariant,setEditVariant]= useState(null);
+  const [polling,    setPolling]    = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('');
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError('');
     try {
       const expRes = await wpMarketing.getExperiment(campaignId);
       const eid = expRes.data?._id;
@@ -1839,12 +1992,21 @@ function CampaignDashboard({ campaignId, onBack }) {
       const dash = await wpMarketing.getDashboard(eid);
       setData(dash.data);
     } catch (err) {
-      setError(err?.response?.data?.error || 'Could not load dashboard');
+      if (!silent) setError(err?.response?.data?.error || 'Could not load dashboard');
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [campaignId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Real-time polling while campaign is active
+  useEffect(() => {
+    if (!polling || !expId) return;
+    const status = data?.experiment?.status;
+    if (status === 'completed') return;
+    const interval = setInterval(() => load(true), 10000);
+    return () => clearInterval(interval);
+  }, [polling, expId, data?.experiment?.status, load]);
 
   if (loading) return (
     <div className="p-8 flex justify-center py-24"><Loader2 className="w-5 h-5 text-blue-500 animate-spin" /></div>
@@ -1885,8 +2047,14 @@ function CampaignDashboard({ campaignId, onBack }) {
           </div>
           <p className="text-[13px] text-gray-400 mt-0.5">{experiment?.objective}</p>
         </div>
-        <button onClick={load} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 transition-all">
+        <button onClick={() => load()} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 transition-all">
           <RefreshCw className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setPolling((p) => !p)}
+          className={`px-3 py-2 rounded-xl border text-[12px] font-medium transition-all ${polling ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500'}`}
+        >
+          {polling ? 'Live ●' : 'Live off'}
         </button>
       </div>
 
@@ -1912,13 +2080,15 @@ function CampaignDashboard({ campaignId, onBack }) {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['#', 'Variant', 'Stage', 'Sent', 'Delivery', 'Read', 'Click', 'Conv.', 'Revenue'].map((h) => (
+                  {['#', 'Variant', 'Stage', 'Sent', 'Delivery', 'Read', 'Click', 'Conv.', 'Revenue', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((v, i) => <VariantRow key={v.variantNumber} v={v} rank={i + 1} />)}
+                {sorted.map((v, i) => (
+                  <VariantRow key={v.variantNumber} v={v} rank={i + 1} onEdit={setEditVariant} />
+                ))}
               </tbody>
             </table>
           </div>
@@ -1940,11 +2110,21 @@ function CampaignDashboard({ campaignId, onBack }) {
               runs={runs}
               experimentId={expId}
               experimentStatus={experiment?.status}
-              onRefresh={load}
+              templateConfig={experiment?.templateConfig}
+              onRefresh={() => load(true)}
             />
           ))}
         </div>
       </div>
+
+      {editVariant && expId && (
+        <VariantEditModal
+          variant={editVariant}
+          experimentId={expId}
+          onClose={() => setEditVariant(null)}
+          onSaved={() => load(true)}
+        />
+      )}
     </div>
   );
 }
@@ -3130,6 +3310,7 @@ function WaMediaTab() {
   const [dragOver, setDragOver] = useState(false);
   const [uploading,setUploading]= useState(false);
   const [mediaId,  setMediaId]  = useState('');
+  const [s3Url,    setS3Url]    = useState('');
   const [copied,   setCopied]   = useState(false);
   const [error,    setError]    = useState('');
   const fileRef = useRef(null);
@@ -3138,7 +3319,7 @@ function WaMediaTab() {
 
   const handleFile = (f) => {
     if (!f) return;
-    setFile(f); setMediaId(''); setError('');
+    setFile(f); setMediaId(''); setS3Url(''); setError('');
   };
 
   const handleDrop = (e) => {
@@ -3155,8 +3336,10 @@ function WaMediaTab() {
       form.append('file', file);
       const r = await wpMarketing.uploadMedia(form);
       const id = r.data?.data?.media_id || r.data?.media_id;
+      const s3Url = r.data?.s3Url || r.data?.data?.s3_url;
       if (!id) throw new Error('No media_id returned from server');
       setMediaId(id);
+      if (s3Url) setS3Url(s3Url);
     } catch (err) {
       setError(err?.response?.data?.error || err.message || 'Upload failed');
     } finally {
@@ -3251,14 +3434,20 @@ function WaMediaTab() {
             <CheckCircle2 className="w-4 h-4" />
             Media uploaded successfully!
           </p>
-          <p className="text-[12.5px] text-gray-600 mb-2">Use this Media ID in messages and template headers:</p>
-          <div className="flex items-center gap-2 bg-white rounded-xl border border-green-200 px-3 py-2.5">
+          <p className="text-[12.5px] text-gray-600 mb-2">Use this Media ID in WhatsApp messages and template headers:</p>
+          <div className="flex items-center gap-2 bg-white rounded-xl border border-green-200 px-3 py-2.5 mb-2">
             <p className="flex-1 text-[13.5px] font-mono text-gray-800 break-all">{mediaId}</p>
             <button onClick={handleCopy} className="flex items-center gap-1.5 text-[12px] font-medium text-gray-500 hover:text-gray-800 transition-colors flex-shrink-0">
               {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? 'Copied!' : 'Copy ID'}
             </button>
           </div>
+          {s3Url && (
+            <div>
+              <p className="text-[12px] text-gray-500 mb-1">Stored in AWS S3:</p>
+              <a href={s3Url} target="_blank" rel="noopener noreferrer" className="text-[12.5px] text-blue-600 hover:underline break-all">{s3Url}</a>
+            </div>
+          )}
         </div>
       )}
 

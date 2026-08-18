@@ -88,6 +88,7 @@ const wpPhaseSchema = new mongoose.Schema({
   daySpread:         { type: Number, default: 6 },
   scheduledDates:    [{ type: Date }],
   status: { type: String, enum: ['pending', 'running', 'completed'], default: 'pending' },
+  approvedAt: { type: Date, default: null },
 }, { _id: false });
 
 const wpVariantMetricsSchema = new mongoose.Schema({
@@ -111,6 +112,8 @@ const wpVariantSchema = new mongoose.Schema({
   cta:                     { type: String, default: '' },
   imageConceptDescription: { type: String, default: '' },
   message:                 { type: String, default: '' },
+  mediaS3Url:              { type: String, default: '' },
+  mediaWaId:               { type: String, default: '' },
   status: {
     type: String,
     enum: ['active', 'top5', 'top3', 'winner', 'eliminated'],
@@ -142,6 +145,13 @@ const wpExperimentSchema = new mongoose.Schema({
       primaryMetric:    { type: String, default: 'conversions' },
       signals:          [{ type: String }],
       progressionLogic: { type: String, default: '' },
+    },
+    templateConfig: {
+      templateId:      { type: String, default: '' },
+      templateName:    { type: String, default: '' },
+      languageCode:    { type: String, default: 'en_US' },
+      hasUrlButton:    { type: Boolean, default: false },
+      destinationUrl:  { type: String, default: 'https://picoso.in' },
     },
   },
   variants:    [wpVariantSchema],

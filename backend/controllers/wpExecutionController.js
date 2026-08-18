@@ -7,6 +7,7 @@
 import { WpExperiment, WpCampaignRun } from '../models/wpMarketingModels.js';
 import * as engine from '../services/wpExecutionEngine.js';
 import * as bot    from '../services/campaignBot.js';
+import { uploadBufferToS3 } from '../utils/s3.js';
 
 /* ── WhatsApp connection & templates ─────────────────────────────────────── */
 
@@ -159,9 +160,21 @@ export const uploadMedia = async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded. Use multipart/form-data with field "file".' });
 
     console.log(`[WP Exec] uploadMedia — file:${req.file.originalname} type:${req.file.mimetype} size:${req.file.size}`);
-    const result = await bot.uploadMedia(req.file.buffer, req.file.mimetype, req.file.originalname);
 
-    res.json({ success: true, ...result });
+    const [s3Result, waResult] = await Promise.all([
+      uploadBufferToS3(req.file.buffer, req.file.mimetype, req.file.originalname),
+      bot.uploadMedia(req.file.buffer, req.file.mimetype, req.file.originalname),
+    ]);
+
+    const media_id = waResult?.data?.media_id;
+
+    res.json({
+      success: true,
+      s3Url:   s3Result.url,
+      s3Key:   s3Result.key,
+      media_id,
+      data:    { media_id, s3_url: s3Result.url },
+    });
   } catch (err) {
     console.error('[WP Exec] uploadMedia error:', err.message);
     res.status(500).json({ error: err.message });
@@ -187,7 +200,9 @@ export const executeRun = async (req, res) => {
     const run = await engine.executePhaseRun(req.params.id, phaseIndex, templateConfig);
     res.json({ success: true, run });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const clientErrors = ['not approved', 'not found', 'already has', 'is required', 'No active', 'empty', 'failed to send'];
+    const status = clientErrors.some((s) => err.message.includes(s)) ? 400 : 500;
+    res.status(status).json({ error: err.message });
   }
 };
 
@@ -219,7 +234,7 @@ export const analyzeRun = async (req, res) => {
  */
 export const advancePhase = async (req, res) => {
   try {
-    const { advancedNums, eliminatedNums, nextCount } = req.body;
+    const { advancedNums, eliminatedNums, nextCount, phaseNumber } = req.body;
 
     const experiment = await WpExperiment.findOne({
       _id: req.params.id,
@@ -232,6 +247,54 @@ export const advancePhase = async (req, res) => {
     res.json({ success: true, experiment: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /wp-marketing/experiments/:id/approve-phase
+ * Body: { phaseNumber }
+ */
+export const approvePhase = async (req, res) => {
+  try {
+    const phaseNumber = parseInt(req.body.phaseNumber || '1', 10);
+    const experiment = await engine.approvePhase(req.params.id, phaseNumber, req.wpClient._id);
+    res.json({ success: true, experiment });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/**
+ * PUT /wp-marketing/experiments/:id/variants/:variantNumber
+ */
+export const updateVariant = async (req, res) => {
+  try {
+    const variantNumber = parseInt(req.params.variantNumber, 10);
+    const variant = await engine.updateVariant(
+      req.params.id,
+      variantNumber,
+      req.body,
+      req.wpClient._id,
+    );
+    res.json({ success: true, variant });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/**
+ * PUT /wp-marketing/experiments/:id/template-config
+ */
+export const saveTemplateConfig = async (req, res) => {
+  try {
+    const experiment = await engine.saveTemplateConfig(
+      req.params.id,
+      req.body,
+      req.wpClient._id,
+    );
+    res.json({ success: true, templateConfig: experiment.plan.templateConfig });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 };
 
