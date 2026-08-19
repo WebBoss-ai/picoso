@@ -1,7 +1,8 @@
 /**
- * Runs on campaignbot.online. Claims queued Picoso templates and fills
- * the Create Template form in this tab. Status is reported to the API
- * so WP Marketing can show progress without opening extra windows.
+ * Fills CampaignBot's "Create New Template" Headless UI modal
+ * (fields: #name, #category, #templateFormat, #languageTrigger,
+ *  #headerType, contenteditable body + #body, #footerType,
+ *  #includeUnsubscribeFooter, Create Template).
  */
 
 const LANG_LABEL = {
@@ -38,14 +39,31 @@ function q(sel) {
   return document.querySelector(sel);
 }
 
+function fire(el, type, extra = {}) {
+  const Ev = type === 'input' ? InputEvent : Event;
+  el.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, ...extra }));
+}
+
 function setNativeValue(el, value) {
   if (!el) return;
+  el.focus();
   const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
   if (setter) setter.call(el, value);
   else el.value = value;
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+  fire(el, 'input', { inputType: 'insertText', data: String(value) });
+  fire(el, 'change');
+  fire(el, 'blur');
+}
+
+function setSelect(el, value) {
+  if (!el) return;
+  const next = String(value);
+  const opt = [...el.options].find((o) => o.value === next);
+  if (opt) opt.selected = true;
+  el.value = next;
+  fire(el, 'input');
+  fire(el, 'change');
 }
 
 async function waitFor(fn, timeout = 25000) {
@@ -53,137 +71,182 @@ async function waitFor(fn, timeout = 25000) {
   while (Date.now() < end) {
     const v = fn();
     if (v) return v;
-    await sleep(200);
+    await sleep(150);
   }
   return null;
 }
 
+function modalRoot() {
+  const title = [...document.querySelectorAll('h3')].find((h) => /Create New Template/i.test(h.textContent || ''));
+  return title?.closest('div.inline-block') || title?.parentElement?.parentElement || null;
+}
+
 function headingCreateVisible() {
-  return [...document.querySelectorAll('h1,h2,h3,h4')].some((h) => /Create New Template/i.test(h.textContent || ''));
+  return !!modalRoot() || [...document.querySelectorAll('h3')].some((h) => /Create New Template/i.test(h.textContent || ''));
+}
+
+function createSubmitBtn() {
+  const root = modalRoot() || document;
+  return [...root.querySelectorAll('button')].find((b) => {
+    const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+    return t === 'Create Template';
+  });
 }
 
 async function openCreateModal() {
-  if (headingCreateVisible()) return;
+  if (headingCreateVisible() && q('#name')) return;
 
   const byTitle = document.querySelector('button[title="Create a new template"]');
   const byText = [...document.querySelectorAll('button')].find((b) =>
     /\bNew Template\b/i.test((b.textContent || '').replace(/\s+/g, ' ').trim())
   );
-  const fallback = [...document.querySelectorAll('button, a')].find((b) =>
-    /create (new )?template/i.test((b.textContent || '').trim())
-  );
-
-  const btn = byTitle || byText || fallback;
+  const btn = byTitle || byText;
   if (!btn) throw new Error('New Template button not found on CampaignBot.');
   if (btn.disabled) throw new Error('New Template is disabled on CampaignBot.');
   btn.click();
 
-  const ok = await waitFor(headingCreateVisible, 20000);
-  if (!ok) throw new Error('Create Template form did not open after clicking New Template.');
+  const ok = await waitFor(() => headingCreateVisible() && q('#name'), 20000);
+  if (!ok) throw new Error('Create New Template modal did not open.');
+  await sleep(300);
 }
 
 async function selectLanguage(code) {
   const trigger = q('#languageTrigger');
   if (!trigger) return;
-  trigger.click();
-  await sleep(250);
+  const shown = (trigger.textContent || '').replace(/\s+/g, ' ');
   const label = LANG_LABEL[code] || 'English (US)';
-  const opt = [...document.querySelectorAll('button, [role="option"], li, div')].find((el) => {
-    const t = (el.textContent || '').trim();
-    return t.includes(label) || (code === 'en_US' && /English \(US\)/i.test(t));
+  if (shown.includes(label) || shown.includes(`(${code})`)) return;
+
+  trigger.click();
+  await sleep(300);
+  const opt = [...document.querySelectorAll('[role="option"], li, button, div')].find((el) => {
+    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    return t.includes(label) && t.length < 80;
   });
   if (opt) opt.click();
   await sleep(200);
 }
 
 async function fillBody(body) {
+  const text = body || '';
   const editor = document.querySelector('[contenteditable="true"]');
   if (editor) {
     editor.focus();
     document.execCommand('selectAll', false, null);
-    document.execCommand('insertText', false, body || '');
+    const ok = document.execCommand('insertText', false, text);
+    if (!ok) {
+      editor.textContent = text;
+    }
+    fire(editor, 'input', { inputType: 'insertText', data: text });
+    fire(editor, 'change');
   }
   const hidden = q('#body');
-  if (hidden) {
-    hidden.value = body || '';
-    hidden.dispatchEvent(new Event('input', { bubbles: true }));
-    hidden.dispatchEvent(new Event('change', { bubbles: true }));
-  }
+  if (hidden) setNativeValue(hidden, text);
+  await sleep(150);
 }
 
-function fillByLabel(re, value) {
-  if (!value) return;
-  const labels = [...document.querySelectorAll('label')];
-  const lab = labels.find((l) => re.test(l.textContent || ''));
-  if (!lab) return;
+function fillInputNearLabel(re, value) {
+  if (!value) return false;
+  const labels = [...(modalRoot() || document).querySelectorAll('label')];
+  const lab = labels.find((l) => re.test((l.textContent || '').replace(/\s+/g, ' ')));
+  if (!lab) return false;
   const id = lab.getAttribute('for');
-  const input = (id && document.getElementById(id)) || lab.parentElement?.querySelector('input, textarea');
-  if (input) setNativeValue(input, value);
+  const input = (id && document.getElementById(id))
+    || lab.parentElement?.querySelector('input, textarea, select')
+    || lab.nextElementSibling?.querySelector?.('input, textarea, select');
+  if (!input) return false;
+  if (input.tagName === 'SELECT') setSelect(input, value);
+  else setNativeValue(input, value);
+  return true;
 }
 
 async function submitTemplate() {
-  const btns = [...document.querySelectorAll('button')];
-  const submit = [...btns].reverse().find((b) => /^Create Template$/i.test((b.textContent || '').trim()));
-  if (!submit) throw new Error('Create Template button not found');
-  for (let i = 0; i < 20; i++) {
-    if (!submit.disabled) break;
-    await sleep(250);
+  const submit = await waitFor(() => {
+    const b = createSubmitBtn();
+    return b && !b.disabled ? b : null;
+  }, 8000);
+  if (!submit) {
+    const stuck = createSubmitBtn();
+    throw new Error(stuck?.disabled
+      ? 'Create Template stayed disabled — name, body, or marketing unsubscribe is missing'
+      : 'Create Template button not found in the modal');
   }
-  if (submit.disabled) throw new Error('Create Template stayed disabled — a required field is empty');
   submit.click();
   const closed = await waitFor(() => !headingCreateVisible(), 30000);
   if (!closed) {
-    const err = document.querySelector('.text-red-600, .text-red-500, [class*="error"]');
-    throw new Error(err?.innerText || 'CampaignBot did not accept the template');
+    const err = (modalRoot() || document).querySelector('.text-red-600, .text-red-500, [class*="error"]');
+    throw new Error((err?.innerText || '').trim() || 'Modal stayed open — CampaignBot may have rejected the template');
   }
+}
+
+function closeModal() {
+  const close = document.querySelector('button[aria-label="Close modal"]');
+  if (close) {
+    close.click();
+    return;
+  }
+  const cancel = [...document.querySelectorAll('button')].find((b) => /^\s*Cancel\s*$/i.test(b.textContent || ''));
+  cancel?.click();
 }
 
 async function fillAndSubmit(variant) {
   await openCreateModal();
+
   const name = String(variant.templateName || `picoso_var_${variant.variantNumber || Date.now()}`)
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, '_')
     .slice(0, 512);
 
   const nameEl = q('#name');
-  if (!nameEl) throw new Error('Template name field (#name) not found');
+  if (!nameEl) throw new Error('Template Name (#name) not found');
   setNativeValue(nameEl, name);
 
-  const cat = q('#category');
-  if (cat) {
-    cat.value = variant.category || 'MARKETING';
-    cat.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
+  const category = variant.category || 'MARKETING';
+  setSelect(q('#category'), category);
+  setSelect(q('#templateFormat'), 'STANDARD');
   await selectLanguage(variant.language || 'en_US');
 
-  const headerType = variant.headerType || 'NONE';
-  const ht = q('#headerType');
-  if (ht) {
-    ht.value = headerType;
-    ht.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(250);
+  let headerType = variant.headerType || 'NONE';
+  if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) headerType = 'NONE';
+  setSelect(q('#headerType'), headerType);
+  await sleep(250);
+  if (headerType === 'TEXT' && variant.headerText) {
+    fillInputNearLabel(/Header Text/i, variant.headerText);
   }
-  if (headerType === 'TEXT') fillByLabel(/header text/i, variant.headerText);
 
   await fillBody(variant.body || variant.message || '');
 
   const footerType = variant.footerType || 'BUTTONS';
-  const ft = q('#footerType');
-  if (ft) {
-    ft.value = footerType;
-    ft.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(350);
-  }
-  if (footerType === 'TEXT') fillByLabel(/footer text/i, variant.footerText);
-  if (footerType === 'BUTTONS') {
-    const btn = (variant.buttons && variant.buttons[0]) || { type: 'URL', text: variant.cta || 'Order Now', url: 'https://picoso.in' };
-    fillByLabel(/button text/i, btn.text);
-    fillByLabel(/^(url|website|link)/i, btn.url || 'https://picoso.in');
-    const urlInput = document.querySelector('input[placeholder*="http"], input[placeholder*="URL"], input[placeholder*="url"]');
-    if (urlInput) setNativeValue(urlInput, btn.url || 'https://picoso.in');
+  setSelect(q('#footerType'), footerType);
+  await sleep(400);
+
+  if (footerType === 'TEXT' && variant.footerText) {
+    fillInputNearLabel(/Footer Text/i, variant.footerText);
   }
 
+  if (footerType === 'BUTTONS') {
+    const btn = (variant.buttons && variant.buttons[0]) || {
+      type: 'URL',
+      text: variant.cta || 'Order Now',
+      url: 'https://picoso.in',
+    };
+    await waitFor(() => {
+      const labels = [...(modalRoot() || document).querySelectorAll('label')];
+      return labels.some((l) => /button text/i.test(l.textContent || ''));
+    }, 4000);
+    fillInputNearLabel(/Button Text/i, btn.text);
+    fillInputNearLabel(/\bURL\b/i, btn.url || 'https://picoso.in');
+    const urlInput = (modalRoot() || document).querySelector('input[placeholder*="http"], input[placeholder*="URL"], input[placeholder*="url"]');
+    if (urlInput && btn.url) setNativeValue(urlInput, btn.url || 'https://picoso.in');
+  }
+
+  const unsub = q('#includeUnsubscribeFooter');
+  if (unsub && category === 'MARKETING' && !unsub.checked) {
+    unsub.click();
+    await sleep(150);
+  }
+
+  await sleep(200);
   await submitTemplate();
   return name;
 }
@@ -209,9 +272,8 @@ async function loop() {
         method: 'POST',
         body: { ok: false, error: err.message || String(err) },
       });
-      const closeBtn = [...document.querySelectorAll('button')].find((b) => /close modal|^cancel$/i.test(b.textContent || '') || b.getAttribute('aria-label') === 'Close modal');
-      closeBtn?.click();
-      await sleep(400);
+      closeModal();
+      await sleep(500);
     }
   } catch {
     /* no pin yet, or network */
