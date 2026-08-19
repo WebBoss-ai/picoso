@@ -867,7 +867,15 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
             {tpl.headerType === 'TEXT' && (
               <div>
                 <label className={label}>Header text</label>
-                <input disabled={readOnly} maxLength={60} value={tpl.headerText || ''} onChange={(e) => set('headerText', e.target.value)} className={field} placeholder="e.g. Today only" />
+                <input
+                  disabled={readOnly}
+                  maxLength={60}
+                  value={tpl.headerText || ''}
+                  onChange={(e) => set('headerText', e.target.value.replace(/[\u2014\u2013]/g, '-').replace(/[^A-Za-z0-9 .,'!?-]/g, ''))}
+                  className={field}
+                  placeholder="e.g. Today only"
+                />
+                <p className="mt-1 text-[11px] text-zinc-400">Letters and numbers only. No emoji or special characters.</p>
               </div>
             )}
           </div>

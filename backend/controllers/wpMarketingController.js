@@ -181,10 +181,29 @@ const COPY_ANGLES = [
 ];
 
 function stripEmoji(s) {
+  return sanitiseCopy(s);
+}
+
+function sanitiseCopy(s) {
   return String(s || '')
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/[\u2014\u2013\u2212\u2010]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function sanitiseHeader(s) {
+  const cleaned = sanitiseCopy(s)
+    .replace(/\{\{.*?\}\}/g, '')
+    .replace(/[*_~`{}[\]<>#@|$%^&+=\\/]/g, '')
+    .replace(/[^A-Za-z0-9 .,'!?-]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 60);
+  return cleaned;
 }
 
 function slugifyTemplateName(raw, i) {
@@ -198,49 +217,57 @@ function slugifyTemplateName(raw, i) {
 
 function normaliseVariantTemplate(v, i) {
   const label = v.label || `Variant ${VARIANT_LABELS[i]}`;
-  const cta   = (v.cta || 'Order Now').slice(0, 25);
-  let body    = stripEmoji(v.body || v.message || '');
+  const cta   = sanitiseCopy(v.cta || 'Order Now').slice(0, 25);
+  let body    = sanitiseCopy(v.body || v.message || '');
   body = body.replace(/\{\{name\}\}/gi, '{{1}}');
   if (!/\{\{1\}\}/.test(body) && body) {
-    body = `Hey *{{1}}*! ${body}`;
+    body = `Hey {{1}}! ${body}`;
   }
   const buttons = Array.isArray(v.buttons) && v.buttons.length
     ? v.buttons.slice(0, 2).map((b) => ({
         type: ['URL', 'QUICK_REPLY', 'PHONE'].includes(b.type) ? b.type : 'URL',
-        text: (b.text || cta).slice(0, 25),
+        text: sanitiseCopy(b.text || cta).slice(0, 25),
         url:  b.url || 'https://picoso.in',
         phone: b.phone || '',
       }))
     : [{ type: 'URL', text: cta, url: 'https://picoso.in' }];
 
-  const headerType = ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'].includes(v.headerType)
+  let headerText = sanitiseHeader(v.headerText || '');
+  let headerType = ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'].includes(v.headerType)
     ? v.headerType
-    : (v.headerText ? 'TEXT' : 'NONE');
+    : (headerText ? 'TEXT' : 'NONE');
+  if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) headerType = 'NONE';
+  if (headerType === 'TEXT' && !headerText) headerType = 'NONE';
+
   const footerType = ['NONE', 'TEXT', 'BUTTONS'].includes(v.footerType)
     ? v.footerType
     : 'BUTTONS';
-  const category = ['MARKETING', 'UTILITY', 'AUTHENTICATION'].includes(v.category)
-    ? v.category
-    : 'MARKETING';
+
+  const category = i < 7 ? 'UTILITY' : 'MARKETING';
+
+  const maxVar = [...body.matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
+  const variableExamples = { 1: 'Rahul' };
+  if (maxVar >= 2) variableExamples[2] = sanitiseCopy(v.offer || 'your order').slice(0, 40) || 'your order';
 
   return {
     variantNumber: v.variantNumber || (i + 1),
-    label: stripEmoji(label),
-    copyAngle: stripEmoji(v.copyAngle || COPY_ANGLES[i]),
-    tone: stripEmoji(v.tone || ''),
-    offer: stripEmoji(v.offer || ''),
-    cta: stripEmoji(cta),
-    imageConceptDescription: stripEmoji(v.imageConceptDescription || ''),
+    label: sanitiseCopy(label),
+    copyAngle: sanitiseCopy(v.copyAngle || COPY_ANGLES[i]),
+    tone: sanitiseCopy(v.tone || ''),
+    offer: sanitiseCopy(v.offer || ''),
+    cta,
+    imageConceptDescription: sanitiseCopy(v.imageConceptDescription || ''),
     message: body,
     templateName: slugifyTemplateName(v.templateName || `picoso_${label}_${i + 1}`, i),
     category,
     language: v.language || 'en_US',
     headerType,
-    headerText: stripEmoji(v.headerText || '').slice(0, 60),
+    headerText,
     body,
     footerType,
-    footerText: stripEmoji(v.footerText || '').slice(0, 60),
+    footerText: sanitiseHeader(v.footerText || '').slice(0, 60),
     buttons,
+    variableExamples,
     status: 'active',
     waPublishStatus: 'queued',
   };
@@ -282,30 +309,31 @@ export const generatePlan = async (req, res) => {
 
 STRICT RULES:
 - Exactly 10 variants, labels "Variant A" through "Variant J"
-- Each variant is a complete WhatsApp message TEMPLATE (not a free-form note)
-- Follow the official WhatsApp template structure exactly: templateName, category, language, header, body, footer/buttons
-- templateName: lowercase snake_case, letters/numbers/underscores only, unique, e.g. picoso_urgency_offer_01
-- category: always MARKETING unless the copy is clearly transactional (then UTILITY)
+- Each variant is a complete WhatsApp message TEMPLATE
+- Follow WhatsApp template structure: templateName, category, language, header, body, footer/buttons
+- templateName: lowercase snake_case, letters numbers underscores only, unique
+- Categories (required mix): Variants A-G (1-7) MUST be UTILITY. Variants H-J (8-10) MUST be MARKETING. Do not mix this.
 - language: always en_US
-- headerType: NONE or TEXT (TEXT header max 60 chars, no variables unless needed)
+- headerType: NONE or TEXT. TEXT header max 60 chars. Letters, numbers, spaces, and basic punctuation only. No emojis, no variables, no asterisks, no em dash, no special symbols.
 - body: 2-4 short sentences, conversational WhatsApp tone
-- Do not use emojis anywhere — no emoji characters in title, body, header, offer, or CTA
-- Body variables MUST use positional {{1}}, {{2}} — never {{name}}
+- No emojis anywhere
+- No em dash (use a hyphen or a comma instead)
+- Body variables MUST use positional {{1}} and optionally {{2}}. Never {{name}}. Never wrap variables in extra markup; write {{1}} only.
 - {{1}} is ALWAYS the customer first name
 - Do not use more than 2 body variables
-- footerType: BUTTONS with exactly one URL button whose text is the CTA (e.g. Order Now)
-- Each variant uses a genuinely different psychological/creative angle — NOT just rewording
+- footerType: BUTTONS with exactly one URL button whose text is the CTA
+- Each variant uses a genuinely different psychological/creative angle
 - Return ONLY valid JSON with no markdown fences, no text outside the JSON object
 
 JSON schema to return:
 {
   "experimentTitle": "concise descriptive title",
   "objective": "one sentence campaign objective",
-  "reasoning": "2-3 sentences on the experiment strategy and why 10 variants covers the angle space",
+  "reasoning": "2-3 sentences on the experiment strategy",
   "optimizationCriteria": {
     "primaryMetric": "conversions",
     "signals": ["delivery_rate","read_rate","link_click_rate","unique_clicks","repeat_clicks","replies","conversions","revenue"],
-    "progressionLogic": "explain exactly how 10→5→3→1 will be decided using these signals in this context"
+    "progressionLogic": "explain how 10 to 5 to 3 to 1 will be decided"
   },
   "trackingExplanation": "1-2 sentences on unique per-customer tracking links",
   "variants": [
@@ -313,16 +341,16 @@ JSON schema to return:
       "variantNumber": 1,
       "label": "Variant A",
       "copyAngle": "Urgency + Time-Limited Offer",
-      "tone": "Urgent & Direct",
+      "tone": "Urgent and Direct",
       "offer": "specific offer text shown in this variant",
       "cta": "Order Now",
-      "imageConceptDescription": "detailed description of the visual/creative for this variant",
-      "templateName": "picoso_urgency_offer_01",
-      "category": "MARKETING",
+      "imageConceptDescription": "visual for this variant",
+      "templateName": "picoso_order_update_01",
+      "category": "UTILITY",
       "language": "en_US",
       "headerType": "TEXT",
-      "headerText": "24 hours only",
-      "body": "Hey *{{1}}*! Don't miss this — 50 percent off your next bowl, today only.",
+      "headerText": "Order update",
+      "body": "Hey {{1}}! Your next bowl is ready to order. Tap below to continue.",
       "footerType": "BUTTONS",
       "footerText": "",
       "buttons": [{ "type": "URL", "text": "Order Now", "url": "https://picoso.in" }]
@@ -331,16 +359,16 @@ JSON schema to return:
 }
 
 Use these 10 copy angles in order (adapt each to the actual context):
-A - Urgency + Time-Limited Offer
-B - Personal Recognition + Gratitude
-C - Exclusive Member Benefit
-D - Social Proof + Community
-E - Curiosity + Intrigue
-F - Clear Benefit-Led
-G - Emotional + Nostalgia
-H - Casual + Friendly (sounds like a friend, not a brand)
-I - Direct + No-Nonsense (pure value, zero fluff)
-J - FOMO + Scarcity`;
+A - Urgency + Time-Limited Offer (UTILITY)
+B - Personal Recognition + Gratitude (UTILITY)
+C - Exclusive Member Benefit (UTILITY)
+D - Social Proof + Community (UTILITY)
+E - Curiosity + Intrigue (UTILITY)
+F - Clear Benefit-Led (UTILITY)
+G - Emotional + Nostalgia (UTILITY)
+H - Casual + Friendly (MARKETING)
+I - Direct + No-Nonsense (MARKETING)
+J - FOMO + Scarcity (MARKETING)`;
 
     const userMessage = `Business: ${req.wpClient.workspace?.businessName || req.wpClient.name} (${req.wpClient.workspace?.businessType || req.wpClient.workspace?.industry || 'business'})
 

@@ -127,22 +127,85 @@ async function selectLanguage(code) {
   await sleep(200);
 }
 
+function addVariableButton() {
+  const root = modalRoot() || document;
+  return [...root.querySelectorAll('button')].find((b) => /^\s*Add Variable\s*$/i.test((b.textContent || '').replace(/\s+/g, ' ').trim()));
+}
+
+function addExampleButton() {
+  const root = modalRoot() || document;
+  return [...root.querySelectorAll('button')].find((b) =>
+    /\+\s*Add Example|Add Example/i.test((b.textContent || '').replace(/\s+/g, ' ').trim())
+  );
+}
+
+function exampleInputFor(n) {
+  const root = modalRoot() || document;
+  const byPh = [...root.querySelectorAll('input, textarea')].find((el) =>
+    new RegExp(`example value for variable\\s*${n}|variable\\s*${n}`, 'i').test(el.placeholder || '')
+  );
+  if (byPh) return byPh;
+
+  const varsHint = [...root.querySelectorAll('p, h4, label')].find((el) =>
+    /^\s*Variables:?\s*$/i.test((el.textContent || '').replace(/\s+/g, ' ').trim())
+    || /Variable\s*1\s*Examples/i.test(el.textContent || '')
+  );
+  const section = varsHint?.closest('.border-t') || varsHint?.closest('div')?.parentElement || varsHint?.parentElement;
+  const exampleInputs = [...(section || root).querySelectorAll('input')].filter((el) => {
+    if (el.type === 'checkbox' || el.id === 'name') return false;
+    const ph = el.placeholder || '';
+    return /example/i.test(ph) || /variable/i.test(ph) || (!ph && el.offsetParent);
+  });
+  const byExamplePh = exampleInputs.filter((el) => /example/i.test(el.placeholder || ''));
+  if (byExamplePh[n - 1]) return byExamplePh[n - 1];
+  return exampleInputs[n - 1] || null;
+}
+
+async function fillVariableExamples(body, examples = {}) {
+  const max = [...String(body || '').matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
+  if (!max) return;
+
+  let appeared = await waitFor(() => /Variable\s*1\s*Examples/i.test((modalRoot() || document).innerText || ''), 4000);
+  if (!appeared) {
+    addVariableButton()?.click();
+    await sleep(400);
+    appeared = await waitFor(() => /Variable\s*1\s*Examples/i.test((modalRoot() || document).innerText || ''), 4000);
+  }
+
+  for (let n = 1; n <= max; n++) {
+    let input = exampleInputFor(n);
+    if (!input) {
+      addExampleButton()?.click();
+      await sleep(300);
+      input = await waitFor(() => exampleInputFor(n), 3000);
+    }
+    const value = examples[n] || examples[String(n)] || (n === 1 ? 'Rahul' : 'your order');
+    if (input) setNativeValue(input, String(value).slice(0, 60));
+  }
+
+  const leftovers = [...(modalRoot() || document).querySelectorAll('input')].filter((el) =>
+    /example value for variable/i.test(el.placeholder || '') && !el.value
+  );
+  leftovers.forEach((el, i) => {
+    const n = i + 1;
+    setNativeValue(el, examples[n] || examples[String(n)] || (n === 1 ? 'Rahul' : 'your order'));
+  });
+}
+
 async function fillBody(body) {
   const text = body || '';
-  const editor = document.querySelector('[contenteditable="true"]');
+  const editor = (modalRoot() || document).querySelector('[contenteditable="true"]');
   if (editor) {
     editor.focus();
     document.execCommand('selectAll', false, null);
     const ok = document.execCommand('insertText', false, text);
-    if (!ok) {
-      editor.textContent = text;
-    }
+    if (!ok) editor.textContent = text;
     fire(editor, 'input', { inputType: 'insertText', data: text });
     fire(editor, 'change');
   }
   const hidden = q('#body');
   if (hidden) setNativeValue(hidden, text);
-  await sleep(150);
+  await sleep(250);
 }
 
 function fillInputNearLabel(re, value) {
@@ -211,10 +274,21 @@ async function fillAndSubmit(variant) {
   setSelect(q('#headerType'), headerType);
   await sleep(250);
   if (headerType === 'TEXT' && variant.headerText) {
-    fillInputNearLabel(/Header Text/i, variant.headerText);
+    const header = String(variant.headerText)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[^A-Za-z0-9 .,'!?-]/g, '')
+      .slice(0, 60);
+    fillInputNearLabel(/Header Text/i, header);
+    const headerInput = [...(modalRoot() || document).querySelectorAll('input')].find((el) => {
+      const lab = el.closest('div')?.querySelector('label');
+      return /Header Text/i.test(lab?.textContent || '');
+    });
+    if (headerInput && header) setNativeValue(headerInput, header);
   }
 
-  await fillBody(variant.body || variant.message || '');
+  const body = variant.body || variant.message || '';
+  await fillBody(body);
+  await fillVariableExamples(body, variant.variableExamples || { 1: 'Rahul' });
 
   const footerType = variant.footerType || 'BUTTONS';
   setSelect(q('#footerType'), footerType);
@@ -242,6 +316,10 @@ async function fillAndSubmit(variant) {
 
   const unsub = q('#includeUnsubscribeFooter');
   if (unsub && category === 'MARKETING' && !unsub.checked) {
+    unsub.click();
+    await sleep(150);
+  }
+  if (unsub && category !== 'MARKETING' && unsub.checked) {
     unsub.click();
     await sleep(150);
   }

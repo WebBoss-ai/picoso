@@ -131,6 +131,7 @@ const wpVariantSchema = new mongoose.Schema({
   footerType:              { type: String, enum: ['NONE', 'TEXT', 'BUTTONS'], default: 'NONE' },
   footerText:              { type: String, default: '' },
   buttons:                 [wpVariantButtonSchema],
+  variableExamples:        { type: mongoose.Schema.Types.Mixed, default: () => ({ 1: 'Rahul' }) },
   mediaS3Url:              { type: String, default: '' },
   mediaWaId:               { type: String, default: '' },
   scheduledSendTime:       { type: String, default: '10:00' }, // HH:mm, editable per variant
