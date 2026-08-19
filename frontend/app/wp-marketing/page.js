@@ -961,7 +961,7 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
   );
 }
 
-function CampaignBotAuthPanel() {
+function CampaignBotAuthPanel({ force = false }) {
   const [auth, setAuth] = useState({ phase: 'idle' });
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -970,70 +970,92 @@ function CampaignBotAuthPanel() {
 
   useEffect(() => {
     const tick = () => {
-      wpMarketing.getCbAuth().then((r) => setAuth(r.data || {})).catch(() => {});
+      wpMarketing.getCbAuth()
+        .then((r) => {
+          const d = r.data || {};
+          setAuth(d.phase ? d : (d.data || {}));
+        })
+        .catch(() => {});
     };
     tick();
     const t = setInterval(tick, 1500);
     return () => clearInterval(t);
   }, []);
 
-  if (!['launching', 'phone', 'otp', 'error'].includes(auth.phase)) return null;
+  const phase = (force && (!auth.phase || auth.phase === 'idle' || auth.phase === 'ready'))
+    ? 'phone'
+    : (auth.phase || 'idle');
+
+  if (!force && !['launching', 'phone', 'otp', 'error'].includes(auth.phase)) return null;
 
   const sendPhone = async () => {
     setBusy(true); setErr('');
-    try { await wpMarketing.submitCbPhone(phone); }
-    catch (e) { setErr(e?.response?.data?.error || 'Could not submit number'); }
+    try {
+      const r = await wpMarketing.submitCbPhone(phone);
+      const d = r.data || {};
+      setAuth(d.phase ? d : { ...auth, phase: 'phone', message: 'Sending OTP on CampaignBot' });
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not submit number'); }
     setBusy(false);
   };
 
   const sendOtp = async () => {
     setBusy(true); setErr('');
-    try { await wpMarketing.submitCbOtp(otp); }
-    catch (e) { setErr(e?.response?.data?.error || 'Could not submit OTP'); }
+    try {
+      const r = await wpMarketing.submitCbOtp(otp);
+      const d = r.data || {};
+      setAuth(d.phase ? d : { ...auth, phase: 'otp', message: 'Verifying OTP' });
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not submit OTP'); }
     setBusy(false);
   };
 
   return (
-    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-5 space-y-3">
-      <p className="text-[14px] font-semibold text-slate-900">CampaignBot sign-in</p>
-      <p className="text-[13px] text-slate-600">{auth.message || 'Connecting'}</p>
-      {auth.phase === 'launching' && (
+    <div className="rounded-2xl border border-blue-200 bg-white p-5 space-y-4">
+      <div>
+        <p className="text-[14px] font-semibold text-slate-900">CampaignBot sign-in</p>
+        <p className="text-[13px] text-slate-500 mt-1">
+          {auth.message || 'Enter the CampaignBot mobile number, then the OTP on this page. Templates start as soon as login succeeds.'}
+        </p>
+        <p className="text-[12px] text-blue-700 mt-2">
+          {auth.phase === 'otp' ? 'Server is waiting for the OTP.'
+            : auth.phase === 'phone' ? 'Server is waiting for the mobile number.'
+            : auth.phase === 'ready' ? 'Signed in. Creating templates.'
+            : auth.phase === 'error' ? 'Login failed — send the number and OTP again, then Retry login.'
+            : 'Keep this page open. Send the number, then the OTP.'}
+        </p>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+          placeholder="10-digit mobile"
+          className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white focus:outline-none focus:border-blue-400"
+        />
+        <button
+          onClick={sendPhone}
+          disabled={busy || phone.length !== 10}
+          className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
+        >
+          {busy && auth.phase !== 'otp' ? 'Sending' : 'Send OTP'}
+        </button>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          value={otp}
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
+          placeholder="OTP"
+          className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white tracking-[0.2em] focus:outline-none focus:border-blue-400"
+        />
+        <button
+          onClick={sendOtp}
+          disabled={busy || otp.length < 4}
+          className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
+        >
+          {busy && (auth.phase === 'otp' || otp.length >= 4) ? 'Verifying' : 'Verify OTP'}
+        </button>
+      </div>
+      {phase === 'launching' && (
         <div className="flex items-center gap-2 text-[13px] text-slate-500">
-          <Loader2 className="w-4 h-4 animate-spin" /> Opening CampaignBot on the server
-        </div>
-      )}
-      {auth.phase === 'phone' && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-            placeholder="10-digit mobile"
-            className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white focus:outline-none focus:border-blue-400"
-          />
-          <button
-            onClick={sendPhone}
-            disabled={busy || phone.length !== 10}
-            className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
-          >
-            {busy ? 'Sending' : 'Send OTP'}
-          </button>
-        </div>
-      )}
-      {auth.phase === 'otp' && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
-            placeholder="OTP"
-            className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white tracking-[0.2em] focus:outline-none focus:border-blue-400"
-          />
-          <button
-            onClick={sendOtp}
-            disabled={busy || otp.length < 4}
-            className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
-          >
-            {busy ? 'Verifying' : 'Verify'}
-          </button>
+          <Loader2 className="w-4 h-4 animate-spin" /> Waiting for CampaignBot
         </div>
       )}
       {err && <p className="text-[12.5px] text-slate-700">{err}</p>}
@@ -1116,7 +1138,6 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
 
   return (
     <div className="space-y-4">
-      <CampaignBotAuthPanel />
       {/* Approval banner */}
       {!approved ? (
         <div className="flex items-start gap-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
@@ -1267,20 +1288,23 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
             )}
             <button
               onClick={handlePublish}
-              disabled={publishing || anyPublishing}
+              disabled={publishing && !anyPublishing}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 text-white text-[12.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-[0_4px_14px_rgba(37,99,235,0.25)]"
             >
               {(publishing || anyPublishing) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-              {(publishing || anyPublishing) ? 'Creating…' : failedCount ? 'Retry failed' : 'Create templates'}
+              {(publishing || anyPublishing) ? 'Retry login' : failedCount ? 'Retry failed' : 'Create templates'}
             </button>
           </div>
         </div>
 
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/80 space-y-3">
+          {(anyPublishing || queuedCount > 0 || publishing) && (
+            <CampaignBotAuthPanel force />
+          )}
           <div className="flex items-center justify-between gap-3">
             <p className="text-[13px] text-slate-600">
               {anyPublishing || queuedCount
-                ? 'Creating templates on the server. If CampaignBot asks for a login, enter the number and OTP in the card above. Stay on this page.'
+                ? 'Enter the CampaignBot number and OTP in the sign-in card above, then stay on this page. Templates start as soon as login succeeds.'
                 : publishedCount === (variants || []).length && (variants || []).length
                   ? 'All templates are live on CampaignBot.'
                   : 'Templates are created automatically after generation. Progress appears below.'}

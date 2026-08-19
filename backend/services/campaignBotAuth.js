@@ -34,8 +34,8 @@ export function resetCbAuth() {
   state.phase = 'idle';
   state.message = '';
   state.experimentId = null;
-  pendingPhone = null;
-  pendingOtp = null;
+  // Keep pending phone/OTP so values already submitted on the WP Marketing page
+  // are not lost if the publish job restarts.
 }
 
 export function submitCbPhone(raw) {
@@ -43,6 +43,7 @@ export function submitCbPhone(raw) {
   if (phone.length !== 10) throw new Error('Enter a valid 10-digit mobile number');
   pendingPhone = phone;
   state.phoneHint = phone;
+  state.phase = state.phase === 'otp' ? 'otp' : 'phone';
   state.message = 'Sending OTP on CampaignBot';
 }
 
@@ -50,6 +51,7 @@ export function submitCbOtp(raw) {
   const otp = String(raw || '').replace(/\D/g, '');
   if (otp.length < 4) throw new Error('Enter the OTP sent to your CampaignBot number');
   pendingOtp = otp;
+  state.phase = 'otp';
   state.message = 'Verifying OTP';
 }
 

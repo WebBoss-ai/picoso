@@ -112,24 +112,80 @@ async function launchBrowser() {
   throw lastErr;
 }
 
-async function isLoggedIn(page) {
-  const text = await page.locator('body').innerText().catch(() => '');
-  if (LOGIN_RE.test(text)) return false;
+async function hasTemplatesUi(page) {
+  if (await page.locator('button[title="Create a new template"]').first().isVisible().catch(() => false)) return true;
+  if (await page.getByRole('button', { name: /^\s*New Template\s*$/i }).first().isVisible().catch(() => false)) return true;
   if (await page.getByRole('heading', { name: /Create New Template/i }).isVisible().catch(() => false)) return true;
-  if (await page.getByRole('button', { name: /new template/i }).count()) return true;
-  if (await page.locator('button[title="Create a new template"]').count()) return true;
-  if (await page.locator('#name').isVisible().catch(() => false)) return true;
-  const url = page.url();
-  return url.includes('campaignbot.online') && !/signup|login|auth/i.test(url) && text.length > 80;
+  return false;
+}
+
+async function pageLooksLikeLogin(page) {
+  const text = await page.locator('body').innerText().catch(() => '');
+  if (LOGIN_RE.test(text)) return true;
+  if (/Start with Mobile Number|Business Sign Up|ONLY 3 STEPS/i.test(text)) return true;
+  if (await page.locator('input[type="tel"]').first().isVisible().catch(() => false)) return true;
+  return false;
+}
+
+async function isLoggedIn(page) {
+  if (await pageLooksLikeOtp(page) || await pageLooksLikeLogin(page)) return false;
+  return hasTemplatesUi(page);
+}
+
+async function waitForLoginOrApp(page) {
+  const end = Date.now() + 25000;
+  while (Date.now() < end) {
+    if (await hasTemplatesUi(page) && !(await pageLooksLikeLogin(page)) && !(await pageLooksLikeOtp(page))) {
+      return 'app';
+    }
+    if (await pageLooksLikeOtp(page)) return 'otp';
+    if (await pageLooksLikeLogin(page)) return 'login';
+    await sleep(400);
+  }
+  return 'login';
 }
 
 async function fillLoginPhone(page, phone) {
-  const input = page.locator('input[type="tel"], input[placeholder*="obile" i], input[placeholder*="phone" i], input[name*="phone" i], input[id*="phone" i]').first();
-  await input.waitFor({ state: 'visible', timeout: 15000 });
+  const startBtn = page.getByRole('button', { name: /start with mobile|mobile number|get started/i }).first();
+  if (await startBtn.isVisible().catch(() => false)) {
+    await startBtn.click();
+    await sleep(600);
+  } else {
+    const startText = page.getByText(/Start with Mobile Number/i).first();
+    if (await startText.isVisible().catch(() => false)) {
+      await startText.click();
+      await sleep(600);
+    }
+  }
+
+  const candidates = [
+    page.locator('input[type="tel"]'),
+    page.locator('input[placeholder*="obile" i]'),
+    page.locator('input[placeholder*="phone" i]'),
+    page.locator('input[placeholder*="number" i]'),
+    page.locator('input[name*="phone" i]'),
+    page.locator('input[id*="phone" i]'),
+    page.locator('input[inputmode="numeric"]'),
+    page.locator('input[type="text"]'),
+  ];
+  let input = null;
+  const findEnd = Date.now() + 20000;
+  while (Date.now() < findEnd && !input) {
+    for (const loc of candidates) {
+      if (await loc.first().isVisible().catch(() => false)) {
+        input = loc.first();
+        break;
+      }
+    }
+    if (!input) await sleep(400);
+  }
+  if (!input) throw new Error('Could not find the CampaignBot mobile number field');
+  await input.click();
   await input.fill('');
   await input.fill(phone);
-  const send = page.getByRole('button', { name: /otp|continue|start|send|next|submit/i }).first();
-  if (await send.count()) await send.click();
+  await sleep(300);
+  const send = page.getByRole('button', { name: /otp|continue|start|send|next|submit|get started/i }).first();
+  if (await send.isVisible().catch(() => false)) await send.click();
   else await input.press('Enter');
 }
 
@@ -159,65 +215,73 @@ async function ensureLoggedIn(page, experimentId) {
   cbAuth.setCbAuth({
     phase: 'launching',
     experimentId: experimentId || null,
-    message: 'Opening CampaignBot',
+    message: 'Opening CampaignBot — enter the number and OTP in the sign-in card on this page.',
   });
 
-  if (!page.url().includes('campaignbot.online')) {
-    await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  } else if (!page.url().includes('/templates')) {
-    await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  }
+  await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await sleep(1200);
 
-  if (await isLoggedIn(page)) {
+  const screen = await waitForLoginOrApp(page);
+  if (screen === 'app' && await isLoggedIn(page)) {
     cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session ready' });
     return;
   }
 
-  if (await pageLooksLikeOtp(page)) {
+  if (screen === 'otp' || await pageLooksLikeOtp(page)) {
     cbAuth.setCbAuth({
       phase: 'otp',
-      message: 'Enter the OTP sent to your CampaignBot number. Stay on this page.',
+      message: 'Enter the OTP sent to your CampaignBot number in the card on this page.',
     });
     const otp = await cbAuth.waitForOtp();
-    if (!otp) throw new Error('OTP was not entered in time. Retry template creation and enter the OTP here.');
+    if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
     await fillLoginOtp(page, otp);
   } else {
     cbAuth.setCbAuth({
       phase: 'phone',
-      message: 'Enter the CampaignBot mobile number. OTP will be requested from this page, not campaignbot.online.',
+      message: 'Enter the CampaignBot mobile number in the card on this page, then Send OTP.',
     });
     const phone = await cbAuth.waitForPhone();
-    if (!phone) throw new Error('CampaignBot number was not entered in time. Retry and enter the number here.');
+    if (!phone) throw new Error('CampaignBot number was not entered in time. Enter it in the sign-in card and retry.');
     await fillLoginPhone(page, phone);
-    await sleep(800);
+    const otpScreenDeadline = Date.now() + 20000;
+    while (Date.now() < otpScreenDeadline && !(await pageLooksLikeOtp(page)) && !(await isLoggedIn(page))) {
+      await sleep(400);
+    }
     if (!(await isLoggedIn(page))) {
       cbAuth.setCbAuth({
         phase: 'otp',
-        message: 'Enter the OTP sent to that number. Stay on this page.',
+        message: 'Enter the OTP from your phone in the card on this page, then Verify OTP.',
       });
       const otp = await cbAuth.waitForOtp();
-      if (!otp) throw new Error('OTP was not entered in time. Retry template creation and enter the OTP here.');
+      if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
       await fillLoginOtp(page, otp);
     }
   }
 
-  const deadline = Date.now() + 45000;
+  const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
     if (await isLoggedIn(page)) {
       if (!page.url().includes('/templates')) {
         await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+        await sleep(800);
       }
-      cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
-      return;
+      if (await hasTemplatesUi(page)) {
+        cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
+        return;
+      }
     }
     await sleep(1000);
   }
-  throw new Error('CampaignBot login did not complete. Check the OTP and retry from this page.');
+  throw new Error('CampaignBot login did not complete. Check the OTP on this page and click Retry login.');
 }
 
 async function openCreateModal(page) {
   const heading = page.getByRole('heading', { name: /Create New Template/i });
   if (await heading.isVisible().catch(() => false)) return;
+
+  if (!(await hasTemplatesUi(page))) {
+    throw new Error('LOGIN_REQUIRED');
+  }
 
   const newTpl = page.locator('button[title="Create a new template"]');
   if (await newTpl.count()) {
@@ -466,26 +530,40 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
     await ensureLoggedIn(page, experimentId);
 
     for (const v of variants) {
-      try {
-        const name = await fillAndSubmit(page, v.toObject ? v.toObject() : v);
-        await patchVariant(experimentId, v.variantNumber, {
-          waPublishStatus: 'published',
-          waPublishError: '',
-          waPublishedAt: new Date(),
-          templateName: name,
-        });
-        results.push({ variantNumber: v.variantNumber, ok: true, templateName: name });
-        console.log(`[CB Templates] published ${v.label} as ${name}`);
-        await sleep(1000);
-      } catch (err) {
-        await patchVariant(experimentId, v.variantNumber, {
-          waPublishStatus: 'failed',
-          waPublishError: err.message,
-        });
-        results.push({ variantNumber: v.variantNumber, ok: false, error: err.message });
-        console.error(`[CB Templates] failed ${v.label}: ${err.message}`);
-        await closeModalIfOpen(page);
-        await sleep(600);
+      let published = false;
+      for (let attempt = 0; attempt < 2 && !published; attempt++) {
+        try {
+          if (!(await isLoggedIn(page))) {
+            await ensureLoggedIn(page, experimentId);
+          }
+          const name = await fillAndSubmit(page, v.toObject ? v.toObject() : v);
+          await patchVariant(experimentId, v.variantNumber, {
+            waPublishStatus: 'published',
+            waPublishError: '',
+            waPublishedAt: new Date(),
+            templateName: name,
+          });
+          results.push({ variantNumber: v.variantNumber, ok: true, templateName: name });
+          console.log(`[CB Templates] published ${v.label} as ${name}`);
+          published = true;
+          await sleep(1000);
+        } catch (err) {
+          const needLogin = /LOGIN_REQUIRED|not logged in|login did not complete/i.test(err.message);
+          if (needLogin && attempt === 0) {
+            console.warn(`[CB Templates] ${v.label} needs login, waiting for number/OTP on WP Marketing`);
+            await closeModalIfOpen(page);
+            await ensureLoggedIn(page, experimentId);
+            continue;
+          }
+          await patchVariant(experimentId, v.variantNumber, {
+            waPublishStatus: 'failed',
+            waPublishError: err.message,
+          });
+          results.push({ variantNumber: v.variantNumber, ok: false, error: err.message });
+          console.error(`[CB Templates] failed ${v.label}: ${err.message}`);
+          await closeModalIfOpen(page);
+          await sleep(600);
+        }
       }
     }
 
