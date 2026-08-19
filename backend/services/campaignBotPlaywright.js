@@ -195,29 +195,164 @@ async function fillLoginPhone(page, phone) {
   await otpBox.waitFor({ state: 'visible', timeout: 25000 });
 }
 
+async function loginModalVisible(page) {
+  const modal = page.locator('div.fixed.inset-0.z-50').filter({ has: page.locator('input.otp-box') });
+  return modal.first().isVisible().catch(() => false);
+}
+
+async function sessionLeftLogin(page) {
+  if (await loginModalVisible(page)) return false;
+  if (page.url().includes('/login')) return false;
+  if (await pageLooksLikeOtp(page)) return false;
+  return true;
+}
+
+async function fillOtpViaDom(page, digits) {
+  return page.evaluate((code) => {
+    const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
+    if (!form) return { ok: false, reason: 'no form' };
+    const boxes = [...form.querySelectorAll('input.otp-box')];
+    if (!boxes.length) return { ok: false, reason: 'no boxes' };
+
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    const fire = (el, digit) => {
+      el.disabled = false;
+      el.removeAttribute('disabled');
+      el.focus();
+      setter?.call(el, digit);
+      const keyOpts = {
+        key: digit,
+        code: `Digit${digit}`,
+        keyCode: 48 + Number(digit),
+        which: 48 + Number(digit),
+        bubbles: true,
+        cancelable: true,
+      };
+      el.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
+      el.dispatchEvent(new KeyboardEvent('keypress', keyOpts));
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        data: digit,
+        inputType: 'insertText',
+      }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
+    };
+
+    const vueOf = (el) => {
+      let n = el;
+      while (n) {
+        const inst = n.__vueParentComponent;
+        if (inst) return inst;
+        if (n.__vue__) return n.__vue__;
+        n = n.parentElement;
+      }
+      return null;
+    };
+
+    const inst = vueOf(form);
+    const bags = [];
+    if (inst) {
+      bags.push(inst.setupState, inst.ctx, inst.proxy, inst.data, inst);
+    }
+    const writeBag = (bag) => {
+      for (const key of Object.keys(bag)) {
+        const val = bag[key];
+        if (val && typeof val === 'object' && 'value' in val && !Array.isArray(val)) {
+          const inner = val.value;
+          if (Array.isArray(inner) && inner.length >= 4 && inner.length <= 8) {
+            val.value = code.split('').concat(Array(Math.max(0, inner.length - code.length)).fill(''));
+          } else if (typeof inner === 'string' && /otp|code|pin/i.test(key)) {
+            val.value = code;
+          }
+          continue;
+        }
+        if (Array.isArray(val) && val.length >= 4 && val.length <= 8) {
+          for (let i = 0; i < val.length; i++) val[i] = code[i] || '';
+        } else if (typeof val === 'string' && /otp|code|pin/i.test(key) && val.length <= 8) {
+          bag[key] = code;
+        }
+      }
+    };
+    for (const bag of bags.filter(Boolean)) {
+      try { writeBag(bag); } catch { /* ignore */ }
+    }
+
+    code.split('').forEach((d, i) => {
+      if (boxes[i]) fire(boxes[i], d);
+    });
+
+    return {
+      ok: true,
+      values: boxes.map((el) => el.value),
+    };
+  }, digits);
+}
+
+async function submitLoginForm(page) {
+  const clicked = await page.evaluate(() => {
+    const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
+    if (!form) return false;
+    const btn = [...form.querySelectorAll('button')].find((b) => /sign up/i.test(b.textContent || ''));
+    if (btn) {
+      btn.disabled = false;
+      btn.click();
+      return true;
+    }
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+      return true;
+    }
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    return true;
+  });
+  if (!clicked) {
+    const modal = page.locator('div.fixed.inset-0.z-50').filter({ has: page.locator('form') });
+    await modal.locator('button[type="submit"]').filter({ hasText: 'Sign Up' }).first().click({ force: true });
+  }
+  await sleep(800);
+}
+
 async function fillLoginOtp(page, otp) {
   const digits = String(otp).replace(/\D/g, '').slice(0, 6);
-  if (digits.length < 4) throw new Error('OTP is too short');
+  if (digits.length !== 6) throw new Error('CampaignBot OTP must be 6 digits');
 
-  const boxes = page.locator('input.otp-box');
-  await boxes.first().waitFor({ state: 'visible', timeout: 20000 });
+  const first = page.locator('input.otp-box').first();
+  await first.waitFor({ state: 'visible', timeout: 20000 });
 
-  // CampaignBot enables the next box only after the previous digit is set.
+  // One digit at a time so Vue can enable and focus the next box (maxlength=1).
   for (let i = 0; i < digits.length; i++) {
-    const box = boxes.nth(i);
+    const box = page.locator('input.otp-box').nth(i);
     const unlock = Date.now() + 8000;
-    while (Date.now() < unlock) {
-      if (!(await box.isDisabled().catch(() => true))) break;
-      await sleep(120);
-    }
-    await box.click();
-    await box.press(digits[i]);
-    await sleep(120);
+    while (Date.now() < unlock && await box.isDisabled().catch(() => true)) await sleep(80);
+    await box.click({ force: true });
+    await box.focus();
+    await page.keyboard.press('ControlOrMeta+A').catch(() => {});
+    await page.keyboard.press('Backspace').catch(() => {});
+    await page.keyboard.type(digits[i], { delay: 40 });
+    await sleep(220);
+  }
+  await sleep(400);
+
+  // Sign Up reads Vue state, not the input DOM — always write both, then submit.
+  const result = await fillOtpViaDom(page, digits);
+  console.log('[CB Templates] OTP Vue/DOM fill:', result);
+  await sleep(250);
+  await submitLoginForm(page);
+
+  const goneBy = Date.now() + 25000;
+  while (Date.now() < goneBy) {
+    if (!(await loginModalVisible(page)) && !page.url().includes('/login')) return;
+    if (!(await loginModalVisible(page)) && page.url().includes('/login') === false) return;
+    if (!page.url().includes('/login') && !(await pageLooksLikeOtp(page))) return;
+    await sleep(400);
   }
 
-  const signUp = page.locator('form button[type="submit"]').filter({ hasText: /^\s*Sign Up\s*$/ }).first();
-  if (await signUp.isVisible().catch(() => false)) {
-    await signUp.click();
+  if (await loginModalVisible(page)) {
+    await submitLoginForm(page);
+    await sleep(1500);
   }
 }
 
@@ -269,22 +404,22 @@ async function ensureLoggedIn(page, experimentId) {
 
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
-    if (await isLoggedIn(page) || await hasTemplatesUi(page)) {
+    if (await sessionLeftLogin(page) || await hasTemplatesUi(page)) {
       if (!page.url().includes('/templates')) {
         await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-        await sleep(800);
+        await sleep(1200);
       }
       if (await hasTemplatesUi(page)) {
         cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
         return;
       }
-    }
-    if (!page.url().includes('/login') && !await pageLooksLikeLogin(page) && !await pageLooksLikeOtp(page)) {
-      await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-      await sleep(800);
-      if (await hasTemplatesUi(page)) {
-        cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
-        return;
+      // Logged in (modal gone) but templates UI still loading.
+      if (await sessionLeftLogin(page) && !page.url().includes('/login')) {
+        await sleep(2000);
+        if (await hasTemplatesUi(page)) {
+          cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
+          return;
+        }
       }
     }
     await sleep(1000);
