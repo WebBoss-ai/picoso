@@ -101,17 +101,37 @@ async function dumpPage(page, label) {
   }
 }
 
+function redactOtpJson(body) {
+  return String(body || '').replace(/"otp"\s*:\s*"\d+"/g, '"otp":"******"');
+}
+
 function attachNetworkLogger(page) {
   if (page._cbNetLog) return;
   page._cbNetLog = true;
   page._cbVerifyOtp = null;
+  page._cbGeneratedOtp = null;
+  page._cbGeneratedOtpAt = 0;
   page.on('response', async (res) => {
     const url = res.url();
     if (!/campaignbot\.online/i.test(url)) return;
     if (!/otp|verify|login|signup|auth|user|session|template/i.test(url)) return;
     let body = '';
-    try { body = String(await res.text()).slice(0, 800); } catch { /* ignore */ }
-    cbLog('http', { status: res.status(), url, body: body.slice(0, 400) });
+    try { body = String(await res.text()).slice(0, 1200); } catch { /* ignore */ }
+    cbLog('http', { status: res.status(), url, body: redactOtpJson(body).slice(0, 400) });
+    if (/generate\/whatsapp\/otp/i.test(url)) {
+      let parsed = {};
+      try { parsed = JSON.parse(body); } catch { /* ignore */ }
+      const otp = String(parsed?.payload?.otp || '').replace(/\D/g, '');
+      if (otp.length >= 4) {
+        page._cbGeneratedOtp = otp;
+        page._cbGeneratedOtpAt = Date.now();
+        cbLog('captured generated OTP', {
+          otp: cbAuth.maskOtp(otp),
+          expireAt: parsed?.payload?.expireAt,
+          ref: parsed?.payload?.otp_ref_id,
+        });
+      }
+    }
     if (/verify-otp/i.test(url)) {
       let parsed = {};
       try { parsed = JSON.parse(body); } catch { /* ignore */ }
@@ -495,36 +515,55 @@ async function clickResendOtp(page) {
   throw new Error('Could not resend CampaignBot OTP');
 }
 
+async function waitForGeneratedOtp(page, afterTs, timeoutMs = 15000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (page._cbGeneratedOtp && page._cbGeneratedOtpAt >= afterTs) {
+      return page._cbGeneratedOtp;
+    }
+    await sleep(100);
+  }
+  return page._cbGeneratedOtpAt >= afterTs ? page._cbGeneratedOtp : null;
+}
+
 async function waitAndFillOtp(page) {
   for (let attempt = 1; attempt <= 4; attempt++) {
+    const afterTs = page._cbGeneratedOtpAt || 0;
     cbAuth.setCbAuth({
       phase: 'otp',
       message: attempt === 1
-        ? 'OTP sent. Enter the 6-digit code now — it expires in about a minute.'
-        : 'That OTP expired. Enter the NEW code from your SMS, then Verify OTP.',
+        ? 'Signing in to CampaignBot…'
+        : 'Retrying CampaignBot sign-in with a new OTP…',
     });
-    const otp = await cbAuth.waitForOtp();
+
+    let otp = await waitForGeneratedOtp(page, attempt === 1 ? 0 : afterTs, 12000);
+    if (!otp) {
+      cbAuth.setCbAuth({
+        phase: 'otp',
+        message: 'Enter the 6-digit OTP from your SMS, then Verify OTP.',
+      });
+      otp = await cbAuth.waitForOtp();
+    }
     if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
+
+    cbLog('using OTP', { source: page._cbGeneratedOtp === otp ? 'generate-api' : 'user', otp: cbAuth.maskOtp(otp) });
     const result = await fillLoginOtp(page, otp);
     cbLog('fillLoginOtp result', result);
     if (result?.ok) return;
-    if (result?.expired) {
+
+    if (result?.expired || result?.invalid || result?.failed) {
       cbAuth.setCbAuth({
         phase: 'otp',
-        message: 'OTP expired on CampaignBot. A new OTP is being sent. Enter the new code here.',
+        message: 'CampaignBot rejected the OTP. Requesting a new one…',
       });
+      page._cbGeneratedOtp = null;
+      const resendAt = Date.now();
       await clickResendOtp(page).catch((err) => cbLog('resend failed', { error: err.message }));
-      continue;
-    }
-    if (result?.invalid) {
-      cbAuth.setCbAuth({
-        phase: 'otp',
-        message: result.message || 'That OTP was rejected. Enter a new code.',
-      });
+      page._cbGeneratedOtpAt = Math.max(page._cbGeneratedOtpAt || 0, resendAt);
       continue;
     }
   }
-  throw new Error('CampaignBot login did not complete after several OTP attempts. Enter a fresh OTP and retry.');
+  throw new Error('CampaignBot login did not complete after several OTP attempts.');
 }
 
 async function ensureLoggedIn(page, experimentId) {
