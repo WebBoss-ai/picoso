@@ -52,6 +52,27 @@ export async function checkEdgeCdp() {
   };
 }
 
+function missingLinuxLibs(err) {
+  const msg = err?.message || '';
+  return /libatk|shared libraries|cannot open shared object/i.test(msg);
+}
+
+function linuxLibHint() {
+  return 'Ubuntu is missing Chromium libraries (libatk-1.0.so.0). On the server run: cd /home/ubuntu/picoso/backend && sudo bash scripts/install-playwright-ubuntu.sh';
+}
+
+function systemChromePath() {
+  const paths = [
+    process.env.CB_CHROME_PATH,
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/snap/bin/chromium',
+  ].filter(Boolean);
+  return paths.find((p) => fs.existsSync(p)) || null;
+}
+
 async function launchBrowser() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
   const headless = process.env.CB_HEADLESS !== 'false';
@@ -62,18 +83,32 @@ async function launchBrowser() {
       '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
       '--disable-dev-shm-usage',
+      '--disable-gpu',
     ],
-    ignoreDefaultArgs: ['--enable-automation'],
   };
 
-  try {
-    return await chromium.launchPersistentContext(PROFILE_DIR, common);
-  } catch (err) {
-    if (/Executable doesn't exist/i.test(err.message)) {
-      throw new Error('Playwright Chromium is not installed on the server. In the backend folder run: npx playwright install chromium');
+  const attempts = [{ ...common }];
+  const sys = systemChromePath();
+  if (sys) attempts.push({ ...common, executablePath: sys });
+  attempts.push({ ...common, channel: 'chrome' });
+
+  let lastErr;
+  for (const opts of attempts) {
+    try {
+      return await chromium.launchPersistentContext(PROFILE_DIR, opts);
+    } catch (err) {
+      lastErr = err;
+      console.warn('[CB Templates] launch failed:', err.message.split('\n')[0]);
     }
-    throw err;
   }
+
+  if (/Executable doesn't exist/i.test(lastErr?.message || '')) {
+    throw new Error('Playwright Chromium is not installed. In the backend folder run: npx playwright install chromium');
+  }
+  if (missingLinuxLibs(lastErr)) {
+    throw new Error(linuxLibHint());
+  }
+  throw lastErr;
 }
 
 async function isLoggedIn(page) {
