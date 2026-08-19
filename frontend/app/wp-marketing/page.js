@@ -1041,16 +1041,16 @@ function CampaignBotAuthPanel({ force = false }) {
       <div className="flex flex-col sm:flex-row gap-2">
         <input
           value={otp}
-          onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
-          placeholder="OTP"
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="6-digit OTP"
           className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white tracking-[0.2em] focus:outline-none focus:border-blue-400"
         />
         <button
           onClick={sendOtp}
-          disabled={busy || otp.length < 4}
+          disabled={busy || otp.length !== 6}
           className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
         >
-          {busy && (auth.phase === 'otp' || otp.length >= 4) ? 'Verifying' : 'Verify OTP'}
+          {busy && auth.phase === 'otp' ? 'Verifying' : 'Verify OTP'}
         </button>
       </div>
       {phase === 'launching' && (

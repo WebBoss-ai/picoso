@@ -49,7 +49,7 @@ export function submitCbPhone(raw) {
 
 export function submitCbOtp(raw) {
   const otp = String(raw || '').replace(/\D/g, '');
-  if (otp.length < 4) throw new Error('Enter the OTP sent to your CampaignBot number');
+  if (otp.length !== 6) throw new Error('Enter the 6-digit OTP sent to your CampaignBot number');
   pendingOtp = otp;
   state.phase = 'otp';
   state.message = 'Verifying OTP';

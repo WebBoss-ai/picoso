@@ -11,6 +11,7 @@ import { WpExperiment } from '../models/wpMarketingModels.js';
 import * as cbAuth from './campaignBotAuth.js';
 
 const TEMPLATES = 'https://campaignbot.online/templates';
+const LOGIN = 'https://campaignbot.online/login';
 const PROFILE_DIR = process.env.CB_PROFILE_DIR
   || path.join(process.cwd(), '.campaignbot-profile');
 
@@ -19,8 +20,6 @@ const LANG_LABEL = {
   en_GB: 'English (UK)',
   hi:    'Hindi',
 };
-
-const LOGIN_RE = /Business Sign Up|Start with Mobile Number|ONLY 3 STEPS TO START|Enter OTP|Verify OTP/i;
 
 let busy = false;
 let sharedContext = null;
@@ -119,15 +118,26 @@ async function hasTemplatesUi(page) {
   return false;
 }
 
+async function setVueInput(locator, value) {
+  await locator.click();
+  await locator.fill('');
+  await locator.pressSequentially(String(value), { delay: 40 });
+}
+
+async function pageLooksLikeOtp(page) {
+  return page.locator('input.otp-box').first().isVisible().catch(() => false);
+}
+
 async function pageLooksLikeLogin(page) {
+  if (await pageLooksLikeOtp(page)) return false;
+  if (await page.getByRole('button', { name: 'Start with Mobile Number', exact: true }).isVisible().catch(() => false)) return true;
+  if (await page.locator('input[placeholder="Enter mobile number"]').first().isVisible().catch(() => false)) return true;
   const text = await page.locator('body').innerText().catch(() => '');
-  if (LOGIN_RE.test(text)) return true;
-  if (/Start with Mobile Number|Business Sign Up|ONLY 3 STEPS/i.test(text)) return true;
-  if (await page.locator('input[type="tel"]').first().isVisible().catch(() => false)) return true;
-  return false;
+  return /Business Sign Up|Start with Mobile Number|ONLY 3 STEPS TO START|Welcome to CampaignBot/i.test(text);
 }
 
 async function isLoggedIn(page) {
+  if (page.url().includes('/login')) return false;
   if (await pageLooksLikeOtp(page) || await pageLooksLikeLogin(page)) return false;
   return hasTemplatesUi(page);
 }
@@ -139,76 +149,76 @@ async function waitForLoginOrApp(page) {
       return 'app';
     }
     if (await pageLooksLikeOtp(page)) return 'otp';
-    if (await pageLooksLikeLogin(page)) return 'login';
+    if (await pageLooksLikeLogin(page) || page.url().includes('/login')) return 'login';
     await sleep(400);
   }
   return 'login';
 }
 
+async function openMobileForm(page) {
+  const phoneInput = page.locator('input[placeholder="Enter mobile number"][type="tel"]').first();
+  if (await phoneInput.isVisible().catch(() => false)) return;
+
+  const start = page.locator('button').filter({ hasText: 'Start with Mobile Number' }).first();
+  await start.waitFor({ state: 'visible', timeout: 20000 });
+  await start.click();
+  await phoneInput.waitFor({ state: 'visible', timeout: 15000 });
+}
+
 async function fillLoginPhone(page, phone) {
-  const startBtn = page.getByRole('button', { name: /start with mobile|mobile number|get started/i }).first();
-  if (await startBtn.isVisible().catch(() => false)) {
-    await startBtn.click();
-    await sleep(600);
-  } else {
-    const startText = page.getByText(/Start with Mobile Number/i).first();
-    if (await startText.isVisible().catch(() => false)) {
-      await startText.click();
-      await sleep(600);
-    }
+  if (!page.url().includes('/login')) {
+    await page.goto(LOGIN, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await sleep(800);
   }
 
-  const candidates = [
-    page.locator('input[type="tel"]'),
-    page.locator('input[placeholder*="obile" i]'),
-    page.locator('input[placeholder*="phone" i]'),
-    page.locator('input[placeholder*="number" i]'),
-    page.locator('input[name*="phone" i]'),
-    page.locator('input[id*="phone" i]'),
-    page.locator('input[inputmode="numeric"]'),
-    page.locator('input[type="text"]'),
-  ];
-  let input = null;
-  const findEnd = Date.now() + 20000;
-  while (Date.now() < findEnd && !input) {
-    for (const loc of candidates) {
-      if (await loc.first().isVisible().catch(() => false)) {
-        input = loc.first();
-        break;
-      }
-    }
-    if (!input) await sleep(400);
+  await openMobileForm(page);
+
+  const input = page.locator('input[placeholder="Enter mobile number"][type="tel"]').first();
+  await input.waitFor({ state: 'visible', timeout: 15000 });
+  await setVueInput(input, phone);
+  if ((await input.inputValue()) !== phone) {
+    await input.fill(phone);
   }
-  if (!input) throw new Error('Could not find the CampaignBot mobile number field');
-  await input.click();
-  await input.fill('');
-  await input.fill(phone);
-  await sleep(300);
-  const send = page.getByRole('button', { name: /otp|continue|start|send|next|submit|get started/i }).first();
-  if (await send.isVisible().catch(() => false)) await send.click();
-  else await input.press('Enter');
+
+  const sendOtp = page.locator('button').filter({ hasText: /^\s*Send OTP\s*$/ }).first();
+  const enableDeadline = Date.now() + 12000;
+  while (Date.now() < enableDeadline) {
+    if (await sendOtp.isEnabled().catch(() => false)) break;
+    await sleep(250);
+  }
+  if (!(await sendOtp.isEnabled().catch(() => false))) {
+    throw new Error('CampaignBot Send OTP stayed disabled. The mobile number may not have registered on the form.');
+  }
+  await sendOtp.click();
+
+  const otpBox = page.locator('input.otp-box').first();
+  await otpBox.waitFor({ state: 'visible', timeout: 25000 });
 }
 
 async function fillLoginOtp(page, otp) {
-  const digits = String(otp).replace(/\D/g, '');
-  const boxes = page.locator('input[maxlength="1"]');
-  const boxCount = await boxes.count();
-  if (boxCount >= 4) {
-    for (let i = 0; i < Math.min(boxCount, digits.length); i++) {
-      await boxes.nth(i).fill(digits[i]);
-    }
-  } else {
-    const otpInput = page.locator('input[placeholder*="OTP" i], input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i]').first();
-    await otpInput.waitFor({ state: 'visible', timeout: 15000 });
-    await otpInput.fill(digits);
-  }
-  const verify = page.getByRole('button', { name: /verify|continue|submit|login|confirm/i }).first();
-  if (await verify.count()) await verify.click();
-}
+  const digits = String(otp).replace(/\D/g, '').slice(0, 6);
+  if (digits.length < 4) throw new Error('OTP is too short');
 
-async function pageLooksLikeOtp(page) {
-  const text = await page.locator('body').innerText().catch(() => '');
-  return /Enter OTP|Verify OTP|OTP sent|one.?time/i.test(text);
+  const boxes = page.locator('input.otp-box');
+  await boxes.first().waitFor({ state: 'visible', timeout: 20000 });
+
+  // CampaignBot enables the next box only after the previous digit is set.
+  for (let i = 0; i < digits.length; i++) {
+    const box = boxes.nth(i);
+    const unlock = Date.now() + 8000;
+    while (Date.now() < unlock) {
+      if (!(await box.isDisabled().catch(() => true))) break;
+      await sleep(120);
+    }
+    await box.click();
+    await box.press(digits[i]);
+    await sleep(120);
+  }
+
+  const signUp = page.locator('form button[type="submit"]').filter({ hasText: /^\s*Sign Up\s*$/ }).first();
+  if (await signUp.isVisible().catch(() => false)) {
+    await signUp.click();
+  }
 }
 
 async function ensureLoggedIn(page, experimentId) {
@@ -227,10 +237,15 @@ async function ensureLoggedIn(page, experimentId) {
     return;
   }
 
-  if (screen === 'otp' || await pageLooksLikeOtp(page)) {
+  if (!page.url().includes('/login')) {
+    await page.goto(LOGIN, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await sleep(800);
+  }
+
+  if (await pageLooksLikeOtp(page)) {
     cbAuth.setCbAuth({
       phase: 'otp',
-      message: 'Enter the OTP sent to your CampaignBot number in the card on this page.',
+      message: 'Enter the 6-digit OTP from your phone in the card on this page, then Verify OTP.',
     });
     const otp = await cbAuth.waitForOtp();
     if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
@@ -238,33 +253,35 @@ async function ensureLoggedIn(page, experimentId) {
   } else {
     cbAuth.setCbAuth({
       phase: 'phone',
-      message: 'Enter the CampaignBot mobile number in the card on this page, then Send OTP.',
+      message: 'Enter the 10-digit CampaignBot mobile number in the card, then Send OTP.',
     });
     const phone = await cbAuth.waitForPhone();
     if (!phone) throw new Error('CampaignBot number was not entered in time. Enter it in the sign-in card and retry.');
     await fillLoginPhone(page, phone);
-    const otpScreenDeadline = Date.now() + 20000;
-    while (Date.now() < otpScreenDeadline && !(await pageLooksLikeOtp(page)) && !(await isLoggedIn(page))) {
-      await sleep(400);
-    }
-    if (!(await isLoggedIn(page))) {
-      cbAuth.setCbAuth({
-        phase: 'otp',
-        message: 'Enter the OTP from your phone in the card on this page, then Verify OTP.',
-      });
-      const otp = await cbAuth.waitForOtp();
-      if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
-      await fillLoginOtp(page, otp);
-    }
+    cbAuth.setCbAuth({
+      phase: 'otp',
+      message: 'Enter the 6-digit OTP from your phone in the card on this page, then Verify OTP.',
+    });
+    const otp = await cbAuth.waitForOtp();
+    if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
+    await fillLoginOtp(page, otp);
   }
 
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
-    if (await isLoggedIn(page)) {
+    if (await isLoggedIn(page) || await hasTemplatesUi(page)) {
       if (!page.url().includes('/templates')) {
         await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
         await sleep(800);
       }
+      if (await hasTemplatesUi(page)) {
+        cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
+        return;
+      }
+    }
+    if (!page.url().includes('/login') && !await pageLooksLikeLogin(page) && !await pageLooksLikeOtp(page)) {
+      await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      await sleep(800);
       if (await hasTemplatesUi(page)) {
         cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
         return;
