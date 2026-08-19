@@ -5,7 +5,6 @@
 import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink, WpMessageLog } from '../models/wpMarketingModels.js';
 import crypto from 'crypto';
 import { CohereProvider } from '../llm/provider/cohere.js';
-import { publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
 
 /* ── Auth ping ─────────────────────────────────────────────────────────────── */
 export const verifyPin = (req, res) => {
@@ -243,6 +242,7 @@ function normaliseVariantTemplate(v, i) {
     footerText: stripEmoji(v.footerText || '').slice(0, 60),
     buttons,
     status: 'active',
+    waPublishStatus: 'queued',
   };
 }
 
@@ -410,18 +410,7 @@ Generate all 10 variants now. Make each genuinely distinct.`;
       variants: variants.map((v, i) => normaliseVariantTemplate(v, i)),
     });
 
-    // Update campaign status
     await WpCampaignDraft.findByIdAndUpdate(campaign._id, { status: 'strategy_ready', updatedAt: new Date() });
-
-    const experimentId = experiment._id.toString();
-    setImmediate(async () => {
-      try {
-        const result = await publishVariantsToCampaignBot(experimentId);
-        console.log(`[CB Templates] auto-publish after generate — published:${result.published} failed:${result.failed}`);
-      } catch (err) {
-        console.error('[CB Templates] auto-publish after generate:', err.message);
-      }
-    });
 
     res.json({ success: true, experiment });
   } catch (err) {

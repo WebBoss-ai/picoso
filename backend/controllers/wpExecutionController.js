@@ -8,7 +8,7 @@ import { WpExperiment, WpCampaignRun } from '../models/wpMarketingModels.js';
 import * as engine from '../services/wpExecutionEngine.js';
 import * as bot    from '../services/campaignBot.js';
 import { uploadBufferToS3 } from '../utils/s3.js';
-import { checkEdgeCdp, publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
+const helperPresence = new Map();
 
 /* ── WhatsApp connection & templates ─────────────────────────────────────── */
 
@@ -422,21 +422,30 @@ export const updateJobTime = async (req, res) => {
   }
 };
 
-/* ── CampaignBot template UI (Playwright → Edge CDP) ─────────────────────── */
+/* ── Chrome helper (fills CampaignBot in the user's existing tab) ─────────── */
 
-export const getEdgeStatus = async (_req, res) => {
-  try {
-    const status = await checkEdgeCdp();
-    res.json({ success: true, ...status });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+export const helperHeartbeat = (req, res) => {
+  helperPresence.set(String(req.wpClient._id), {
+    at: Date.now(),
+    onCampaignBot: !!req.body?.onCampaignBot,
+  });
+  res.json({ success: true });
 };
 
+export const getHelperStatus = (req, res) => {
+  const s = helperPresence.get(String(req.wpClient._id));
+  const live = !!(s && Date.now() - s.at < 20000);
+  res.json({
+    success: true,
+    helperInstalled: live,
+    onCampaignBot: live && !!s.onCampaignBot,
+  });
+};
+
+export const getEdgeStatus = getHelperStatus;
+
 /**
- * POST /wp-marketing/experiments/:id/publish-templates
- * Fills CampaignBot's create-template form in the attached Edge tab.
- * Runs in the background; poll GET experiment for waPublishStatus on each variant.
+ * Queue unpublished variants. The Chrome helper on campaignbot.online claims jobs.
  */
 export const publishTemplates = async (req, res) => {
   try {
@@ -447,21 +456,89 @@ export const publishTemplates = async (req, res) => {
     if (!experiment) return res.status(404).json({ error: 'Experiment not found' });
 
     const variantNumbers = Array.isArray(req.body?.variantNumbers) ? req.body.variantNumbers : null;
-
-    setImmediate(async () => {
-      try {
-        const result = await publishVariantsToCampaignBot(req.params.id, variantNumbers);
-        console.log(`[CB Templates] job done — published:${result.published} failed:${result.failed}`);
-      } catch (err) {
-        console.error('[CB Templates] job error:', err.message);
+    let queued = 0;
+    for (const v of experiment.variants) {
+      if (variantNumbers && !variantNumbers.includes(v.variantNumber)) continue;
+      if (v.waPublishStatus !== 'published') {
+        v.waPublishStatus = 'queued';
+        v.waPublishError = '';
+        queued += 1;
       }
-    });
+    }
+    await experiment.save();
 
     res.json({
       success: true,
-      started: true,
-      message: 'A browser window will open and create each template on CampaignBot automatically.',
+      queued,
+      message: 'Templates are queued. Keep CampaignBot Templates open in this Chrome — progress updates on this page.',
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const claimPublishJob = async (req, res) => {
+  try {
+    const exp = await WpExperiment.findOne({
+      clientId: req.wpClient._id,
+      'variants.waPublishStatus': 'queued',
+    }).sort({ updatedAt: -1 });
+
+    if (!exp) return res.json({ job: null });
+
+    const v = exp.variants.find((x) => x.waPublishStatus === 'queued');
+    if (!v) return res.json({ job: null });
+
+    const updated = await WpExperiment.updateOne(
+      {
+        _id: exp._id,
+        clientId: req.wpClient._id,
+        variants: { $elemMatch: { variantNumber: v.variantNumber, waPublishStatus: 'queued' } },
+      },
+      { $set: { 'variants.$.waPublishStatus': 'publishing', 'variants.$.waPublishError': '', updatedAt: new Date() } },
+    );
+    if (!updated.modifiedCount) return res.json({ job: null });
+
+    const payload = v.toObject ? v.toObject() : v;
+    res.json({
+      job: {
+        experimentId: String(exp._id),
+        variantNumber: v.variantNumber,
+        variant: payload,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const reportPublishResult = async (req, res) => {
+  try {
+    const ok = !!req.body?.ok;
+    const templateName = req.body?.templateName || '';
+    const error = req.body?.error || '';
+    const variantNumber = Number(req.params.variantNumber);
+
+    const set = {
+      'variants.$.waPublishStatus': ok ? 'published' : 'failed',
+      'variants.$.waPublishError': ok ? '' : error,
+      updatedAt: new Date(),
+    };
+    if (ok) {
+      set['variants.$.waPublishedAt'] = new Date();
+      if (templateName) set['variants.$.templateName'] = templateName;
+    }
+
+    const result = await WpExperiment.updateOne(
+      {
+        _id: req.params.id,
+        clientId: req.wpClient._id,
+        'variants.variantNumber': variantNumber,
+      },
+      { $set: set },
+    );
+    if (!result.matchedCount) return res.status(404).json({ error: 'Variant not found' });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

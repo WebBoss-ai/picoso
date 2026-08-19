@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Picoso CampaignBot Helper",
+  "version": "1.0.0",
+  "description": "Creates WhatsApp templates on CampaignBot from your Picoso campaign queue. Progress stays on the WP Marketing page.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://campaignbot.online/*",
+    "https://picoso.in/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://picoso.in/wp-marketing*",
+        "http://localhost:3000/wp-marketing*",
+        "http://127.0.0.1:3000/wp-marketing*"
+      ],
+      "js": ["picoso.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://campaignbot.online/*"],
+      "js": ["campaignbot.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

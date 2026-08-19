@@ -307,7 +307,9 @@ export const wpMarketing = {
   updateJobTime:     (jobId, data) => wpMarketingApi.put(`/wp-marketing/scheduled-jobs/${jobId}`, data),
   updateVariant:     (expId, variantNum, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/variants/${variantNum}`, data),
   saveTemplateConfig:(expId, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/template-config`, data),
-  getEdgeStatus:     ()        => wpMarketingApi.get('/wp-marketing/edge/status'),
+  getHelperStatus:   ()        => wpMarketingApi.get('/wp-marketing/helper/status'),
+  helperHeartbeat:   (data)    => wpMarketingApi.post('/wp-marketing/helper/heartbeat', data || {}),
+  getEdgeStatus:     ()        => wpMarketingApi.get('/wp-marketing/helper/status'),
   publishTemplates:  (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/publish-templates`, data || {}),
 };
 

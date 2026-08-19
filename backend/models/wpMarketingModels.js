@@ -134,7 +134,7 @@ const wpVariantSchema = new mongoose.Schema({
   mediaS3Url:              { type: String, default: '' },
   mediaWaId:               { type: String, default: '' },
   scheduledSendTime:       { type: String, default: '10:00' }, // HH:mm, editable per variant
-  waPublishStatus:         { type: String, enum: ['draft', 'publishing', 'published', 'failed'], default: 'draft' },
+  waPublishStatus:         { type: String, enum: ['draft', 'queued', 'publishing', 'published', 'failed'], default: 'draft' },
   waPublishError:          { type: String, default: '' },
   waPublishedAt:           { type: Date, default: null },
   status: {

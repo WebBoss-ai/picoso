@@ -258,6 +258,10 @@ router.get('/wp-marketing/experiments/:id/schedule',       requireWpPin, wpExecu
 router.put('/wp-marketing/experiments/:id/variants/:variantNumber', requireWpPin, wpExecution.updateVariant);
 router.put('/wp-marketing/experiments/:id/template-config', requireWpPin, wpExecution.saveTemplateConfig);
 router.get('/wp-marketing/campaigns/:id/experiment',       requireWpPin, wpExecution.getExperimentByCampaign);
+router.get('/wp-marketing/helper/status',                  requireWpPin, wpExecution.getHelperStatus);
+router.post('/wp-marketing/helper/heartbeat',              requireWpPin, wpExecution.helperHeartbeat);
+router.post('/wp-marketing/publish-queue/claim',           requireWpPin, wpExecution.claimPublishJob);
+router.post('/wp-marketing/experiments/:id/variants/:variantNumber/publish-result', requireWpPin, wpExecution.reportPublishResult);
 router.get('/wp-marketing/edge/status',                    requireWpPin, wpExecution.getEdgeStatus);
 router.post('/wp-marketing/experiments/:id/publish-templates', requireWpPin, wpExecution.publishTemplates);
 

@@ -159,30 +159,29 @@ const NAV = [
 
 function Sidebar({ active, setActive, client, onLogout }) {
   return (
-    <aside className="w-[220px] flex-shrink-0 h-screen bg-white border-r border-gray-100 flex flex-col sticky top-0">
-      {/* Brand */}
-      <div className="px-6 py-5 border-b border-gray-100">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-            <MessageCircle className="w-4 h-4 text-white" />
+    <aside className="w-[264px] flex-shrink-0 h-screen bg-white border-r border-slate-200/80 flex flex-col">
+      <div className="px-5 py-6 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-[0_8px_20px_rgba(37,99,235,0.28)]">
+            <MessageCircle className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <p className="text-[13px] font-semibold text-gray-900 leading-tight">WP Marketing</p>
-            <p className="text-[11px] text-gray-400 leading-tight">{client?.workspace?.businessName || client?.name}</p>
+          <div className="min-w-0">
+            <p className="text-[15px] font-semibold text-slate-900 leading-tight tracking-tight">WP Marketing</p>
+            <p className="text-[11.5px] text-slate-400 leading-tight mt-0.5 truncate">{client?.workspace?.businessName || client?.name}</p>
           </div>
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
+        <p className="px-3 mb-2 text-[10.5px] font-semibold text-slate-400 uppercase tracking-[0.16em]">Workspace</p>
         {NAV.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActive(id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium mb-0.5 transition-all
               ${active === id
-                ? 'bg-blue-600 text-white shadow-[0_2px_8px_rgba(37,99,235,0.25)]'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                ? 'bg-blue-600 text-white shadow-[0_6px_16px_rgba(37,99,235,0.28)]'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-blue-50/70'
               }`}
           >
             <Icon className="w-4 h-4 flex-shrink-0" />
@@ -191,20 +190,19 @@ function Sidebar({ active, setActive, client, onLogout }) {
         ))}
       </nav>
 
-      {/* Client + logout */}
-      <div className="px-4 py-4 border-t border-gray-100">
+      <div className="px-4 py-4 border-t border-slate-100">
         <div className="flex items-center gap-2.5 mb-3">
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">
+          <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">
             {client?.name?.[0]?.toUpperCase() || 'C'}
           </div>
           <div className="min-w-0">
-            <p className="text-[12.5px] font-semibold text-gray-900 truncate">{client?.name}</p>
-            <p className="text-[11px] text-gray-400">Client workspace</p>
+            <p className="text-[12.5px] font-semibold text-slate-900 truncate">{client?.name}</p>
+            <p className="text-[11px] text-slate-400">Client workspace</p>
           </div>
         </div>
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
         >
           <LogOut className="w-3.5 h-3.5" />
           Sign out
@@ -219,14 +217,14 @@ function Sidebar({ active, setActive, client, onLogout }) {
 ══════════════════════════════════════════════════════════════════════════════ */
 function StatCard({ label, value, sub, icon: Icon, color = 'blue' }) {
   const colors = {
-    blue:   { bg: 'bg-blue-50',   text: 'text-blue-600',   icon: 'bg-blue-100'  },
-    green:  { bg: 'bg-green-50',  text: 'text-green-600',  icon: 'bg-green-100' },
-    violet: { bg: 'bg-violet-50', text: 'text-violet-600', icon: 'bg-violet-100'},
-    amber:  { bg: 'bg-amber-50',  text: 'text-amber-600',  icon: 'bg-amber-100' },
+    blue:   { bg: 'bg-blue-50/80',   text: 'text-blue-600',   icon: 'bg-blue-100'  },
+    green:  { bg: 'bg-sky-50',       text: 'text-sky-700',    icon: 'bg-sky-100' },
+    violet: { bg: 'bg-indigo-50',    text: 'text-indigo-600', icon: 'bg-indigo-100'},
+    amber:  { bg: 'bg-blue-50',      text: 'text-blue-700',   icon: 'bg-blue-100' },
   };
   const c = colors[color] || colors.blue;
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-start gap-4">
+    <div className="bg-white rounded-2xl border border-slate-200/80 p-5 flex items-start gap-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className={`w-10 h-10 rounded-xl ${c.icon} flex items-center justify-center flex-shrink-0`}>
         <Icon className={`w-5 h-5 ${c.text}`} />
       </div>
@@ -263,7 +261,7 @@ function Overview({ client, onNavigate }) {
   };
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
       <div className="mb-7">
         <h2 className="text-xl font-semibold text-gray-900">
           Good day, {client?.workspace?.businessName || client?.name}
@@ -512,7 +510,7 @@ function CampaignStep1({ onNext, onCancel }) {
     <>
       {showModal && <CreateListModal onClose={() => setShowModal(false)} onCreate={handleCreated} />}
 
-      <div className="max-w-2xl">
+      <div className="w-full">
         {/* Step header */}
         <div className="flex items-center gap-3 mb-8">
           <button onClick={onCancel} className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-800 transition-colors">
@@ -569,14 +567,14 @@ function CampaignStep1({ onNext, onCancel }) {
             <p className="text-[13px] text-zinc-400 mb-4">Create a list to continue</p>
             <button
               onClick={() => setShowModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-[13px] font-medium rounded-xl hover:bg-zinc-800 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-medium rounded-xl hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               Create list
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 mb-6">
             {filtered.map((list) => (
               <button
                 key={list._id}
@@ -610,7 +608,7 @@ function CampaignStep1({ onNext, onCancel }) {
           <button
             onClick={() => selected && onNext(selected)}
             disabled={!selected}
-            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white text-[14px] font-medium rounded-xl hover:bg-zinc-800 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white text-[14px] font-medium rounded-xl hover:bg-blue-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_6px_16px_rgba(37,99,235,0.25)]"
           >
             Continue
             <ChevronRight className="w-4 h-4" />
@@ -672,10 +670,10 @@ function PlanGeneratingScreen() {
 ══════════════════════════════════════════════════════════════════════════════ */
 const VARIANT_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
 const PHASE_CONFIG = [
-  { bg: 'bg-zinc-50', border: 'border-zinc-200', text: 'text-zinc-600' },
-  { bg: 'bg-zinc-50', border: 'border-zinc-200', text: 'text-zinc-600' },
-  { bg: 'bg-zinc-50', border: 'border-zinc-200', text: 'text-zinc-600' },
-  { bg: 'bg-zinc-900', border: 'border-zinc-900', text: 'text-zinc-300' },
+  { bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-700' },
+  { bg: 'bg-blue-50/80', border: 'border-blue-100', text: 'text-blue-700' },
+  { bg: 'bg-sky-50', border: 'border-sky-100', text: 'text-sky-800' },
+  { bg: 'bg-blue-700', border: 'border-blue-700', text: 'text-blue-100' },
 ];
 
 function fmtDate(d) {
@@ -962,6 +960,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
   const [draftTpl, setDraftTpl] = useState(null);
   const [savingTpl, setSavingTpl] = useState(false);
   const [tplError, setTplError] = useState('');
+  const [helper, setHelper] = useState({ helperInstalled: false, onCampaignBot: false });
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState('');
 
@@ -976,13 +975,22 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
   const anyPublishing = (variants || []).some((v) => v.waPublishStatus === 'publishing');
   const publishedCount = (variants || []).filter((v) => v.waPublishStatus === 'published').length;
   const failedCount = (variants || []).filter((v) => v.waPublishStatus === 'failed').length;
-  const allDraft = (variants || []).length > 0 && (variants || []).every((v) => !v.waPublishStatus || v.waPublishStatus === 'draft');
+  const queuedCount = (variants || []).filter((v) => v.waPublishStatus === 'queued' || v.waPublishStatus === 'draft').length;
 
   useEffect(() => {
-    if (!publishing && !anyPublishing && !allDraft) return;
+    const tick = () => {
+      wpMarketing.getHelperStatus().then((r) => setHelper(r.data || {})).catch(() => {});
+    };
+    tick();
+    const t = setInterval(tick, 4000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!publishing && !anyPublishing && queuedCount === 0) return;
     const t = setInterval(() => { onReload?.(); }, 2500);
     return () => clearInterval(t);
-  }, [publishing, anyPublishing, allDraft, onReload]);
+  }, [publishing, anyPublishing, queuedCount, onReload]);
 
   useEffect(() => {
     if (!publishing) return;
@@ -996,7 +1004,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
     setPublishing(true); setPublishMsg('');
     try {
       const r = await wpMarketing.publishTemplates(experiment._id);
-      setPublishMsg(r.data?.message || 'A browser window will open and create each template.');
+      setPublishMsg(r.data?.message || 'Queued. Keep CampaignBot Templates open in this Chrome.');
       onReload?.();
     } catch (err) {
       setPublishMsg(err?.response?.data?.error || 'Could not start template creation');
@@ -1036,7 +1044,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
           <ShieldCheck className="w-5 h-5 text-zinc-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-[14px] font-semibold text-zinc-900">Review before anything is sent</p>
-            <p className="text-[12.5px] text-zinc-500 mt-0.5">Templates can be edited below. CampaignBot creation runs automatically in a browser window.</p>
+            <p className="text-[12.5px] text-slate-500 mt-0.5">Edit templates below. Creation runs in your CampaignBot tab — progress stays on this page.</p>
           </div>
           <span className="text-[11px] font-medium text-zinc-500 px-2.5 py-1 rounded-full border border-zinc-200">Awaiting approval</span>
         </div>
@@ -1085,18 +1093,18 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
             const isFinal = i === phases.length - 1;
             return (
               <div key={ph.phaseNumber} className="flex items-stretch gap-2 flex-1">
-                <div className={`flex-1 rounded-xl border ${isFinal ? 'border-zinc-900 bg-zinc-900' : 'border-zinc-200 bg-zinc-50'} p-3.5`}>
-                  <span className={`text-[10.5px] font-medium uppercase tracking-wider ${isFinal ? 'text-zinc-400' : 'text-zinc-400'}`}>{ph.label}</span>
-                  <p className={`text-[13px] font-semibold mt-1 ${isFinal ? 'text-white' : 'text-zinc-900'}`}>
+                <div className={`flex-1 rounded-xl border ${isFinal ? 'border-blue-700 bg-blue-700' : 'border-blue-100 bg-blue-50/70'} p-3.5`}>
+                  <span className={`text-[10.5px] font-medium uppercase tracking-wider ${isFinal ? 'text-blue-200' : 'text-blue-500'}`}>{ph.label}</span>
+                  <p className={`text-[13px] font-semibold mt-1 ${isFinal ? 'text-white' : 'text-slate-900'}`}>
                     {ph.variantCount} template{ph.variantCount > 1 ? 's' : ''}
                   </p>
-                  <p className={`text-[12px] mt-0.5 ${isFinal ? 'text-zinc-400' : 'text-zinc-500'}`}>{ph.contactsPerVariant} contacts each</p>
+                  <p className={`text-[12px] mt-0.5 ${isFinal ? 'text-blue-100' : 'text-slate-500'}`}>{ph.contactsPerVariant} contacts each</p>
                   {scheduleDates.length > 0 && (
-                    <p className={`text-[11px] mt-2 ${isFinal ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                    <p className={`text-[11px] mt-2 ${isFinal ? 'text-blue-200/80' : 'text-slate-400'}`}>
                       {scheduleDates.map(fmtDate).join(' · ')}
                     </p>
                   )}
-                  {isFinal && <p className="text-[11px] font-medium text-zinc-300 mt-1 flex items-center gap-1"><Trophy className="w-3 h-3" /> Winner to remaining audience</p>}
+                  {isFinal && <p className="text-[11px] font-medium text-blue-100 mt-1 flex items-center gap-1"><Trophy className="w-3 h-3" /> Winner to remaining audience</p>}
                 </div>
                 {i < phases.length - 1 && (
                   <div className="flex items-center justify-center w-6 flex-shrink-0">
@@ -1169,36 +1177,61 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 gap-3 flex-wrap">
           <div>
             <p className="text-[14px] font-semibold text-zinc-900">Templates</p>
-            <p className="text-[12px] text-zinc-400 mt-0.5">Created automatically in a browser window after generation</p>
+            <p className="text-[12px] text-slate-400 mt-0.5">Created in your CampaignBot tab. Watch progress here.</p>
           </div>
           <div className="flex items-center gap-2">
             {publishedCount > 0 && (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700">{publishedCount} live</span>
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">{publishedCount} live</span>
             )}
             {failedCount > 0 && (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border border-zinc-200 text-zinc-600">{failedCount} failed</span>
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border border-slate-200 text-slate-600">{failedCount} failed</span>
             )}
             <button
               onClick={handlePublish}
               disabled={publishing || anyPublishing}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-zinc-900 text-white text-[12.5px] font-medium rounded-xl hover:bg-zinc-800 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 text-white text-[12.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-[0_4px_14px_rgba(37,99,235,0.25)]"
             >
               {(publishing || anyPublishing) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-              {(publishing || anyPublishing) ? 'Creating…' : publishedCount ? 'Retry failed' : 'Create on CampaignBot'}
+              {(publishing || anyPublishing) ? 'Creating…' : failedCount ? 'Retry failed' : 'Queue templates'}
             </button>
           </div>
         </div>
 
-        {(publishMsg || allDraft || anyPublishing) && (
-          <div className="px-5 py-3 text-[12.5px] border-b bg-zinc-50 text-zinc-600 border-zinc-100">
-            {publishMsg || (allDraft || anyPublishing
-              ? 'A browser window is opening. If CampaignBot asks you to sign in, complete it once — the session is saved.'
-              : '')}
-            {variants[activeVariant]?.waPublishError && (
-              <p className="text-zinc-800 mt-1">{variants[activeVariant].waPublishError}</p>
-            )}
+        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/80 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[13px] text-slate-600">
+              {!helper.helperInstalled
+                ? 'Install the Picoso helper once (Settings), then open CampaignBot Templates in this Chrome while logged in.'
+                : !helper.onCampaignBot
+                  ? 'Helper is ready. Open campaignbot.online/templates in this Chrome (same profile). Creation runs there; this page only shows status.'
+                  : anyPublishing || queuedCount
+                    ? 'Creating templates in your CampaignBot tab.'
+                    : publishedCount === (variants || []).length
+                      ? 'All templates are live on CampaignBot.'
+                      : 'CampaignBot tab connected.'}
+            </p>
+            <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${helper.onCampaignBot ? 'bg-blue-50 text-blue-700' : helper.helperInstalled ? 'bg-slate-100 text-slate-600' : 'bg-white border border-slate-200 text-slate-500'}`}>
+              {helper.onCampaignBot ? 'CampaignBot connected' : helper.helperInstalled ? 'Helper installed' : 'Helper needed'}
+            </span>
           </div>
-        )}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {(variants || []).map((v, i) => {
+              const st = v.waPublishStatus || 'queued';
+              return (
+                <div key={v.variantNumber || i} className="rounded-xl bg-white border border-slate-100 px-3 py-2">
+                  <p className="text-[11px] text-slate-400">{v.label || `Var ${VARIANT_LABELS[i]}`}</p>
+                  <p className="text-[12px] font-medium text-slate-800 capitalize mt-0.5">
+                    {st === 'publishing' ? 'Creating' : st === 'queued' || st === 'draft' ? 'Queued' : st}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          {publishMsg && <p className="text-[12.5px] text-slate-500">{publishMsg}</p>}
+          {variants[activeVariant]?.waPublishError && (
+            <p className="text-[12.5px] text-slate-700">{variants[activeVariant].waPublishError}</p>
+          )}
+        </div>
 
         {/* Tab bar */}
         <div className="flex border-b border-gray-100 overflow-x-auto scrollbar-hide">
@@ -1213,9 +1246,10 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
                 }`}
             >
               {v.label || `Var ${VARIANT_LABELS[i]}`}
-              {v.waPublishStatus === 'published' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-              {v.waPublishStatus === 'failed' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
-              {v.waPublishStatus === 'publishing' && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+              {v.waPublishStatus === 'published' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+              {v.waPublishStatus === 'failed' && <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />}
+              {v.waPublishStatus === 'queued' && <span className="w-1.5 h-1.5 rounded-full bg-blue-300" />}
+              {v.waPublishStatus === 'publishing' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
             </button>
           ))}
         </div>
@@ -1256,7 +1290,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
                     setSavingTpl(false);
                   }}
                   disabled={savingTpl}
-                  className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-[13px] font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50"
                 >
                   {savingTpl ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   Save template
@@ -1362,7 +1396,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
           <button
             onClick={onApprove}
             disabled={approving}
-            className="w-full flex items-center justify-center gap-3 py-3.5 bg-zinc-900 text-white text-[14px] font-medium rounded-xl hover:bg-zinc-800 transition-all disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-3 py-3.5 bg-blue-600 text-white text-[14px] font-medium rounded-xl hover:bg-blue-700 transition-all disabled:opacity-60 shadow-[0_8px_20px_rgba(37,99,235,0.28)]"
           >
             {approving ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Confirming</>
@@ -1442,7 +1476,7 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="w-full">
       <div className="flex items-center gap-3 mb-8">
         <button
           onClick={onBack}
@@ -1559,11 +1593,11 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
           <button
             onClick={generatePlan}
             disabled={!context.trim()}
-            className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-zinc-900 text-white text-[14px] font-medium rounded-xl hover:bg-zinc-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-blue-600 text-white text-[14px] font-medium rounded-xl hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_8px_20px_rgba(37,99,235,0.28)]"
           >
             Generate experiment
           </button>
-          <p className="text-center text-[12px] text-zinc-400 mt-3">Ten templates are created on CampaignBot automatically after generation</p>
+          <p className="text-center text-[12px] text-slate-400 mt-3">Ten templates queue to CampaignBot. Keep that tab open; progress stays here.</p>
         </>
       )}
     </div>
@@ -1629,7 +1663,7 @@ function CampaignsSection({ initialView }) {
   if (view === 'create') {
     if (step === 1) {
       return (
-        <div className="p-8">
+        <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
           <CampaignStep1
             onNext={(list) => { setSel(list); setStep(2); }}
             onCancel={() => { setView('list'); setStep(1); }}
@@ -1638,7 +1672,7 @@ function CampaignsSection({ initialView }) {
       );
     }
     return (
-      <div className="p-8">
+      <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
         <CampaignStep2
           selectedList={selectedList}
           onBack={() => setStep(1)}
@@ -1649,7 +1683,7 @@ function CampaignsSection({ initialView }) {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-7">
         <div>
@@ -1782,7 +1816,7 @@ function ContactsSection() {
         />
       )}
 
-      <div className="p-8 max-w-5xl">
+      <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
         <div className="flex items-center justify-between mb-7">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Contacts</h2>
@@ -1800,9 +1834,9 @@ function ContactsSection() {
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 text-blue-500 animate-spin" /></div>
         ) : (
-          <div className="flex gap-5">
+          <div className="flex gap-6 min-h-[calc(100vh-9rem)]">
             {/* Lists column */}
-            <div className="w-72 flex-shrink-0">
+            <div className="w-80 flex-shrink-0 overflow-y-auto pr-1">
               {lists.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center">
                   <Users className="w-8 h-8 text-gray-200 mx-auto mb-2" />
@@ -1844,7 +1878,7 @@ function ContactsSection() {
             </div>
 
             {/* Detail panel */}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0 h-full overflow-y-auto">
               {!selected ? (
                 <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center h-full flex flex-col items-center justify-center">
                   <Eye className="w-8 h-8 text-gray-200 mb-3" />
@@ -2674,7 +2708,7 @@ function CampaignDashboard({ campaignId, onBack }) {
   const sorted = [...variants].sort((a, b) => (b.conversionRate + b.clickRate) - (a.conversionRate + a.clickRate));
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
       {/* Header */}
       <div className="flex items-center gap-4 mb-7">
         <button onClick={onBack} className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300 transition-all">
@@ -3192,7 +3226,7 @@ function TemplatesSection() {
   const totalPages = Math.ceil(total / LIMIT);
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -4147,7 +4181,7 @@ function WhatsAppSection() {
   ];
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-900">WhatsApp</h2>
         <p className="text-[13.5px] text-gray-400 mt-0.5">Send messages, manage media, and monitor API connection</p>
@@ -4189,26 +4223,44 @@ function PlaceholderSection({ icon: Icon, title, description, badge = 'Coming So
 ══════════════════════════════════════════════════════════════════════════════ */
 function SettingsSection({ client }) {
   return (
-    <div className="p-8 max-w-xl">
-      <div className="mb-7">
-        <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
-        <p className="text-[13.5px] text-gray-400 mt-0.5">Your workspace information</p>
+    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
+      <div className="mb-8">
+        <h2 className="text-[22px] font-semibold text-slate-900 tracking-tight">Settings</h2>
+        <p className="text-[13.5px] text-slate-500 mt-1">Workspace and CampaignBot helper</p>
       </div>
-      <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100">
-        {[
-          { label: 'Client Name',    value: client?.name },
-          { label: 'Business Name',  value: client?.workspace?.businessName },
-          { label: 'Business Type',  value: client?.workspace?.businessType },
-          { label: 'Industry',       value: client?.workspace?.industry },
-          { label: 'Timezone',       value: client?.workspace?.timezone },
-        ].map(({ label, value }) => (
-          <div key={label} className="flex items-center justify-between px-5 py-3.5">
-            <p className="text-[13px] text-gray-500">{label}</p>
-            <p className="text-[13.5px] font-medium text-gray-900">{value || '—'}</p>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl border border-slate-200/80 divide-y divide-slate-100 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="px-5 py-4">
+            <p className="text-[13px] font-semibold text-slate-900">Workspace</p>
           </div>
-        ))}
+          {[
+            { label: 'Client name',    value: client?.name },
+            { label: 'Business name',  value: client?.workspace?.businessName },
+            { label: 'Business type',  value: client?.workspace?.businessType },
+            { label: 'Industry',       value: client?.workspace?.industry },
+            { label: 'Timezone',       value: client?.workspace?.timezone },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex items-center justify-between px-5 py-3.5">
+              <p className="text-[13px] text-slate-500">{label}</p>
+              <p className="text-[13.5px] font-medium text-slate-900">{value || '—'}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-blue-100 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <p className="text-[13px] font-semibold text-slate-900 mb-1">CampaignBot helper</p>
+          <p className="text-[13px] text-slate-500 mb-5 leading-relaxed">
+            There is no template-create API. A small Chrome helper fills the CampaignBot form in the tab you already have open. This product page only shows progress.
+          </p>
+          <ol className="space-y-3 text-[13.5px] text-slate-700">
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">1</span><span>Chrome → Extensions → turn on Developer mode → Load unpacked. Select the folder <code className="text-[12px] bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">extensions/picoso-campaignbot</code> in this repo.</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">2</span><span>Stay logged in on this WP Marketing page so the helper can store your PIN.</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">3</span><span>Open <span className="font-medium text-blue-700">campaignbot.online/templates</span> in this same Chrome profile and keep that tab open.</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">4</span><span>Generate a campaign. Templates are created in that CampaignBot tab. Status updates here — no extra window from us.</span></li>
+          </ol>
+        </div>
       </div>
-      <p className="text-[12px] text-gray-400 mt-4 text-center">Contact support to update workspace details.</p>
     </div>
   );
 }
@@ -4219,6 +4271,16 @@ function SettingsSection({ client }) {
 function Dashboard({ client, onLogout }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [campaignSubView, setCampaignSubView] = useState(null);
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
+    const send = () => {
+      window.postMessage({ source: 'picoso-wp-auth', pin: getPin(), apiBase }, '*');
+    };
+    send();
+    const t = setInterval(send, 8000);
+    return () => clearInterval(t);
+  }, []);
 
   const handleNavigate = (section, subview = null) => {
     setActiveSection(section);
@@ -4258,9 +4320,9 @@ function Dashboard({ client, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="h-screen overflow-hidden bg-[#F4F7FB] flex">
       <Sidebar active={activeSection} setActive={handleSetActive} client={client} onLogout={onLogout} />
-      <main className="flex-1 overflow-auto min-h-screen">
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto">
         {renderContent()}
       </main>
     </div>
