@@ -54,21 +54,25 @@ export async function checkEdgeCdp() {
 
 async function launchBrowser() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
+  const headless = process.env.CB_HEADLESS !== 'false';
   const common = {
-    headless: false,
+    headless,
     viewport: { width: 1440, height: 920 },
-    args: ['--disable-blink-features=AutomationControlled'],
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+    ],
     ignoreDefaultArgs: ['--enable-automation'],
   };
 
   try {
-    return await chromium.launchPersistentContext(PROFILE_DIR, {
-      ...common,
-      channel: 'msedge',
-    });
+    return await chromium.launchPersistentContext(PROFILE_DIR, common);
   } catch (err) {
-    console.warn('[CB Templates] Edge channel failed, falling back to Chromium:', err.message);
-    return chromium.launchPersistentContext(PROFILE_DIR, common);
+    if (/Executable doesn't exist/i.test(err.message)) {
+      throw new Error('Playwright Chromium is not installed on the server. In the backend folder run: npx playwright install chromium');
+    }
+    throw err;
   }
 }
 
@@ -76,7 +80,8 @@ async function isLoggedIn(page) {
   const text = await page.locator('body').innerText().catch(() => '');
   if (LOGIN_RE.test(text)) return false;
   if (await page.getByRole('heading', { name: /Create New Template/i }).isVisible().catch(() => false)) return true;
-  if (await page.getByRole('button', { name: /create (new )?template/i }).count()) return true;
+  if (await page.getByRole('button', { name: /new template/i }).count()) return true;
+  if (await page.locator('button[title="Create a new template"]').count()) return true;
   if (await page.locator('#name').isVisible().catch(() => false)) return true;
   const url = page.url();
   return url.includes('campaignbot.online') && !/signup|login|auth/i.test(url) && text.length > 80;
@@ -91,39 +96,22 @@ async function ensureLoggedIn(page) {
 
   if (await isLoggedIn(page)) return;
 
-  console.log('[CB Templates] Waiting for CampaignBot login in the opened window (up to 15 minutes)…');
-  const deadline = Date.now() + 15 * 60 * 1000;
-  while (Date.now() < deadline) {
-    await sleep(2000);
-    if (page.url() && !page.url().includes('/templates')) {
-      await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-    }
-    if (await isLoggedIn(page)) {
-      console.log('[CB Templates] Login detected — continuing');
-      return;
-    }
-  }
-  throw new Error('CampaignBot login was not completed in time. Sign in in the browser window that opened, then click Create on CampaignBot.');
+  throw new Error('CampaignBot session is not logged in on the server. An admin needs to log in once using the saved server profile (backend/.campaignbot-profile). After that, templates are created in the background from this app.');
 }
 
 async function openCreateModal(page) {
   const heading = page.getByRole('heading', { name: /Create New Template/i });
   if (await heading.isVisible().catch(() => false)) return;
 
-  const candidates = [
-    page.getByRole('button', { name: /create new template/i }),
-    page.getByRole('button', { name: /^create template$/i }),
-    page.getByRole('button', { name: /new template/i }),
-    page.locator('a, button').filter({ hasText: /create new template/i }).first(),
-    page.locator('button').filter({ hasText: /create/i }).first(),
-  ];
-  for (const btn of candidates) {
-    if (await btn.count() && await btn.first().isVisible().catch(() => false)) {
-      await btn.first().click();
-      break;
-    }
+  const newTpl = page.locator('button[title="Create a new template"]');
+  if (await newTpl.count()) {
+    await newTpl.first().click();
+  } else {
+    const byText = page.locator('button').filter({ hasText: /^\s*New Template\s*$/i }).first();
+    await byText.click();
   }
   await heading.waitFor({ state: 'visible', timeout: 25000 });
+  await page.locator('#name').waitFor({ state: 'visible', timeout: 10000 });
 }
 
 async function selectLanguage(page, code) {
@@ -140,7 +128,7 @@ async function fillBody(page, body) {
   const editor = page.locator('[contenteditable="true"]').first();
   await editor.waitFor({ state: 'visible', timeout: 10000 });
   await editor.click();
-  await page.keyboard.press('Control+A');
+  await editor.press('ControlOrMeta+A');
   await page.keyboard.press('Backspace');
   await page.keyboard.insertText(body || '');
 
@@ -151,6 +139,46 @@ async function fillBody(page, body) {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }, body || '');
+  }
+}
+
+async function fillVariableExamples(page, variant) {
+  const body = variant.body || variant.message || '';
+  const max = [...String(body).matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
+  if (!max) return;
+
+  const examples = variant.variableExamples || { 1: 'Rahul' };
+
+  for (let n = 1; n <= max; n++) {
+    const input = page.locator(`input[placeholder="Example value for variable ${n}"]`);
+    const heading = page.getByText(new RegExp(`Variable\\s*${n}\\s*Examples`, 'i')).first();
+
+    const hasSection = await heading.isVisible().catch(() => false);
+    if (!hasSection) {
+      const addVar = page.getByRole('button', { name: /^Add Variable$/i });
+      if (await addVar.count()) await addVar.first().click();
+      await heading.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+    }
+
+    if (!(await input.first().isVisible().catch(() => false))) {
+      const addEx = page.getByRole('button', { name: /Add Example/i });
+      if (await addEx.count()) await addEx.first().click();
+      await input.first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+    }
+
+    if (await input.first().isVisible().catch(() => false)) {
+      const value = String(examples[n] || examples[String(n)] || (n === 1 ? 'Rahul' : 'your order')).slice(0, 60);
+      await input.first().click();
+      await input.first().fill('');
+      await input.first().fill(value);
+      await input.first().evaluate((el, val) => {
+        const proto = HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        setter?.call(el, val);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, value);
+    }
   }
 }
 
@@ -205,19 +233,25 @@ async function fillAndSubmit(page, variant) {
   if (await page.locator('#category').count()) {
     await page.selectOption('#category', variant.category || 'MARKETING');
   }
+  if (await page.locator('#templateFormat').count()) {
+    await page.selectOption('#templateFormat', 'STANDARD');
+  }
 
   await selectLanguage(page, variant.language || 'en_US');
 
-  const headerType = variant.headerType || 'NONE';
+  let headerType = variant.headerType || 'NONE';
+  if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) headerType = 'NONE';
   if (await page.locator('#headerType').count()) {
     await page.selectOption('#headerType', headerType);
     await sleep(300);
   }
-  if (headerType === 'TEXT') {
-    await fillOptionalByLabel(page, /header text/i, variant.headerText);
+  if (headerType === 'TEXT' && variant.headerText) {
+    const header = String(variant.headerText).replace(/[^A-Za-z0-9 .,'!?-]/g, '').slice(0, 60);
+    await fillOptionalByLabel(page, /header text/i, header);
   }
 
   await fillBody(page, variant.body || variant.message || '');
+  await fillVariableExamples(page, variant);
 
   const footerType = variant.footerType || 'BUTTONS';
   if (await page.locator('#footerType').count()) {
@@ -241,6 +275,14 @@ async function fillAndSubmit(page, variant) {
     if (await urlInput.count() && await urlInput.isVisible().catch(() => false)) {
       await urlInput.fill(btn.url || 'https://picoso.in');
     }
+  }
+
+  const unsub = page.locator('#includeUnsubscribeFooter');
+  if (await unsub.count()) {
+    const checked = await unsub.isChecked();
+    const marketing = (variant.category || 'MARKETING') === 'MARKETING';
+    if (marketing && !checked) await unsub.check();
+    if (!marketing && checked) await unsub.uncheck();
   }
 
   await submitTemplate(page);

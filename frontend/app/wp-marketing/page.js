@@ -968,7 +968,6 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
   const [draftTpl, setDraftTpl] = useState(null);
   const [savingTpl, setSavingTpl] = useState(false);
   const [tplError, setTplError] = useState('');
-  const [helper, setHelper] = useState({ helperInstalled: false, onCampaignBot: false });
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState('');
 
@@ -984,15 +983,6 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
   const publishedCount = (variants || []).filter((v) => v.waPublishStatus === 'published').length;
   const failedCount = (variants || []).filter((v) => v.waPublishStatus === 'failed').length;
   const queuedCount = (variants || []).filter((v) => v.waPublishStatus === 'queued' || v.waPublishStatus === 'draft').length;
-
-  useEffect(() => {
-    const tick = () => {
-      wpMarketing.getHelperStatus().then((r) => setHelper(r.data || {})).catch(() => {});
-    };
-    tick();
-    const t = setInterval(tick, 4000);
-    return () => clearInterval(t);
-  }, []);
 
   useEffect(() => {
     if (!publishing && !anyPublishing && queuedCount === 0) return;
@@ -1012,7 +1002,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
     setPublishing(true); setPublishMsg('');
     try {
       const r = await wpMarketing.publishTemplates(experiment._id);
-      setPublishMsg(r.data?.message || 'Queued. Keep CampaignBot Templates open in this Chrome.');
+      setPublishMsg(r.data?.message || 'Creating templates in the background. Stay on this page.');
       onReload?.();
     } catch (err) {
       setPublishMsg(err?.response?.data?.error || 'Could not start template creation');
@@ -1052,7 +1042,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
           <ShieldCheck className="w-5 h-5 text-zinc-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-[14px] font-semibold text-zinc-900">Review before anything is sent</p>
-            <p className="text-[12.5px] text-slate-500 mt-0.5">Edit templates below. Creation runs in your CampaignBot tab — progress stays on this page.</p>
+            <p className="text-[12.5px] text-slate-500 mt-0.5">Edit templates below. They are created on CampaignBot in the background from this page.</p>
           </div>
           <span className="text-[11px] font-medium text-zinc-500 px-2.5 py-1 rounded-full border border-zinc-200">Awaiting approval</span>
         </div>
@@ -1185,7 +1175,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 gap-3 flex-wrap">
           <div>
             <p className="text-[14px] font-semibold text-zinc-900">Templates</p>
-            <p className="text-[12px] text-slate-400 mt-0.5">Created in your CampaignBot tab. Watch progress here.</p>
+            <p className="text-[12px] text-slate-400 mt-0.5">Created on CampaignBot from the server. Stay on this page.</p>
           </div>
           <div className="flex items-center gap-2">
             {publishedCount > 0 && (
@@ -1200,7 +1190,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
               className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 text-white text-[12.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-[0_4px_14px_rgba(37,99,235,0.25)]"
             >
               {(publishing || anyPublishing) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-              {(publishing || anyPublishing) ? 'Creating…' : failedCount ? 'Retry failed' : 'Queue templates'}
+              {(publishing || anyPublishing) ? 'Creating…' : failedCount ? 'Retry failed' : 'Create templates'}
             </button>
           </div>
         </div>
@@ -1208,19 +1198,12 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/80 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-[13px] text-slate-600">
-              {!helper.helperInstalled
-                ? 'Install the Picoso helper once (Settings), then open CampaignBot Templates in this Chrome while logged in.'
-                : !helper.onCampaignBot
-                  ? 'Helper is ready. Open campaignbot.online/templates in this Chrome (same profile). Creation runs there; this page only shows status.'
-                  : anyPublishing || queuedCount
-                    ? 'Creating templates in your CampaignBot tab.'
-                    : publishedCount === (variants || []).length
-                      ? 'All templates are live on CampaignBot.'
-                      : 'CampaignBot tab connected.'}
+              {anyPublishing || queuedCount
+                ? 'Creating templates on CampaignBot in the background. You can stay on this page.'
+                : publishedCount === (variants || []).length && (variants || []).length
+                  ? 'All templates are live on CampaignBot.'
+                  : 'Templates are created automatically after generation. Progress appears below.'}
             </p>
-            <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${helper.onCampaignBot ? 'bg-blue-50 text-blue-700' : helper.helperInstalled ? 'bg-slate-100 text-slate-600' : 'bg-white border border-slate-200 text-slate-500'}`}>
-              {helper.onCampaignBot ? 'CampaignBot connected' : helper.helperInstalled ? 'Helper installed' : 'Helper needed'}
-            </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {(variants || []).map((v, i) => {
@@ -1605,7 +1588,7 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
           >
             Generate experiment
           </button>
-          <p className="text-center text-[12px] text-slate-400 mt-3">Ten templates queue to CampaignBot. Keep that tab open; progress stays here.</p>
+          <p className="text-center text-[12px] text-slate-400 mt-3">Ten templates are created on CampaignBot in the background. Stay on this page.</p>
         </>
       )}
     </div>
@@ -4257,16 +4240,10 @@ function SettingsSection({ client }) {
         </div>
 
         <div className="bg-white rounded-2xl border border-blue-100 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <p className="text-[13px] font-semibold text-slate-900 mb-1">CampaignBot helper</p>
-          <p className="text-[13px] text-slate-500 mb-5 leading-relaxed">
-            There is no template-create API. A small Chrome helper fills the CampaignBot form in the tab you already have open. This product page only shows progress.
+          <p className="text-[13px] font-semibold text-slate-900 mb-1">Template creation</p>
+          <p className="text-[13px] text-slate-500 leading-relaxed">
+            Stay in WP Marketing. After you generate a plan, the server creates each template on CampaignBot and this page shows queued, creating, and live status. You do not need to open campaignbot.online.
           </p>
-          <ol className="space-y-3 text-[13.5px] text-slate-700">
-            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">1</span><span>Chrome → Extensions → turn on Developer mode → Load unpacked. Select the folder <code className="text-[12px] bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">extensions/picoso-campaignbot</code> in this repo.</span></li>
-            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">2</span><span>Stay logged in on this WP Marketing page so the helper can store your PIN.</span></li>
-            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">3</span><span>Open <span className="font-medium text-blue-700">campaignbot.online/templates</span> in this same Chrome profile and keep that tab open.</span></li>
-            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-[12px] font-semibold flex items-center justify-center flex-shrink-0">4</span><span>Generate a campaign. Templates are created in that CampaignBot tab. Status updates here — no extra window from us.</span></li>
-          </ol>
         </div>
       </div>
     </div>

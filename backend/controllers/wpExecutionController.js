@@ -8,6 +8,7 @@ import { WpExperiment, WpCampaignRun } from '../models/wpMarketingModels.js';
 import * as engine from '../services/wpExecutionEngine.js';
 import * as bot    from '../services/campaignBot.js';
 import { uploadBufferToS3 } from '../utils/s3.js';
+import { publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
 const helperPresence = new Map();
 
 /* ── WhatsApp connection & templates ─────────────────────────────────────── */
@@ -445,7 +446,7 @@ export const getHelperStatus = (req, res) => {
 export const getEdgeStatus = getHelperStatus;
 
 /**
- * Queue unpublished variants. The Chrome helper on campaignbot.online claims jobs.
+ * Queue unpublished variants and create them on CampaignBot from the backend.
  */
 export const publishTemplates = async (req, res) => {
   try {
@@ -467,10 +468,20 @@ export const publishTemplates = async (req, res) => {
     }
     await experiment.save();
 
+    setImmediate(async () => {
+      try {
+        const result = await publishVariantsToCampaignBot(req.params.id, variantNumbers);
+        console.log(`[CB Templates] job done — published:${result.published} failed:${result.failed}`);
+      } catch (err) {
+        console.error('[CB Templates] job error:', err.message);
+      }
+    });
+
     res.json({
       success: true,
       queued,
-      message: 'Templates are queued. Keep CampaignBot Templates open in this Chrome — progress updates on this page.',
+      started: true,
+      message: 'Templates are being created on CampaignBot in the background. Stay on this page to watch progress.',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

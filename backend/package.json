@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "edge:debug": "powershell -ExecutionPolicy Bypass -File ./scripts/start-edge-cdp.ps1"
+    "postinstall": "playwright install chromium",
+    "playwright:install": "playwright install chromium"
   },
   "dependencies": {
     "aws-sdk": "^2.1693.0",

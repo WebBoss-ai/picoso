@@ -141,24 +141,8 @@ function addExampleButton() {
 
 function exampleInputFor(n) {
   const root = modalRoot() || document;
-  const byPh = [...root.querySelectorAll('input, textarea')].find((el) =>
-    new RegExp(`example value for variable\\s*${n}|variable\\s*${n}`, 'i').test(el.placeholder || '')
-  );
-  if (byPh) return byPh;
-
-  const varsHint = [...root.querySelectorAll('p, h4, label')].find((el) =>
-    /^\s*Variables:?\s*$/i.test((el.textContent || '').replace(/\s+/g, ' ').trim())
-    || /Variable\s*1\s*Examples/i.test(el.textContent || '')
-  );
-  const section = varsHint?.closest('.border-t') || varsHint?.closest('div')?.parentElement || varsHint?.parentElement;
-  const exampleInputs = [...(section || root).querySelectorAll('input')].filter((el) => {
-    if (el.type === 'checkbox' || el.id === 'name') return false;
-    const ph = el.placeholder || '';
-    return /example/i.test(ph) || /variable/i.test(ph) || (!ph && el.offsetParent);
-  });
-  const byExamplePh = exampleInputs.filter((el) => /example/i.test(el.placeholder || ''));
-  if (byExamplePh[n - 1]) return byExamplePh[n - 1];
-  return exampleInputs[n - 1] || null;
+  return root.querySelector(`input[placeholder="Example value for variable ${n}"]`)
+    || document.querySelector(`input[placeholder="Example value for variable ${n}"]`);
 }
 
 async function fillVariableExamples(body, examples = {}) {
