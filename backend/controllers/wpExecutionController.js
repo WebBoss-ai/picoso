@@ -9,6 +9,7 @@ import * as engine from '../services/wpExecutionEngine.js';
 import * as bot    from '../services/campaignBot.js';
 import { uploadBufferToS3 } from '../utils/s3.js';
 import { publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
+import * as cbAuth from '../services/campaignBotAuth.js';
 const helperPresence = new Map();
 
 /* ── WhatsApp connection & templates ─────────────────────────────────────── */
@@ -441,6 +442,28 @@ export const getHelperStatus = (req, res) => {
     helperInstalled: live,
     onCampaignBot: live && !!s.onCampaignBot,
   });
+};
+
+export const getCbAuth = (_req, res) => {
+  res.json({ success: true, ...cbAuth.getCbAuthPublic() });
+};
+
+export const submitCbPhone = (req, res) => {
+  try {
+    cbAuth.submitCbPhone(req.body?.phone);
+    res.json({ success: true, ...cbAuth.getCbAuthPublic() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const submitCbOtp = (req, res) => {
+  try {
+    cbAuth.submitCbOtp(req.body?.otp);
+    res.json({ success: true, ...cbAuth.getCbAuthPublic() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 };
 
 export const getEdgeStatus = getHelperStatus;

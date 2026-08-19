@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { chromium } from 'playwright';
 import { WpExperiment } from '../models/wpMarketingModels.js';
+import * as cbAuth from './campaignBotAuth.js';
 
 const TEMPLATES = 'https://campaignbot.online/templates';
 const PROFILE_DIR = process.env.CB_PROFILE_DIR
@@ -122,16 +123,96 @@ async function isLoggedIn(page) {
   return url.includes('campaignbot.online') && !/signup|login|auth/i.test(url) && text.length > 80;
 }
 
-async function ensureLoggedIn(page) {
+async function fillLoginPhone(page, phone) {
+  const input = page.locator('input[type="tel"], input[placeholder*="obile" i], input[placeholder*="phone" i], input[name*="phone" i], input[id*="phone" i]').first();
+  await input.waitFor({ state: 'visible', timeout: 15000 });
+  await input.fill('');
+  await input.fill(phone);
+  const send = page.getByRole('button', { name: /otp|continue|start|send|next|submit/i }).first();
+  if (await send.count()) await send.click();
+  else await input.press('Enter');
+}
+
+async function fillLoginOtp(page, otp) {
+  const digits = String(otp).replace(/\D/g, '');
+  const boxes = page.locator('input[maxlength="1"]');
+  const boxCount = await boxes.count();
+  if (boxCount >= 4) {
+    for (let i = 0; i < Math.min(boxCount, digits.length); i++) {
+      await boxes.nth(i).fill(digits[i]);
+    }
+  } else {
+    const otpInput = page.locator('input[placeholder*="OTP" i], input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i]').first();
+    await otpInput.waitFor({ state: 'visible', timeout: 15000 });
+    await otpInput.fill(digits);
+  }
+  const verify = page.getByRole('button', { name: /verify|continue|submit|login|confirm/i }).first();
+  if (await verify.count()) await verify.click();
+}
+
+async function pageLooksLikeOtp(page) {
+  const text = await page.locator('body').innerText().catch(() => '');
+  return /Enter OTP|Verify OTP|OTP sent|one.?time/i.test(text);
+}
+
+async function ensureLoggedIn(page, experimentId) {
+  cbAuth.setCbAuth({
+    phase: 'launching',
+    experimentId: experimentId || null,
+    message: 'Opening CampaignBot',
+  });
+
   if (!page.url().includes('campaignbot.online')) {
     await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
   } else if (!page.url().includes('/templates')) {
     await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
   }
 
-  if (await isLoggedIn(page)) return;
+  if (await isLoggedIn(page)) {
+    cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session ready' });
+    return;
+  }
 
-  throw new Error('CampaignBot session is not logged in on the server. An admin needs to log in once using the saved server profile (backend/.campaignbot-profile). After that, templates are created in the background from this app.');
+  if (await pageLooksLikeOtp(page)) {
+    cbAuth.setCbAuth({
+      phase: 'otp',
+      message: 'Enter the OTP sent to your CampaignBot number. Stay on this page.',
+    });
+    const otp = await cbAuth.waitForOtp();
+    if (!otp) throw new Error('OTP was not entered in time. Retry template creation and enter the OTP here.');
+    await fillLoginOtp(page, otp);
+  } else {
+    cbAuth.setCbAuth({
+      phase: 'phone',
+      message: 'Enter the CampaignBot mobile number. OTP will be requested from this page, not campaignbot.online.',
+    });
+    const phone = await cbAuth.waitForPhone();
+    if (!phone) throw new Error('CampaignBot number was not entered in time. Retry and enter the number here.');
+    await fillLoginPhone(page, phone);
+    await sleep(800);
+    if (!(await isLoggedIn(page))) {
+      cbAuth.setCbAuth({
+        phase: 'otp',
+        message: 'Enter the OTP sent to that number. Stay on this page.',
+      });
+      const otp = await cbAuth.waitForOtp();
+      if (!otp) throw new Error('OTP was not entered in time. Retry template creation and enter the OTP here.');
+      await fillLoginOtp(page, otp);
+    }
+  }
+
+  const deadline = Date.now() + 45000;
+  while (Date.now() < deadline) {
+    if (await isLoggedIn(page)) {
+      if (!page.url().includes('/templates')) {
+        await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      }
+      cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
+      return;
+    }
+    await sleep(1000);
+  }
+  throw new Error('CampaignBot login did not complete. Check the OTP and retry from this page.');
 }
 
 async function openCreateModal(page) {
@@ -338,6 +419,8 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
   while (busy && Date.now() < waitUntil) await sleep(1500);
   if (busy) throw new Error('A CampaignBot publish job is already running');
   busy = true;
+  cbAuth.resetCbAuth();
+  cbAuth.setCbAuth({ phase: 'launching', experimentId, message: 'Starting CampaignBot on the server' });
 
   try {
     const experiment = await WpExperiment.findById(experimentId);
@@ -361,9 +444,15 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
 
     const results = [];
     let context;
+    cbAuth.setCbAuth({
+      phase: 'launching',
+      experimentId,
+      message: 'Starting CampaignBot on the server',
+    });
     try {
       context = await getPersistentContext();
     } catch (err) {
+      cbAuth.setCbAuth({ phase: 'error', message: err.message });
       for (const v of variants) {
         await patchVariant(experimentId, v.variantNumber, {
           waPublishStatus: 'failed',
@@ -374,7 +463,7 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
     }
 
     const page = context.pages()[0] || await context.newPage();
-    await ensureLoggedIn(page);
+    await ensureLoggedIn(page, experimentId);
 
     for (const v of variants) {
       try {
@@ -407,6 +496,7 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
       results,
     };
   } catch (err) {
+    cbAuth.setCbAuth({ phase: 'error', message: err.message });
     try {
       const exp = await WpExperiment.findById(experimentId);
       for (const v of exp?.variants || []) {

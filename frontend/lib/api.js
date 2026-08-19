@@ -310,6 +310,9 @@ export const wpMarketing = {
   getHelperStatus:   ()        => wpMarketingApi.get('/wp-marketing/helper/status'),
   helperHeartbeat:   (data)    => wpMarketingApi.post('/wp-marketing/helper/heartbeat', data || {}),
   getEdgeStatus:     ()        => wpMarketingApi.get('/wp-marketing/helper/status'),
+  getCbAuth:         ()        => wpMarketingApi.get('/wp-marketing/cb-auth'),
+  submitCbPhone:     (phone)   => wpMarketingApi.post('/wp-marketing/cb-auth/phone', { phone }),
+  submitCbOtp:       (otp)     => wpMarketingApi.post('/wp-marketing/cb-auth/otp', { otp }),
   publishTemplates:  (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/publish-templates`, data || {}),
 };
 

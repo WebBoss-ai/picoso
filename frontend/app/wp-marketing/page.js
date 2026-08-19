@@ -961,6 +961,86 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
   );
 }
 
+function CampaignBotAuthPanel() {
+  const [auth, setAuth] = useState({ phase: 'idle' });
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const tick = () => {
+      wpMarketing.getCbAuth().then((r) => setAuth(r.data || {})).catch(() => {});
+    };
+    tick();
+    const t = setInterval(tick, 1500);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!['launching', 'phone', 'otp', 'error'].includes(auth.phase)) return null;
+
+  const sendPhone = async () => {
+    setBusy(true); setErr('');
+    try { await wpMarketing.submitCbPhone(phone); }
+    catch (e) { setErr(e?.response?.data?.error || 'Could not submit number'); }
+    setBusy(false);
+  };
+
+  const sendOtp = async () => {
+    setBusy(true); setErr('');
+    try { await wpMarketing.submitCbOtp(otp); }
+    catch (e) { setErr(e?.response?.data?.error || 'Could not submit OTP'); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-5 space-y-3">
+      <p className="text-[14px] font-semibold text-slate-900">CampaignBot sign-in</p>
+      <p className="text-[13px] text-slate-600">{auth.message || 'Connecting'}</p>
+      {auth.phase === 'launching' && (
+        <div className="flex items-center gap-2 text-[13px] text-slate-500">
+          <Loader2 className="w-4 h-4 animate-spin" /> Opening CampaignBot on the server
+        </div>
+      )}
+      {auth.phase === 'phone' && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            placeholder="10-digit mobile"
+            className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white focus:outline-none focus:border-blue-400"
+          />
+          <button
+            onClick={sendPhone}
+            disabled={busy || phone.length !== 10}
+            className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
+          >
+            {busy ? 'Sending' : 'Send OTP'}
+          </button>
+        </div>
+      )}
+      {auth.phase === 'otp' && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
+            placeholder="OTP"
+            className="flex-1 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] bg-white tracking-[0.2em] focus:outline-none focus:border-blue-400"
+          />
+          <button
+            onClick={sendOtp}
+            disabled={busy || otp.length < 4}
+            className="px-4 py-2.5 bg-blue-600 text-white text-[13.5px] font-medium rounded-xl hover:bg-blue-700 disabled:opacity-40"
+          >
+            {busy ? 'Verifying' : 'Verify'}
+          </button>
+        </div>
+      )}
+      {err && <p className="text-[12.5px] text-slate-700">{err}</p>}
+    </div>
+  );
+}
+
 function ExperimentPlanView({ experiment, onApprove, approving, approved, onReload }) {
   const [activeVariant, setActiveVariant] = useState(0);
   const [expandedSection, setExpandedSection] = useState(null);
@@ -1036,6 +1116,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
 
   return (
     <div className="space-y-4">
+      <CampaignBotAuthPanel />
       {/* Approval banner */}
       {!approved ? (
         <div className="flex items-start gap-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
@@ -1199,7 +1280,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
           <div className="flex items-center justify-between gap-3">
             <p className="text-[13px] text-slate-600">
               {anyPublishing || queuedCount
-                ? 'Creating templates on CampaignBot in the background. You can stay on this page.'
+                ? 'Creating templates on the server. If CampaignBot asks for a login, enter the number and OTP in the card above. Stay on this page.'
                 : publishedCount === (variants || []).length && (variants || []).length
                   ? 'All templates are live on CampaignBot.'
                   : 'Templates are created automatically after generation. Progress appears below.'}
