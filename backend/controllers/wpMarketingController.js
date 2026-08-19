@@ -5,6 +5,7 @@
 import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink, WpMessageLog } from '../models/wpMarketingModels.js';
 import crypto from 'crypto';
 import { CohereProvider } from '../llm/provider/cohere.js';
+import { publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
 
 /* ── Auth ping ─────────────────────────────────────────────────────────────── */
 export const verifyPin = (req, res) => {
@@ -180,6 +181,13 @@ const COPY_ANGLES = [
   'FOMO + Scarcity',
 ];
 
+function stripEmoji(s) {
+  return String(s || '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function slugifyTemplateName(raw, i) {
   const cleaned = String(raw || '')
     .toLowerCase()
@@ -192,7 +200,7 @@ function slugifyTemplateName(raw, i) {
 function normaliseVariantTemplate(v, i) {
   const label = v.label || `Variant ${VARIANT_LABELS[i]}`;
   const cta   = (v.cta || 'Order Now').slice(0, 25);
-  let body    = v.body || v.message || '';
+  let body    = stripEmoji(v.body || v.message || '');
   body = body.replace(/\{\{name\}\}/gi, '{{1}}');
   if (!/\{\{1\}\}/.test(body) && body) {
     body = `Hey *{{1}}*! ${body}`;
@@ -218,21 +226,21 @@ function normaliseVariantTemplate(v, i) {
 
   return {
     variantNumber: v.variantNumber || (i + 1),
-    label,
-    copyAngle: v.copyAngle || COPY_ANGLES[i],
-    tone: v.tone || '',
-    offer: v.offer || '',
-    cta,
-    imageConceptDescription: v.imageConceptDescription || '',
+    label: stripEmoji(label),
+    copyAngle: stripEmoji(v.copyAngle || COPY_ANGLES[i]),
+    tone: stripEmoji(v.tone || ''),
+    offer: stripEmoji(v.offer || ''),
+    cta: stripEmoji(cta),
+    imageConceptDescription: stripEmoji(v.imageConceptDescription || ''),
     message: body,
     templateName: slugifyTemplateName(v.templateName || `picoso_${label}_${i + 1}`, i),
     category,
     language: v.language || 'en_US',
     headerType,
-    headerText: (v.headerText || '').slice(0, 60),
+    headerText: stripEmoji(v.headerText || '').slice(0, 60),
     body,
     footerType,
-    footerText: (v.footerText || '').slice(0, 60),
+    footerText: stripEmoji(v.footerText || '').slice(0, 60),
     buttons,
     status: 'active',
   };
@@ -280,7 +288,8 @@ STRICT RULES:
 - category: always MARKETING unless the copy is clearly transactional (then UTILITY)
 - language: always en_US
 - headerType: NONE or TEXT (TEXT header max 60 chars, no variables unless needed)
-- body: 2–4 short sentences, conversational WhatsApp tone, relevant emojis allowed
+- body: 2-4 short sentences, conversational WhatsApp tone
+- Do not use emojis anywhere — no emoji characters in title, body, header, offer, or CTA
 - Body variables MUST use positional {{1}}, {{2}} — never {{name}}
 - {{1}} is ALWAYS the customer first name
 - Do not use more than 2 body variables
@@ -313,7 +322,7 @@ JSON schema to return:
       "language": "en_US",
       "headerType": "TEXT",
       "headerText": "24 hours only",
-      "body": "Hey *{{1}}*! Don't miss this — 50% off your next bowl, today only.",
+      "body": "Hey *{{1}}*! Don't miss this — 50 percent off your next bowl, today only.",
       "footerType": "BUTTONS",
       "footerText": "",
       "buttons": [{ "type": "URL", "text": "Order Now", "url": "https://picoso.in" }]
@@ -403,6 +412,16 @@ Generate all 10 variants now. Make each genuinely distinct.`;
 
     // Update campaign status
     await WpCampaignDraft.findByIdAndUpdate(campaign._id, { status: 'strategy_ready', updatedAt: new Date() });
+
+    const experimentId = experiment._id.toString();
+    setImmediate(async () => {
+      try {
+        const result = await publishVariantsToCampaignBot(experimentId);
+        console.log(`[CB Templates] auto-publish after generate — published:${result.published} failed:${result.failed}`);
+      } catch (err) {
+        console.error('[CB Templates] auto-publish after generate:', err.message);
+      }
+    });
 
     res.json({ success: true, experiment });
   } catch (err) {

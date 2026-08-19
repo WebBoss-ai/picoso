@@ -1,70 +1,109 @@
 /**
- * Drive CampaignBot's template UI via Playwright → existing Edge (CDP).
- * Target: https://campaignbot.online/templates
- *
- * Edge must already be running with:
- *   msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\edge-automation"
+ * Create CampaignBot WhatsApp templates by driving the live UI.
+ * Launches Microsoft Edge (persistent profile) automatically — no CDP / debug flag.
+ * Session is saved in backend/.campaignbot-profile so later runs stay logged in.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { chromium } from 'playwright';
 import { WpExperiment } from '../models/wpMarketingModels.js';
 
-const CDP_URL     = process.env.EDGE_CDP_URL || 'http://localhost:9222';
-const TEMPLATES   = 'https://campaignbot.online/templates';
-const LANG_LABEL  = {
+const TEMPLATES = 'https://campaignbot.online/templates';
+const PROFILE_DIR = process.env.CB_PROFILE_DIR
+  || path.join(process.cwd(), '.campaignbot-profile');
+
+const LANG_LABEL = {
   en_US: 'English (US)',
   en_GB: 'English (UK)',
   hi:    'Hindi',
 };
 
+const LOGIN_RE = /Business Sign Up|Start with Mobile Number|ONLY 3 STEPS TO START|Enter OTP|Verify OTP/i;
+
 let busy = false;
+let sharedContext = null;
+
+async function getPersistentContext() {
+  if (sharedContext) {
+    try {
+      const pages = sharedContext.pages();
+      if (pages) return sharedContext;
+    } catch {
+      sharedContext = null;
+    }
+  }
+  sharedContext = await launchBrowser();
+  sharedContext.on('close', () => { sharedContext = null; });
+  return sharedContext;
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function checkEdgeCdp() {
+  // Self-launching Playwright — always "ready". First run may ask for CampaignBot login in the opened window.
+  return {
+    connected: true,
+    selfLaunch: true,
+    onCampaignBot: true,
+    profileDir: PROFILE_DIR,
+  };
+}
+
+async function launchBrowser() {
+  fs.mkdirSync(PROFILE_DIR, { recursive: true });
+  const common = {
+    headless: false,
+    viewport: { width: 1440, height: 920 },
+    args: ['--disable-blink-features=AutomationControlled'],
+    ignoreDefaultArgs: ['--enable-automation'],
+  };
+
   try {
-    const browser = await chromium.connectOverCDP(CDP_URL, { timeout: 4000 });
-    const ctx = browser.contexts()[0];
-    const pages = ctx?.pages() || [];
-    const urls = pages.map((p) => p.url());
-    const onTemplates = urls.some((u) => u.includes('campaignbot.online'));
-    try { await browser.close(); } catch { /* disconnect only */ }
-    return {
-      connected: true,
-      pageCount: pages.length,
-      onCampaignBot: onTemplates,
-      urls,
-    };
-  } catch {
-    return {
-      connected: false,
-      pageCount: 0,
-      onCampaignBot: false,
-      error: `Cannot reach Edge at ${CDP_URL}. Close extra Edge windows, then run backend/scripts/start-edge-cdp.ps1 and log in to CampaignBot.`,
-    };
+    return await chromium.launchPersistentContext(PROFILE_DIR, {
+      ...common,
+      channel: 'msedge',
+    });
+  } catch (err) {
+    console.warn('[CB Templates] Edge channel failed, falling back to Chromium:', err.message);
+    return chromium.launchPersistentContext(PROFILE_DIR, common);
   }
 }
 
-async function attachPage() {
-  const browser = await chromium.connectOverCDP(CDP_URL, { timeout: 8000 });
-  const context = browser.contexts()[0];
-  if (!context) throw new Error('Edge is open but has no context — relaunch with start-edge-cdp.ps1');
+async function isLoggedIn(page) {
+  const text = await page.locator('body').innerText().catch(() => '');
+  if (LOGIN_RE.test(text)) return false;
+  if (await page.getByRole('heading', { name: /Create New Template/i }).isVisible().catch(() => false)) return true;
+  if (await page.getByRole('button', { name: /create (new )?template/i }).count()) return true;
+  if (await page.locator('#name').isVisible().catch(() => false)) return true;
+  const url = page.url();
+  return url.includes('campaignbot.online') && !/signup|login|auth/i.test(url) && text.length > 80;
+}
 
-  let page = context.pages().find((p) => p.url().includes('campaignbot.online')) || context.pages()[0];
-  if (!page) page = await context.newPage();
-
-  if (!page.url().includes('campaignbot.online/templates')) {
-    await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 });
+async function ensureLoggedIn(page) {
+  if (!page.url().includes('campaignbot.online')) {
+    await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } else if (!page.url().includes('/templates')) {
+    await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
   }
 
-  const bodyText = await page.locator('body').innerText().catch(() => '');
-  if (/Business Sign Up|Start with Mobile Number/i.test(bodyText)) {
-    throw new Error('CampaignBot login screen is showing in Edge. Log in on that Edge window, then retry.');
-  }
+  if (await isLoggedIn(page)) return;
 
-  return { browser, page };
+  console.log('[CB Templates] Waiting for CampaignBot login in the opened window (up to 15 minutes)…');
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(2000);
+    if (page.url() && !page.url().includes('/templates')) {
+      await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+    }
+    if (await isLoggedIn(page)) {
+      console.log('[CB Templates] Login detected — continuing');
+      return;
+    }
+  }
+  throw new Error('CampaignBot login was not completed in time. Sign in in the browser window that opened, then click Create on CampaignBot.');
 }
 
 async function openCreateModal(page) {
@@ -75,6 +114,7 @@ async function openCreateModal(page) {
     page.getByRole('button', { name: /create new template/i }),
     page.getByRole('button', { name: /^create template$/i }),
     page.getByRole('button', { name: /new template/i }),
+    page.locator('a, button').filter({ hasText: /create new template/i }).first(),
     page.locator('button').filter({ hasText: /create/i }).first(),
   ];
   for (const btn of candidates) {
@@ -83,7 +123,7 @@ async function openCreateModal(page) {
       break;
     }
   }
-  await heading.waitFor({ state: 'visible', timeout: 20000 });
+  await heading.waitFor({ state: 'visible', timeout: 25000 });
 }
 
 async function selectLanguage(page, code) {
@@ -122,10 +162,19 @@ async function fillOptionalByLabel(page, labelRe, value) {
   }
 }
 
+async function closeModalIfOpen(page) {
+  const closeBtn = page.getByRole('button', { name: /close modal/i });
+  if (await closeBtn.count()) await closeBtn.click().catch(() => {});
+  const cancel = page.getByRole('button', { name: /^cancel$/i });
+  if (await cancel.count() && await cancel.first().isVisible().catch(() => false)) {
+    await cancel.first().click().catch(() => {});
+  }
+}
+
 async function submitTemplate(page) {
   const submit = page.getByRole('button', { name: /^Create Template$/i }).last();
   await submit.waitFor({ state: 'visible', timeout: 8000 });
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 16; i++) {
     if (!(await submit.isDisabled())) break;
     await sleep(250);
   }
@@ -136,10 +185,10 @@ async function submitTemplate(page) {
 
   const heading = page.getByRole('heading', { name: /Create New Template/i });
   try {
-    await heading.waitFor({ state: 'hidden', timeout: 25000 });
+    await heading.waitFor({ state: 'hidden', timeout: 30000 });
   } catch {
     const errText = await page.locator('.text-red-600, .text-red-500, [class*="error"]').first().innerText().catch(() => '');
-    throw new Error(errText || 'Create Template did not close — check the Edge window for a validation error');
+    throw new Error(errText || 'Create Template did not close — CampaignBot may have rejected the template');
   }
 }
 
@@ -207,39 +256,48 @@ async function patchVariant(experimentId, variantNumber, fields) {
   );
 }
 
-/**
- * Sequentially create each variant as a CampaignBot template in the attached Edge tab.
- */
 export async function publishVariantsToCampaignBot(experimentId, variantNumbers = null) {
+  const waitUntil = Date.now() + 3 * 60 * 1000;
+  while (busy && Date.now() < waitUntil) await sleep(1500);
   if (busy) throw new Error('A CampaignBot publish job is already running');
   busy = true;
 
-  const experiment = await WpExperiment.findById(experimentId);
-  if (!experiment) {
-    busy = false;
-    throw new Error('Experiment not found');
-  }
-
-  const variants = experiment.variants.filter((v) => {
-    if (variantNumbers?.length) return variantNumbers.includes(v.variantNumber);
-    return v.waPublishStatus !== 'published';
-  });
-
-  if (!variants.length) {
-    busy = false;
-    return { published: 0, failed: 0, skipped: experiment.variants.length, results: [] };
-  }
-
-  for (const v of variants) {
-    await patchVariant(experimentId, v.variantNumber, {
-      waPublishStatus: 'publishing',
-      waPublishError: '',
-    });
-  }
-
-  const results = [];
   try {
-    const { page } = await attachPage();
+    const experiment = await WpExperiment.findById(experimentId);
+    if (!experiment) throw new Error('Experiment not found');
+
+    const variants = experiment.variants.filter((v) => {
+      if (variantNumbers?.length) return variantNumbers.includes(v.variantNumber);
+      return v.waPublishStatus !== 'published';
+    });
+
+    if (!variants.length) {
+      return { published: 0, failed: 0, skipped: experiment.variants.length, results: [] };
+    }
+
+    for (const v of variants) {
+      await patchVariant(experimentId, v.variantNumber, {
+        waPublishStatus: 'publishing',
+        waPublishError: '',
+      });
+    }
+
+    const results = [];
+    let context;
+    try {
+      context = await getPersistentContext();
+    } catch (err) {
+      for (const v of variants) {
+        await patchVariant(experimentId, v.variantNumber, {
+          waPublishStatus: 'failed',
+          waPublishError: err.message,
+        });
+      }
+      throw err;
+    }
+
+    const page = context.pages()[0] || await context.newPage();
+    await ensureLoggedIn(page);
 
     for (const v of variants) {
       try {
@@ -251,29 +309,39 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
           templateName: name,
         });
         results.push({ variantNumber: v.variantNumber, ok: true, templateName: name });
-        console.log(`[CB Templates] ✓ ${v.label} → ${name}`);
-        await sleep(1200);
+        console.log(`[CB Templates] published ${v.label} as ${name}`);
+        await sleep(1000);
       } catch (err) {
         await patchVariant(experimentId, v.variantNumber, {
           waPublishStatus: 'failed',
           waPublishError: err.message,
         });
         results.push({ variantNumber: v.variantNumber, ok: false, error: err.message });
-        console.error(`[CB Templates] ✗ ${v.label}: ${err.message}`);
-        // Close modal if it got stuck so the next variant can start
-        const closeBtn = page.getByRole('button', { name: /close modal/i });
-        if (await closeBtn.count()) await closeBtn.click().catch(() => {});
-        const cancel = page.getByRole('button', { name: /^cancel$/i });
-        if (await cancel.count() && await cancel.first().isVisible().catch(() => false)) {
-          await cancel.first().click().catch(() => {});
-        }
-        await sleep(800);
+        console.error(`[CB Templates] failed ${v.label}: ${err.message}`);
+        await closeModalIfOpen(page);
+        await sleep(600);
       }
     }
 
-    const published = results.filter((r) => r.ok).length;
-    const failed = results.filter((r) => !r.ok).length;
-    return { published, failed, skipped: 0, results };
+    return {
+      published: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => r.ok === false).length,
+      skipped: 0,
+      results,
+    };
+  } catch (err) {
+    try {
+      const exp = await WpExperiment.findById(experimentId);
+      for (const v of exp?.variants || []) {
+        if (v.waPublishStatus === 'publishing') {
+          await patchVariant(experimentId, v.variantNumber, {
+            waPublishStatus: 'failed',
+            waPublishError: err.message,
+          });
+        }
+      }
+    } catch { /* ignore */ }
+    throw err;
   } finally {
     busy = false;
   }

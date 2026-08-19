@@ -3,3 +3,4 @@ node_modules/
 # whatsapp-web.js persisted session + puppeteer cache
 .wwebjs_auth/
 .wwebjs_cache/
+.campaignbot-profile/

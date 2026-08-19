@@ -514,65 +514,65 @@ function CampaignStep1({ onNext, onCancel }) {
 
       <div className="max-w-2xl">
         {/* Step header */}
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={onCancel} className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+        <div className="flex items-center gap-3 mb-8">
+          <button onClick={onCancel} className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-800 transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <p className="text-[11.5px] font-semibold text-blue-600 uppercase tracking-widest mb-0.5">Step 1 of 2</p>
-            <h2 className="text-lg font-semibold text-gray-900">Select Contact List</h2>
+            <p className="text-[11px] font-medium text-zinc-400 tracking-[0.16em] uppercase mb-1">Step 1 of 2</p>
+            <h2 className="text-[22px] font-semibold text-zinc-900 tracking-tight">Audience</h2>
           </div>
         </div>
 
         {/* Step tracker */}
-        <div className="flex items-center gap-2 mb-7">
+        <div className="flex items-center gap-3 mb-8">
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center">1</span>
-            <span className="text-[13px] font-medium text-blue-600">Contacts</span>
+            <span className="w-6 h-6 rounded-full bg-zinc-900 text-white text-[11px] font-medium flex items-center justify-center">1</span>
+            <span className="text-[13px] font-medium text-zinc-900">Contacts</span>
           </div>
-          <div className="flex-1 h-px bg-gray-200 mx-2" />
+          <div className="flex-1 h-px bg-zinc-200" />
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full border-2 border-gray-200 text-gray-400 text-[11px] font-bold flex items-center justify-center">2</span>
-            <span className="text-[13px] text-gray-400">Context</span>
+            <span className="w-6 h-6 rounded-full border border-zinc-200 text-zinc-400 text-[11px] font-medium flex items-center justify-center">2</span>
+            <span className="text-[13px] text-zinc-400">Brief</span>
           </div>
         </div>
 
         {/* Search + new list button */}
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search lists…"
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-[13.5px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Search lists"
+              className="w-full pl-10 pr-4 py-2.5 border border-zinc-200 rounded-xl text-[13.5px] text-zinc-900 placeholder-zinc-400 bg-white focus:outline-none focus:border-zinc-400"
             />
           </div>
           <button
             onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 border border-blue-200 text-blue-600 text-[13.5px] font-medium rounded-xl hover:bg-blue-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 border border-zinc-200 text-zinc-800 text-[13.5px] font-medium rounded-xl hover:bg-zinc-50 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            New List
+            New list
           </button>
         </div>
 
         {/* List grid */}
         {loading ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+            <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
-            <Users className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-            <p className="text-[14px] font-medium text-gray-500 mb-1">No contact lists yet</p>
-            <p className="text-[13px] text-gray-400 mb-4">Create your first list to continue</p>
+          <div className="bg-white rounded-2xl border border-dashed border-zinc-200 p-10 text-center">
+            <Users className="w-8 h-8 text-zinc-200 mx-auto mb-3" />
+            <p className="text-[14px] font-medium text-zinc-600 mb-1">No contact lists yet</p>
+            <p className="text-[13px] text-zinc-400 mb-4">Create a list to continue</p>
             <button
               onClick={() => setShowModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-medium rounded-xl hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-[13px] font-medium rounded-xl hover:bg-zinc-800 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              Create Contact List
+              Create list
             </button>
           </div>
         ) : (
@@ -581,24 +581,24 @@ function CampaignStep1({ onNext, onCancel }) {
               <button
                 key={list._id}
                 onClick={() => setSelected(list)}
-                className={`text-left p-4 rounded-2xl border-2 transition-all
+                className={`text-left p-4 rounded-2xl border transition-all
                   ${selected?._id === list._id
-                    ? 'border-blue-500 bg-blue-50 shadow-[0_0_0_4px_rgba(59,130,246,0.08)]'
-                    : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'
+                    ? 'border-zinc-900 bg-zinc-50'
+                    : 'border-zinc-150 border-zinc-200 bg-white hover:border-zinc-400'
                   }`}
               >
                 <div className="flex items-start justify-between">
-                  <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center mb-2.5">
-                    <Users className="w-4.5 h-4.5 text-gray-500" />
+                  <div className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center mb-2.5">
+                    <Users className="w-4.5 h-4.5 text-zinc-500" />
                   </div>
                   {selected?._id === list._id && (
-                    <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                    <CheckCircle2 className="w-5 h-5 text-zinc-900 flex-shrink-0" />
                   )}
                 </div>
-                <p className="text-[14px] font-semibold text-gray-900 leading-tight">{list.name}</p>
-                {list.description && <p className="text-[12px] text-gray-400 mt-0.5 line-clamp-1">{list.description}</p>}
-                <p className="text-[12.5px] text-gray-400 mt-2">
-                  <span className="font-medium text-gray-700">{list.contactCount ?? list.contacts?.length ?? 0}</span> contacts
+                <p className="text-[14px] font-semibold text-zinc-900 leading-tight">{list.name}</p>
+                {list.description && <p className="text-[12px] text-zinc-400 mt-0.5 line-clamp-1">{list.description}</p>}
+                <p className="text-[12.5px] text-zinc-400 mt-2">
+                  <span className="font-medium text-zinc-700">{list.contactCount ?? list.contacts?.length ?? 0}</span> contacts
                 </p>
               </button>
             ))}
@@ -610,7 +610,7 @@ function CampaignStep1({ onNext, onCancel }) {
           <button
             onClick={() => selected && onNext(selected)}
             disabled={!selected}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white text-[14px] font-semibold rounded-xl shadow-[0_2px_8px_rgba(37,99,235,0.25)] hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white text-[14px] font-medium rounded-xl hover:bg-zinc-800 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
             Continue
             <ChevronRight className="w-4 h-4" />
@@ -625,13 +625,13 @@ function CampaignStep1({ onNext, onCancel }) {
    EXPERIMENT PLAN — GENERATION LOADING SCREEN
 ══════════════════════════════════════════════════════════════════════════════ */
 const GEN_STEPS = [
-  'Analysing your audience & context…',
-  'Mapping 10 unique creative angles…',
-  'Crafting variant messages & offers…',
-  'Designing image concept briefs…',
-  'Building testing schedule & phases…',
-  'Setting up tracking architecture…',
-  'Finalising experiment plan…',
+  'Reading audience and brief',
+  'Mapping ten creative angles',
+  'Writing template bodies',
+  'Setting headers and buttons',
+  'Building the test schedule',
+  'Configuring tracking',
+  'Assembling the experiment',
 ];
 
 function PlanGeneratingScreen() {
@@ -641,23 +641,23 @@ function PlanGeneratingScreen() {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="flex flex-col items-center justify-center py-20 gap-6">
-      <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center shadow-[0_4px_24px_rgba(37,99,235,0.30)] animate-pulse">
-        <FlaskConical className="w-8 h-8 text-white" />
+    <div className="flex flex-col items-center justify-center py-24 gap-8">
+      <div className="w-12 h-12 rounded-2xl border border-zinc-200 bg-white flex items-center justify-center">
+        <Loader2 className="w-5 h-5 text-zinc-800 animate-spin" />
       </div>
       <div className="text-center">
-        <p className="text-[16px] font-semibold text-gray-900 mb-1">Generating Campaign Experiment Plan</p>
-        <p className="text-[13px] text-gray-400">AI is building your 10-variant strategy — this may take 20–30 seconds</p>
+        <p className="text-[18px] font-semibold text-zinc-900 tracking-tight">Generating experiment</p>
+        <p className="text-[13px] text-zinc-400 mt-1">Ten WhatsApp templates, phased tests, tracking</p>
       </div>
-      <div className="w-full max-w-xs space-y-2">
+      <div className="w-full max-w-xs space-y-2.5">
         {GEN_STEPS.map((s, i) => (
-          <div key={s} className={`flex items-center gap-2.5 text-[13px] transition-all ${i <= step ? 'text-gray-800' : 'text-gray-300'}`}>
+          <div key={s} className={`flex items-center gap-2.5 text-[13px] transition-all ${i <= step ? 'text-zinc-800' : 'text-zinc-300'}`}>
             {i < step ? (
-              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-zinc-800 flex-shrink-0" />
             ) : i === step ? (
-              <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+              <Loader2 className="w-4 h-4 text-zinc-800 animate-spin flex-shrink-0" />
             ) : (
-              <span className="w-4 h-4 rounded-full border border-gray-200 flex-shrink-0" />
+              <span className="w-4 h-4 rounded-full border border-zinc-200 flex-shrink-0" />
             )}
             {s}
           </div>
@@ -672,10 +672,10 @@ function PlanGeneratingScreen() {
 ══════════════════════════════════════════════════════════════════════════════ */
 const VARIANT_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
 const PHASE_CONFIG = [
-  { color: 'blue',   bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   badge: 'bg-blue-100 text-blue-700'   },
-  { color: 'violet', bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', badge: 'bg-violet-100 text-violet-700' },
-  { color: 'amber',  bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  badge: 'bg-amber-100 text-amber-700'  },
-  { color: 'green',  bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-700',  badge: 'bg-green-100 text-green-700'  },
+  { bg: 'bg-zinc-50', border: 'border-zinc-200', text: 'text-zinc-600' },
+  { bg: 'bg-zinc-50', border: 'border-zinc-200', text: 'text-zinc-600' },
+  { bg: 'bg-zinc-50', border: 'border-zinc-200', text: 'text-zinc-600' },
+  { bg: 'bg-zinc-900', border: 'border-zinc-900', text: 'text-zinc-300' },
 ];
 
 function fmtDate(d) {
@@ -962,7 +962,6 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
   const [draftTpl, setDraftTpl] = useState(null);
   const [savingTpl, setSavingTpl] = useState(false);
   const [tplError, setTplError] = useState('');
-  const [edge, setEdge] = useState(null);
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState('');
 
@@ -974,19 +973,16 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
     if (variants[activeVariant]) setDraftTpl(variantToTpl(variants[activeVariant]));
   }, [activeVariant, experiment]);
 
-  useEffect(() => {
-    wpMarketing.getEdgeStatus().then((r) => setEdge(r.data)).catch(() => setEdge({ connected: false }));
-  }, []);
-
   const anyPublishing = (variants || []).some((v) => v.waPublishStatus === 'publishing');
-  useEffect(() => {
-    if (!publishing && !anyPublishing) return;
-    const t = setInterval(() => { onReload?.(); }, 2500);
-    return () => clearInterval(t);
-  }, [publishing, anyPublishing, onReload]);
-
   const publishedCount = (variants || []).filter((v) => v.waPublishStatus === 'published').length;
   const failedCount = (variants || []).filter((v) => v.waPublishStatus === 'failed').length;
+  const allDraft = (variants || []).length > 0 && (variants || []).every((v) => !v.waPublishStatus || v.waPublishStatus === 'draft');
+
+  useEffect(() => {
+    if (!publishing && !anyPublishing && !allDraft) return;
+    const t = setInterval(() => { onReload?.(); }, 2500);
+    return () => clearInterval(t);
+  }, [publishing, anyPublishing, allDraft, onReload]);
 
   useEffect(() => {
     if (!publishing) return;
@@ -1000,10 +996,10 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
     setPublishing(true); setPublishMsg('');
     try {
       const r = await wpMarketing.publishTemplates(experiment._id);
-      setPublishMsg(r.data?.message || 'Publishing in Edge…');
+      setPublishMsg(r.data?.message || 'A browser window will open and create each template.');
       onReload?.();
     } catch (err) {
-      setPublishMsg(err?.response?.data?.error || 'Could not start publish');
+      setPublishMsg(err?.response?.data?.error || 'Could not start template creation');
       setPublishing(false);
     }
   };
@@ -1016,19 +1012,19 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
 
   const toggle = (key) => setExpandedSection((s) => (s === key ? null : key));
 
-  const SectionHeader = ({ id, icon: Icon, title, sub, color = 'blue' }) => (
+  const SectionHeader = ({ id, icon: Icon, title, sub }) => (
     <button
       onClick={() => toggle(id)}
-      className="w-full flex items-center gap-3 p-4 bg-white rounded-2xl border border-gray-100 hover:border-gray-200 transition-all text-left"
+      className="w-full flex items-center gap-3 p-4 bg-white rounded-2xl border border-zinc-200 hover:border-zinc-300 transition-all text-left"
     >
-      <div className={`w-9 h-9 rounded-xl bg-${color}-50 flex items-center justify-center flex-shrink-0`}>
-        <Icon className={`w-4.5 h-4.5 text-${color}-600`} />
+      <div className="w-9 h-9 rounded-xl bg-zinc-50 border border-zinc-100 flex items-center justify-center flex-shrink-0">
+        <Icon className="w-4 h-4 text-zinc-500" />
       </div>
       <div className="flex-1">
-        <p className="text-[14px] font-semibold text-gray-900">{title}</p>
-        {sub && <p className="text-[12px] text-gray-400 mt-0.5">{sub}</p>}
+        <p className="text-[14px] font-semibold text-zinc-900">{title}</p>
+        {sub && <p className="text-[12px] text-zinc-400 mt-0.5">{sub}</p>}
       </div>
-      {expandedSection === id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      {expandedSection === id ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
     </button>
   );
 
@@ -1036,98 +1032,88 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
     <div className="space-y-4">
       {/* Approval banner */}
       {!approved ? (
-        <div className="flex items-start gap-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
-          <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <ShieldCheck className="w-5 h-5 text-amber-600" />
-          </div>
+        <div className="flex items-start gap-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
+          <ShieldCheck className="w-5 h-5 text-zinc-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-[14px] font-semibold text-amber-900">Review & Approve Campaign Plan</p>
-            <p className="text-[12.5px] text-amber-700 mt-0.5">AI has designed the full experiment below. Nothing will be sent until you explicitly confirm at the bottom of this page.</p>
+            <p className="text-[14px] font-semibold text-zinc-900">Review before anything is sent</p>
+            <p className="text-[12.5px] text-zinc-500 mt-0.5">Templates can be edited below. CampaignBot creation runs automatically in a browser window.</p>
           </div>
-          <span className="text-[11px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1 rounded-full uppercase tracking-wider flex-shrink-0">
-            Awaiting Approval
-          </span>
+          <span className="text-[11px] font-medium text-zinc-500 px-2.5 py-1 rounded-full border border-zinc-200">Awaiting approval</span>
         </div>
       ) : (
-        <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-2xl">
-          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+        <div className="flex items-center gap-3 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
+          <CheckCircle2 className="w-5 h-5 text-zinc-800 flex-shrink-0" />
           <div>
-            <p className="text-[14px] font-semibold text-green-800">Campaign Approved & Scheduled</p>
-            <p className="text-[12.5px] text-green-600">First messages will be sent on {fmtDate(phases[0]?.scheduledDates?.[0])}.</p>
+            <p className="text-[14px] font-semibold text-zinc-900">Campaign approved</p>
+            <p className="text-[12.5px] text-zinc-500">First send: {fmtDate(phases[0]?.scheduledDates?.[0])}.</p>
           </div>
         </div>
       )}
 
       {/* Title + objective */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
-            <FlaskConical className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h3 className="text-[17px] font-bold text-gray-900 leading-tight">{plan.experimentTitle || 'Campaign Experiment'}</h3>
-            <p className="text-[13.5px] text-gray-500 mt-1">{plan.objective}</p>
-          </div>
-        </div>
+      <div className="bg-white rounded-2xl border border-zinc-200 p-6">
+        <p className="text-[11px] font-medium text-zinc-400 tracking-[0.16em] uppercase mb-2">Experiment</p>
+        <h3 className="text-[22px] font-semibold text-zinc-900 tracking-tight leading-snug">{plan.experimentTitle || 'Campaign experiment'}</h3>
+        <p className="text-[14px] text-zinc-500 mt-2 leading-relaxed">{plan.objective}</p>
         {plan.reasoning && (
-          <p className="text-[12.5px] text-gray-400 mt-4 leading-relaxed border-t border-gray-50 pt-3">{plan.reasoning}</p>
+          <p className="text-[13px] text-zinc-400 mt-4 leading-relaxed border-t border-zinc-100 pt-4">{plan.reasoning}</p>
         )}
       </div>
 
       {/* Summary stats */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: 'Audience', value: plan.totalAudience || '—', sub: 'total contacts', color: 'blue' },
-          { label: 'Variants', value: '10', sub: 'creative angles', color: 'violet' },
-          { label: 'Phases', value: '4', sub: '10 → 5 → 3 → 1', color: 'amber' },
-          { label: 'Test Days', value: '22', sub: 'then winner sends', color: 'green' },
-        ].map(({ label, value, sub, color }) => (
-          <div key={label} className={`p-4 rounded-xl bg-${color}-50 border border-${color}-100`}>
-            <p className={`text-[11px] font-semibold text-${color}-600 uppercase tracking-wider`}>{label}</p>
-            <p className="text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
-            <p className={`text-[11.5px] text-${color}-600 mt-0.5`}>{sub}</p>
+          { label: 'Audience', value: plan.totalAudience || '—', sub: 'contacts' },
+          { label: 'Templates', value: '10', sub: 'variants' },
+          { label: 'Phases', value: '4', sub: '10 to 5 to 3 to 1' },
+          { label: 'Horizon', value: '22d', sub: 'then winner' },
+        ].map(({ label, value, sub }) => (
+          <div key={label} className="p-4 rounded-2xl bg-white border border-zinc-200">
+            <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-[0.12em]">{label}</p>
+            <p className="text-[22px] font-semibold text-zinc-900 mt-1 tracking-tight">{value}</p>
+            <p className="text-[12px] text-zinc-400 mt-0.5">{sub}</p>
           </div>
         ))}
       </div>
 
       {/* ── Experiment Progression ─────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5">
-        <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider mb-4">Experiment Progression</p>
+      <div className="bg-white rounded-2xl border border-zinc-200 p-5">
+        <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-[0.14em] mb-4">Progression</p>
         <div className="flex items-stretch gap-2">
           {phases.map((ph, i) => {
-            const cfg = PHASE_CONFIG[i] || PHASE_CONFIG[3];
             const scheduleDates = ph.scheduledDates || [];
+            const isFinal = i === phases.length - 1;
             return (
               <div key={ph.phaseNumber} className="flex items-stretch gap-2 flex-1">
-                <div className={`flex-1 rounded-xl border ${cfg.border} ${cfg.bg} p-3.5`}>
-                  <span className={`text-[10.5px] font-bold uppercase tracking-wider ${cfg.text}`}>{ph.label}</span>
-                  <p className="text-[13px] font-semibold text-gray-900 mt-1">
-                    {ph.variantCount} variant{ph.variantCount > 1 ? 's' : ''}
+                <div className={`flex-1 rounded-xl border ${isFinal ? 'border-zinc-900 bg-zinc-900' : 'border-zinc-200 bg-zinc-50'} p-3.5`}>
+                  <span className={`text-[10.5px] font-medium uppercase tracking-wider ${isFinal ? 'text-zinc-400' : 'text-zinc-400'}`}>{ph.label}</span>
+                  <p className={`text-[13px] font-semibold mt-1 ${isFinal ? 'text-white' : 'text-zinc-900'}`}>
+                    {ph.variantCount} template{ph.variantCount > 1 ? 's' : ''}
                   </p>
-                  <p className={`text-[12px] ${cfg.text} mt-0.5`}>{ph.contactsPerVariant} contacts each</p>
+                  <p className={`text-[12px] mt-0.5 ${isFinal ? 'text-zinc-400' : 'text-zinc-500'}`}>{ph.contactsPerVariant} contacts each</p>
                   {scheduleDates.length > 0 && (
-                    <p className="text-[11px] text-gray-400 mt-2">
+                    <p className={`text-[11px] mt-2 ${isFinal ? 'text-zinc-500' : 'text-zinc-400'}`}>
                       {scheduleDates.map(fmtDate).join(' · ')}
                     </p>
                   )}
-                  {i === 3 && <p className={`text-[11px] font-semibold ${cfg.text} mt-1 flex items-center gap-1`}><Trophy className="w-3 h-3" /> Winner sends to all</p>}
+                  {isFinal && <p className="text-[11px] font-medium text-zinc-300 mt-1 flex items-center gap-1"><Trophy className="w-3 h-3" /> Winner to remaining audience</p>}
                 </div>
                 {i < phases.length - 1 && (
                   <div className="flex items-center justify-center w-6 flex-shrink-0">
-                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                    <ChevronRight className="w-4 h-4 text-zinc-300" />
                   </div>
                 )}
               </div>
             );
           })}
         </div>
-        <p className="text-[12px] text-gray-400 mt-4 leading-relaxed">{criteria.progressionLogic}</p>
+        <p className="text-[12px] text-zinc-400 mt-4 leading-relaxed">{criteria.progressionLogic}</p>
       </div>
 
       {/* ── Testing Timeline ────────────────────────────────────── */}
       <SectionHeader id="timeline" icon={Clock} title="Testing Timeline" sub="6-day alternate-day schedule across 4 phases" />
       {expandedSection === 'timeline' && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 -mt-2">
+        <div className="bg-white rounded-2xl border border-zinc-200 p-5 -mt-2">
           <div className="overflow-x-auto">
             <div className="flex gap-1.5 min-w-max pb-2">
               {Array.from({ length: 23 }, (_, i) => {
@@ -1180,42 +1166,36 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
 
       {/* ── 10 Campaign Variants as WhatsApp templates ─────────── */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 gap-3 flex-wrap">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 gap-3 flex-wrap">
           <div>
-            <div className="flex items-center gap-2">
-              <Layers className="w-4.5 h-4.5 text-blue-600" />
-              <p className="text-[14px] font-semibold text-gray-900">10 WhatsApp templates</p>
-            </div>
-            <p className="text-[12px] text-gray-400 mt-0.5">Each variant is a full template — name, category, header, body, footer</p>
+            <p className="text-[14px] font-semibold text-zinc-900">Templates</p>
+            <p className="text-[12px] text-zinc-400 mt-0.5">Created automatically in a browser window after generation</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${edge?.connected ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
-              {edge?.connected ? (edge.onCampaignBot ? 'Edge · CampaignBot' : 'Edge connected') : 'Edge offline'}
-            </span>
             {publishedCount > 0 && (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-700">{publishedCount} published</span>
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700">{publishedCount} live</span>
             )}
             {failedCount > 0 && (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600">{failedCount} failed</span>
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border border-zinc-200 text-zinc-600">{failedCount} failed</span>
             )}
             <button
               onClick={handlePublish}
               disabled={publishing || anyPublishing}
-              className="flex items-center gap-1.5 px-3 py-2 bg-zinc-900 text-white text-[12.5px] font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-zinc-900 text-white text-[12.5px] font-medium rounded-xl hover:bg-zinc-800 disabled:opacity-50"
             >
               {(publishing || anyPublishing) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-              {(publishing || anyPublishing) ? 'Filling Edge…' : 'Create on CampaignBot'}
+              {(publishing || anyPublishing) ? 'Creating…' : publishedCount ? 'Retry failed' : 'Create on CampaignBot'}
             </button>
           </div>
         </div>
 
-        {(publishMsg || !edge?.connected) && (
-          <div className={`px-5 py-3 text-[12.5px] border-b ${edge?.connected ? 'bg-zinc-50 text-zinc-600 border-zinc-100' : 'bg-amber-50 text-amber-800 border-amber-100'}`}>
-            {edge?.connected
-              ? publishMsg
-              : 'Edge is not in debug mode. Run `npm run edge:debug` in the backend folder, log in to campaignbot.online/templates, then retry.'}
+        {(publishMsg || allDraft || anyPublishing) && (
+          <div className="px-5 py-3 text-[12.5px] border-b bg-zinc-50 text-zinc-600 border-zinc-100">
+            {publishMsg || (allDraft || anyPublishing
+              ? 'A browser window is opening. If CampaignBot asks you to sign in, complete it once — the session is saved.'
+              : '')}
             {variants[activeVariant]?.waPublishError && (
-              <p className="text-red-600 mt-1">{variants[activeVariant].waPublishError}</p>
+              <p className="text-zinc-800 mt-1">{variants[activeVariant].waPublishError}</p>
             )}
           </div>
         )}
@@ -1235,7 +1215,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
               {v.label || `Var ${VARIANT_LABELS[i]}`}
               {v.waPublishStatus === 'published' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
               {v.waPublishStatus === 'failed' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
-              {v.waPublishStatus === 'publishing' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+              {v.waPublishStatus === 'publishing' && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
             </button>
           ))}
         </div>
@@ -1250,7 +1230,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
                 <span className="text-[12px] text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">{variants[activeVariant].tone}</span>
               )}
               {variants[activeVariant].offer && (
-                <span className="text-[12px] text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full">{variants[activeVariant].offer}</span>
+                <span className="text-[12px] text-zinc-600 bg-zinc-100 px-3 py-1 rounded-full">{variants[activeVariant].offer}</span>
               )}
             </div>
             <TemplateStudio
@@ -1287,114 +1267,107 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
         )}
       </div>
 
-      {/* ── Performance Signals ─────────────────────────────────── */}
       <SectionHeader
         id="signals"
         icon={BarChart2}
-        title="Performance Signals & Optimisation"
-        sub={`Primary: ${criteria.primaryMetric || 'conversions'} — ${(criteria.signals || []).length} metrics tracked`}
-        color="violet"
+        title="Performance signals"
+        sub={`Primary: ${criteria.primaryMetric || 'conversions'} — ${(criteria.signals || []).length} metrics`}
       />
       {expandedSection === 'signals' && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 -mt-2 space-y-4">
+        <div className="bg-white rounded-2xl border border-zinc-200 p-5 -mt-2 space-y-4">
           <div className="grid grid-cols-2 gap-2">
             {(criteria.signals || []).map((s) => {
               const labels = {
-                delivery_rate:   [Inbox,        'Delivery Rate',    'Message reached recipient'],
-                read_rate:       [Eye,           'Read Rate',        'Recipient opened the message'],
-                link_click_rate: [Link2,         'Link Click Rate',  'Total link interactions'],
-                unique_clicks:   [Target,        'Unique Clicks',    'Distinct recipients who clicked'],
-                repeat_clicks:   [Repeat2,       'Repeat Clicks',    'Same person clicking multiple times'],
+                delivery_rate:   [Inbox,        'Delivery rate',    'Message reached recipient'],
+                read_rate:       [Eye,           'Read rate',        'Recipient opened the message'],
+                link_click_rate: [Link2,         'Link click rate',  'Total link interactions'],
+                unique_clicks:   [Target,        'Unique clicks',    'Distinct recipients who clicked'],
+                repeat_clicks:   [Repeat2,       'Repeat clicks',    'Same person clicking multiple times'],
                 replies:         [MessageSquare, 'Replies',          'Customer responded to message'],
                 conversions:     [ShoppingCart,  'Conversions',      'Placed an order after receiving message'],
                 revenue:         [DollarSign,    'Revenue',          'Order value attributed to this variant'],
               };
               const [IconComp, label, desc] = labels[s] || [BarChart2, s, ''];
               return (
-                <div key={s} className="flex items-start gap-2.5 p-3 rounded-xl bg-gray-50">
-                  <IconComp className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                <div key={s} className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-50 border border-zinc-100">
+                  <IconComp className="w-4 h-4 text-zinc-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-[13px] font-semibold text-gray-800">{label}</p>
-                    <p className="text-[11.5px] text-gray-400">{desc}</p>
+                    <p className="text-[13px] font-medium text-zinc-800">{label}</p>
+                    <p className="text-[11.5px] text-zinc-400">{desc}</p>
                   </div>
                 </div>
               );
             })}
           </div>
-          <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-100">
-            <p className="text-[11.5px] font-semibold text-blue-700 uppercase tracking-wider mb-1">Progression Logic</p>
-            <p className="text-[13px] text-gray-700">{criteria.progressionLogic}</p>
+          <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-100">
+            <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-[0.12em] mb-1">Progression</p>
+            <p className="text-[13px] text-zinc-700">{criteria.progressionLogic}</p>
           </div>
         </div>
       )}
 
-      {/* ── Tracking Setup ──────────────────────────────────────── */}
       <SectionHeader
         id="tracking"
         icon={Link2}
-        title="Unique Tracking Links"
-        sub="Every contact gets a personalised tracked link"
-        color="green"
+        title="Tracking links"
+        sub="Each contact gets a personalised tracked URL"
       />
       {expandedSection === 'tracking' && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 -mt-2 space-y-3">
-          <div className="flex items-start gap-3 p-4 bg-green-50 rounded-xl border border-green-100">
-            <Link2 className="w-4.5 h-4.5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-[13.5px] text-gray-700">{plan.trackingExplanation}</p>
-          </div>
+        <div className="bg-white rounded-2xl border border-zinc-200 p-5 -mt-2 space-y-3">
+          <p className="text-[13.5px] text-zinc-600 leading-relaxed">{plan.trackingExplanation}</p>
           <div className="grid grid-cols-2 gap-2">
             {[
               ['Customer identity', 'Each link is tied to a specific phone number'],
               ['Variant attribution', 'Click tells us exactly which message they received'],
-              ['Repeat detection', 'Second+ clicks flagged as repeat vs unique'],
+              ['Repeat detection', 'Second and later clicks flagged as repeat vs unique'],
               ['Conversion tracking', 'Downstream orders linked back to the campaign'],
             ].map(([t, d]) => (
-              <div key={t} className="flex items-start gap-2 p-3 bg-gray-50 rounded-xl">
-                <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+              <div key={t} className="flex items-start gap-2 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                <CheckCircle2 className="w-4 h-4 text-zinc-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-[12.5px] font-semibold text-gray-800">{t}</p>
-                  <p className="text-[11.5px] text-gray-400">{d}</p>
+                  <p className="text-[12.5px] font-medium text-zinc-800">{t}</p>
+                  <p className="text-[11.5px] text-zinc-400">{d}</p>
                 </div>
               </div>
             ))}
           </div>
-          <div className="p-3 bg-gray-900 rounded-xl">
-            <p className="text-[11px] font-semibold text-gray-400 mb-1 uppercase tracking-wider">Example tracked link format</p>
-            <code className="text-[12.5px] text-green-400 font-mono">https://picoso.in/api/t/a3f9c12e</code>
-            <p className="text-[11px] text-gray-500 mt-1">↳ redirects to your URL while recording the click event</p>
+          <div className="p-3 bg-zinc-900 rounded-xl">
+            <p className="text-[11px] font-medium text-zinc-500 mb-1 uppercase tracking-[0.12em]">Example format</p>
+            <code className="text-[12.5px] text-zinc-200 font-mono">https://picoso.in/api/t/a3f9c12e</code>
+            <p className="text-[11px] text-zinc-500 mt-1">Redirects to your URL while recording the click</p>
           </div>
         </div>
       )}
 
       {/* ── Confirm & Start ─────────────────────────────────────── */}
       {!approved && (
-        <div className="bg-white rounded-2xl border-2 border-blue-200 p-6 space-y-4">
+        <div className="bg-white rounded-2xl border border-zinc-200 p-6 space-y-4">
           <div className="space-y-2">
             {[
-              '10 unique creative variants generated',
-              '4-phase testing plan (10 → 5 → 3 → 1)',
+              'Ten WhatsApp templates generated',
+              'Four-phase test (10 to 5 to 3 to 1)',
               'Alternate-day schedule over 22 days',
-              'Unique tracking links per contact + variant',
-              'Optimising for conversions + revenue',
+              'Unique tracking links per contact',
+              'Optimised for conversions and revenue',
             ].map((item) => (
-              <div key={item} className="flex items-center gap-2.5 text-[13.5px] text-gray-700">
-                <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+              <div key={item} className="flex items-center gap-2.5 text-[13.5px] text-zinc-700">
+                <CheckCircle2 className="w-4 h-4 text-zinc-400 flex-shrink-0" />
                 {item}
               </div>
             ))}
           </div>
-          <p className="text-[12.5px] text-gray-400">
-            After confirming, approve and execute each phase one at a time from the campaign dashboard.
+          <p className="text-[12.5px] text-zinc-400">
+            After confirming, run each phase from the campaign dashboard. Nothing is sent until you start a phase.
           </p>
           <button
             onClick={onApprove}
             disabled={approving}
-            className="w-full flex items-center justify-center gap-3 py-4 bg-blue-600 text-white text-[15px] font-bold rounded-2xl shadow-[0_4px_20px_rgba(37,99,235,0.35)] hover:bg-blue-700 transition-all disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-3 py-3.5 bg-zinc-900 text-white text-[14px] font-medium rounded-xl hover:bg-zinc-800 transition-all disabled:opacity-60"
           >
             {approving ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Confirming…</>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Confirming</>
             ) : (
-              <><Play className="w-5 h-5" /> Confirm & Start Campaign</>
+              <><Play className="w-4 h-4" /> Confirm campaign</>
             )}
           </button>
         </div>
@@ -1470,52 +1443,54 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
 
   return (
     <div className="max-w-3xl">
-      {/* Step header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-8">
         <button
           onClick={onBack}
           disabled={generating || approved}
-          className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-30"
+          className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-800 transition-colors disabled:opacity-30"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <p className="text-[11.5px] font-semibold text-blue-600 uppercase tracking-widest mb-0.5">Step 2 of 2</p>
-          <h2 className="text-lg font-semibold text-gray-900">
-            {experiment ? 'Campaign Experiment Plan' : 'Campaign Context'}
+          <p className="text-[11px] font-medium text-zinc-400 tracking-[0.16em] uppercase mb-1">Step 2 of 2</p>
+          <h2 className="text-[22px] font-semibold text-zinc-900 tracking-tight">
+            {experiment ? 'Experiment plan' : 'Campaign brief'}
           </h2>
         </div>
       </div>
 
-      {/* Step tracker */}
-      <div className="flex items-center gap-2 mb-7">
+      <div className="flex items-center gap-3 mb-8">
         <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-[11px] font-bold flex items-center justify-center">
+          <span className="w-6 h-6 rounded-full bg-zinc-900 text-white text-[11px] font-medium flex items-center justify-center">
             <Check className="w-3 h-3" />
           </span>
-          <span className="text-[13px] text-blue-400">Contacts</span>
+          <span className="text-[13px] text-zinc-400">Contacts</span>
         </div>
-        <div className="flex-1 h-px bg-blue-300 mx-2" />
+        <div className="flex-1 h-px bg-zinc-200" />
         <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center">2</span>
-          <span className="text-[13px] font-medium text-blue-600">Context</span>
+          <span className="w-6 h-6 rounded-full bg-zinc-900 text-white text-[11px] font-medium flex items-center justify-center">2</span>
+          <span className="text-[13px] font-medium text-zinc-900">Brief</span>
         </div>
       </div>
 
       {generating ? (
         <PlanGeneratingScreen />
       ) : experiment ? (
-        /* ── Plan view ─────────────────────── */
         <div>
-          {/* Edit context link */}
           {!approved && (
             <button
               onClick={() => { setExperiment(null); setGenerating(false); }}
-              className="flex items-center gap-1.5 text-[12.5px] text-gray-400 hover:text-gray-600 mb-4 transition-colors"
+              className="flex items-center gap-1.5 text-[12.5px] text-zinc-400 hover:text-zinc-700 mb-4 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Edit context and regenerate plan
+              Edit brief and regenerate
             </button>
+          )}
+          {error && (
+            <div className="flex items-center gap-2 text-zinc-700 text-[13px] mb-4 p-3 rounded-xl border border-zinc-200 bg-zinc-50">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </div>
           )}
           <ExperimentPlanView
             experiment={experiment}
@@ -1530,45 +1505,43 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
           />
         </div>
       ) : (
-        /* ── Context input ─────────────────── */
         <>
-          {/* Selected list badge */}
-          <div className="flex items-center gap-2 mb-5 p-3.5 bg-blue-50 rounded-xl border border-blue-100">
-            <Users className="w-4 h-4 text-blue-600 flex-shrink-0" />
-            <span className="text-[13.5px] font-medium text-blue-800">{selectedList.name}</span>
-            <span className="text-[12px] text-blue-500 ml-1">
-              — {selectedList.contactCount ?? selectedList.contacts?.length ?? 0} contacts selected
+          <div className="flex items-center gap-2 mb-6 p-4 bg-white rounded-2xl border border-zinc-200">
+            <Users className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+            <span className="text-[13.5px] font-medium text-zinc-900">{selectedList.name}</span>
+            <span className="text-[12px] text-zinc-400">
+              {selectedList.contactCount ?? selectedList.contacts?.length ?? 0} contacts
             </span>
           </div>
 
           <div className="mb-4">
-            <label className="block text-[12.5px] font-medium text-gray-700 mb-1.5">Campaign name <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className="block text-[12.5px] font-medium text-zinc-700 mb-1.5">Campaign name <span className="text-zinc-400 font-normal">(optional)</span></label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={`Campaign — ${selectedList.name}`}
-              className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-zinc-200 rounded-xl px-3.5 py-2.5 text-[13.5px] text-zinc-900 placeholder-zinc-400 bg-white focus:outline-none focus:border-zinc-400"
             />
           </div>
 
           <div className="mb-5">
-            <label className="block text-[13px] font-semibold text-gray-900 mb-1">Describe your campaign goal</label>
-            <p className="text-[12.5px] text-gray-400 mb-3">
-              Write naturally — explain who these contacts are, what you want them to do, and any context. The AI will use this to design a full 10-variant experiment with automatic audience segmentation, testing schedule, and tracking.
+            <label className="block text-[13px] font-medium text-zinc-900 mb-1">Campaign goal</label>
+            <p className="text-[12.5px] text-zinc-400 mb-3">
+              Describe the audience and what you want them to do. Ten templates, a test schedule, and tracking are generated from this.
             </p>
             <textarea
               value={context}
               onChange={(e) => { setContext(e.target.value); setError(''); }}
               rows={5}
-              placeholder={`e.g. These are our repeat customers and we want to encourage them to order again. It's been 2–3 weeks since most of them last ordered. Offer them a 10% discount to come back.`}
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none leading-relaxed"
+              placeholder="e.g. These are repeat customers. It has been two to three weeks since most last ordered. Offer 10 percent off to come back."
+              className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-[14px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 resize-none leading-relaxed"
             />
             <div className="flex flex-wrap gap-2 mt-2">
               {examplePrompts.map((p) => (
                 <button
                   key={p}
                   onClick={() => { setContext(p); setError(''); }}
-                  className="text-[11.5px] text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                  className="text-[11.5px] text-zinc-600 border border-zinc-200 px-2.5 py-1 rounded-lg hover:bg-zinc-50 hover:border-zinc-300 transition-colors"
                 >
                   {p.slice(0, 50)}…
                 </button>
@@ -1577,7 +1550,7 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-red-500 text-[13px] mb-4">
+            <div className="flex items-center gap-2 text-zinc-700 text-[13px] mb-4">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               {error}
             </div>
@@ -1586,12 +1559,11 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
           <button
             onClick={generatePlan}
             disabled={!context.trim()}
-            className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-blue-600 text-white text-[14px] font-semibold rounded-xl shadow-[0_2px_12px_rgba(37,99,235,0.30)] hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-zinc-900 text-white text-[14px] font-medium rounded-xl hover:bg-zinc-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <FlaskConical className="w-4.5 h-4.5" />
-            Generate Campaign Experiment Plan
+            Generate experiment
           </button>
-          <p className="text-center text-[12px] text-gray-400 mt-2">AI will design 10 creative variants · testing schedule · tracking setup</p>
+          <p className="text-center text-[12px] text-zinc-400 mt-3">Ten templates are created on CampaignBot automatically after generation</p>
         </>
       )}
     </div>

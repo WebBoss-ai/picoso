@@ -446,11 +446,6 @@ export const publishTemplates = async (req, res) => {
     });
     if (!experiment) return res.status(404).json({ error: 'Experiment not found' });
 
-    const edge = await checkEdgeCdp();
-    if (!edge.connected) {
-      return res.status(400).json({ error: edge.error });
-    }
-
     const variantNumbers = Array.isArray(req.body?.variantNumbers) ? req.body.variantNumbers : null;
 
     setImmediate(async () => {
@@ -465,7 +460,7 @@ export const publishTemplates = async (req, res) => {
     res.json({
       success: true,
       started: true,
-      message: 'Publishing templates in the Edge window. Keep Edge focused on CampaignBot.',
+      message: 'A browser window will open and create each template on CampaignBot automatically.',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
