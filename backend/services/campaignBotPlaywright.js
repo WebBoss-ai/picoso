@@ -104,13 +104,28 @@ async function dumpPage(page, label) {
 function attachNetworkLogger(page) {
   if (page._cbNetLog) return;
   page._cbNetLog = true;
+  page._cbVerifyOtp = null;
   page.on('response', async (res) => {
     const url = res.url();
     if (!/campaignbot\.online/i.test(url)) return;
     if (!/otp|verify|login|signup|auth|user|session|template/i.test(url)) return;
     let body = '';
-    try { body = String(await res.text()).slice(0, 400); } catch { /* ignore */ }
-    cbLog('http', { status: res.status(), url, body });
+    try { body = String(await res.text()).slice(0, 800); } catch { /* ignore */ }
+    cbLog('http', { status: res.status(), url, body: body.slice(0, 400) });
+    if (/verify-otp/i.test(url)) {
+      let parsed = {};
+      try { parsed = JSON.parse(body); } catch { /* ignore */ }
+      page._cbVerifyOtp = {
+        at: Date.now(),
+        http: res.status(),
+        statusCode: parsed.statusCode,
+        message: parsed.message || '',
+        expired: /expired/i.test(parsed.message || ''),
+        invalid: /invalid|incorrect|wrong/i.test(parsed.message || ''),
+        ok: parsed.statusCode === 200 || (parsed.payload && parsed.statusCode < 400),
+      };
+      cbLog('verify-otp result', page._cbVerifyOtp);
+    }
   });
   page.on('console', (msg) => {
     const text = msg.text();
@@ -391,8 +406,9 @@ async function fillLoginOtp(page, otp) {
   await boxes.first().waitFor({ state: 'visible', timeout: 20000 });
   await dumpPage(page, 'otp-boxes-ready');
 
-  // Do not send Backspace — CampaignBot OTP treats Backspace on box N as
-  // "clear box N-1", which re-disables the rest of the boxes.
+  const startedAt = Date.now();
+  page._cbVerifyOtp = null;
+
   await boxes.first().click();
   for (let i = 0; i < digits.length; i++) {
     const box = boxes.nth(i);
@@ -406,39 +422,109 @@ async function fillLoginOtp(page, otp) {
     }
     await box.click();
     await page.keyboard.type(digits[i], { delay: 30 });
-    await sleep(250);
+    await sleep(200);
     cbLog(`fillLoginOtp after box ${i}`, await readOtpSnap(page));
   }
-  await dumpPage(page, 'after-keyboard-otp');
 
-  const result = await fillOtpViaDom(page, digits);
-  cbLog('fillLoginOtp Vue/DOM fill', result);
-  await sleep(250);
-  await dumpPage(page, 'after-vue-otp');
-  await submitLoginForm(page);
-
-  const goneBy = Date.now() + 25000;
-  while (Date.now() < goneBy) {
-    const modal = await loginModalVisible(page);
-    const url = page.url();
-    cbLog('fillLoginOtp waiting for modal close', { modal, url });
-    if (!modal && !url.includes('/login')) {
-      cbLog('fillLoginOtp success: left login');
-      return;
+  // CampaignBot auto-calls verify-otp on the 6th digit. Do not click Sign Up
+  // or re-type digits — that resubmits an already-consumed / expired OTP.
+  const verifyDeadline = Date.now() + 8000;
+  while (Date.now() < verifyDeadline) {
+    if (await sessionLeftLogin(page) || !page.url().includes('/login')) {
+      cbLog('fillLoginOtp success: left login after 6th digit');
+      return { ok: true };
     }
-    if (!url.includes('/login') && !(await pageLooksLikeOtp(page))) {
-      cbLog('fillLoginOtp success: OTP UI gone');
-      return;
+    const v = page._cbVerifyOtp;
+    if (v && v.at >= startedAt) {
+      cbLog('fillLoginOtp verify-otp seen', v);
+      if (v.expired || /expired/i.test(await page.locator('body').innerText().catch(() => ''))) {
+        return { expired: true };
+      }
+      if (v.ok) return { ok: true };
+      if (v.invalid) return { invalid: true, message: v.message };
+      if (v.statusCode >= 400) return { invalid: true, message: v.message };
+      break;
     }
-    await sleep(1000);
+    await sleep(150);
   }
 
-  if (await loginModalVisible(page)) {
-    cbLog('fillLoginOtp modal still open, clicking Sign Up again');
+  if (await sessionLeftLogin(page)) return { ok: true };
+
+  const body = await page.locator('body').innerText().catch(() => '');
+  if (/OTP has expired/i.test(body)) return { expired: true };
+
+  const snap = await readOtpSnap(page);
+  if (snap.pattern === 'xxxxxx') {
+    cbLog('fillLoginOtp 6 digits filled, clicking Sign Up once');
     await submitLoginForm(page);
-    await sleep(1500);
-    await dumpPage(page, 'after-second-signup');
+    const after = Date.now() + 8000;
+    while (Date.now() < after) {
+      if (await sessionLeftLogin(page)) return { ok: true };
+      const v = page._cbVerifyOtp;
+      if (v?.expired) return { expired: true };
+      if (v?.ok) return { ok: true };
+      if (v?.invalid) return { invalid: true, message: v.message };
+      await sleep(200);
+    }
   }
+
+  await dumpPage(page, 'after-otp-attempt');
+  if (await sessionLeftLogin(page)) return { ok: true };
+  return { failed: true };
+}
+
+async function clickResendOtp(page) {
+  const resend = page.locator('div.fixed.inset-0 button').filter({ hasText: /Resend OTP/i }).first();
+  const send = page.locator('div.fixed.inset-0 button').filter({ hasText: /^\s*Send OTP\s*$/ }).first();
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (await resend.isEnabled().catch(() => false)) {
+      await resend.click();
+      cbLog('clicked Resend OTP');
+      await sleep(800);
+      return;
+    }
+    if (await send.isEnabled().catch(() => false)) {
+      await send.click();
+      cbLog('clicked Send OTP to refresh');
+      await sleep(800);
+      return;
+    }
+    await sleep(300);
+  }
+  throw new Error('Could not resend CampaignBot OTP');
+}
+
+async function waitAndFillOtp(page) {
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    cbAuth.setCbAuth({
+      phase: 'otp',
+      message: attempt === 1
+        ? 'OTP sent. Enter the 6-digit code now — it expires in about a minute.'
+        : 'That OTP expired. Enter the NEW code from your SMS, then Verify OTP.',
+    });
+    const otp = await cbAuth.waitForOtp();
+    if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
+    const result = await fillLoginOtp(page, otp);
+    cbLog('fillLoginOtp result', result);
+    if (result?.ok) return;
+    if (result?.expired) {
+      cbAuth.setCbAuth({
+        phase: 'otp',
+        message: 'OTP expired on CampaignBot. A new OTP is being sent. Enter the new code here.',
+      });
+      await clickResendOtp(page).catch((err) => cbLog('resend failed', { error: err.message }));
+      continue;
+    }
+    if (result?.invalid) {
+      cbAuth.setCbAuth({
+        phase: 'otp',
+        message: result.message || 'That OTP was rejected. Enter a new code.',
+      });
+      continue;
+    }
+  }
+  throw new Error('CampaignBot login did not complete after several OTP attempts. Enter a fresh OTP and retry.');
 }
 
 async function ensureLoggedIn(page, experimentId) {
@@ -471,13 +557,7 @@ async function ensureLoggedIn(page, experimentId) {
 
   if (await pageLooksLikeOtp(page)) {
     cbLog('login screen is OTP');
-    cbAuth.setCbAuth({
-      phase: 'otp',
-      message: 'Enter the 6-digit OTP from your phone in the card on this page, then Verify OTP.',
-    });
-    const otp = await cbAuth.waitForOtp();
-    if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
-    await fillLoginOtp(page, otp);
+    await waitAndFillOtp(page);
   } else {
     cbLog('login screen is phone');
     cbAuth.setCbAuth({
@@ -487,13 +567,7 @@ async function ensureLoggedIn(page, experimentId) {
     const phone = await cbAuth.waitForPhone();
     if (!phone) throw new Error('CampaignBot number was not entered in time. Enter it in the sign-in card and retry.');
     await fillLoginPhone(page, phone);
-    cbAuth.setCbAuth({
-      phase: 'otp',
-      message: 'Enter the 6-digit OTP from your phone in the card on this page, then Verify OTP.',
-    });
-    const otp = await cbAuth.waitForOtp();
-    if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
-    await fillLoginOtp(page, otp);
+    await waitAndFillOtp(page);
   }
 
   const deadline = Date.now() + 90000;
