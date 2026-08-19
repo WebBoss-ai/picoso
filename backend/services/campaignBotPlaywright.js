@@ -303,97 +303,54 @@ async function sessionLeftLogin(page) {
   return true;
 }
 
-async function fillOtpViaDom(page, digits) {
-  return page.evaluate((code) => {
-    const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
-    if (!form) return { ok: false, reason: 'no form' };
-    const boxes = [...form.querySelectorAll('input.otp-box')];
-    if (!boxes.length) return { ok: false, reason: 'no boxes' };
+async function readOtpSnap(page) {
+  return page.evaluate(() => {
+    const boxes = [...document.querySelectorAll('div.fixed.inset-0 input.otp-box')];
+    return {
+      pattern: boxes.map((el) => (el.value ? 'x' : '_')).join(''),
+      valuesLen: boxes.map((el) => (el.value || '').length),
+      disabled: boxes.map((el) => el.disabled),
+      active: boxes.findIndex((el) => el === document.activeElement),
+    };
+  });
+}
 
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    const fire = (el, digit) => {
-      el.disabled = false;
-      el.removeAttribute('disabled');
+async function fillOtpViaDom(page, digits) {
+  const code = String(digits);
+  const snaps = [];
+  for (let i = 0; i < code.length; i++) {
+    const one = await page.evaluate(({ idx, d }) => {
+      const el = document.querySelectorAll('div.fixed.inset-0 input.otp-box')[idx];
+      if (!el) return { ok: false, reason: 'missing box' };
       el.focus();
-      setter?.call(el, digit);
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(el, d);
       const keyOpts = {
-        key: digit,
-        code: `Digit${digit}`,
-        keyCode: 48 + Number(digit),
-        which: 48 + Number(digit),
+        key: d,
+        code: `Digit${d}`,
+        keyCode: 48 + Number(d),
+        which: 48 + Number(d),
         bubbles: true,
         cancelable: true,
+        composed: true,
       };
       el.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
-      el.dispatchEvent(new KeyboardEvent('keypress', keyOpts));
       el.dispatchEvent(new InputEvent('input', {
         bubbles: true,
         cancelable: true,
-        data: digit,
+        composed: true,
+        data: d,
         inputType: 'insertText',
       }));
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
       el.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
-    };
-
-    const vueOf = (el) => {
-      let n = el;
-      while (n) {
-        const inst = n.__vueParentComponent;
-        if (inst) return inst;
-        if (n.__vue__) return n.__vue__;
-        n = n.parentElement;
-      }
-      return null;
-    };
-
-    const inst = vueOf(form);
-    const bags = [];
-    if (inst) {
-      bags.push(inst.setupState, inst.ctx, inst.proxy, inst.data, inst);
-    }
-    const writeBag = (bag) => {
-      for (const key of Object.keys(bag)) {
-        const val = bag[key];
-        if (val && typeof val === 'object' && 'value' in val && !Array.isArray(val)) {
-          const inner = val.value;
-          if (Array.isArray(inner) && inner.length >= 4 && inner.length <= 8) {
-            val.value = code.split('').concat(Array(Math.max(0, inner.length - code.length)).fill(''));
-          } else if (typeof inner === 'string' && /otp|code|pin/i.test(key)) {
-            val.value = code;
-          }
-          continue;
-        }
-        if (Array.isArray(val) && val.length >= 4 && val.length <= 8) {
-          for (let i = 0; i < val.length; i++) val[i] = code[i] || '';
-        } else if (typeof val === 'string' && /otp|code|pin/i.test(key) && val.length <= 8) {
-          bag[key] = code;
-        }
-      }
-    };
-    for (const bag of bags.filter(Boolean)) {
-      try { writeBag(bag); } catch { /* ignore */ }
-    }
-
-    code.split('').forEach((d, i) => {
-      if (boxes[i]) fire(boxes[i], d);
-    });
-
-    return {
-      ok: true,
-      values: boxes.map((el) => ({ value: el.value, disabled: el.disabled })),
-      vueFound: Boolean(inst),
-      vueKind: inst?.setupState ? 'vue3' : (inst?.$data ? 'vue2' : (inst ? 'unknown' : null)),
-      vueKeys: (() => {
-        const keys = [];
-        for (const bag of bags.filter(Boolean)) {
-          try { keys.push(...Object.keys(bag).filter((k) => !k.startsWith('_') && !k.startsWith('$'))); } catch { /* ignore */ }
-        }
-        return [...new Set(keys)].slice(0, 40);
-      })(),
-    };
-  }, digits);
+      return { ok: true, valueLen: (el.value || '').length, disabled: el.disabled };
+    }, { idx: i, d: code[i] });
+    snaps.push(one);
+    await sleep(180);
+  }
+  return { snaps, ...(await readOtpSnap(page)) };
 }
 
 async function submitLoginForm(page) {
@@ -430,29 +387,28 @@ async function fillLoginOtp(page, otp) {
   cbLog('fillLoginOtp start', { otp: cbAuth.maskOtp(digits), length: digits.length, url: page.url() });
   if (digits.length !== 6) throw new Error('CampaignBot OTP must be 6 digits');
 
-  const first = page.locator('input.otp-box').first();
-  await first.waitFor({ state: 'visible', timeout: 20000 });
+  const boxes = page.locator('div.fixed.inset-0 input.otp-box');
+  await boxes.first().waitFor({ state: 'visible', timeout: 20000 });
   await dumpPage(page, 'otp-boxes-ready');
 
+  // Do not send Backspace — CampaignBot OTP treats Backspace on box N as
+  // "clear box N-1", which re-disables the rest of the boxes.
+  await boxes.first().click();
   for (let i = 0; i < digits.length; i++) {
-    const box = page.locator('input.otp-box').nth(i);
-    const unlock = Date.now() + 8000;
-    let disabled = await box.isDisabled().catch(() => true);
-    while (Date.now() < unlock && disabled) {
-      await sleep(80);
-      disabled = await box.isDisabled().catch(() => true);
+    const box = boxes.nth(i);
+    const unlock = Date.now() + 3000;
+    while (Date.now() < unlock && await box.isDisabled().catch(() => true)) await sleep(50);
+    const disabled = await box.isDisabled().catch(() => true);
+    cbLog(`fillLoginOtp box ${i}`, { disabled, ...(await readOtpSnap(page)) });
+    if (disabled) {
+      cbLog(`fillLoginOtp box ${i} still disabled — stopping keyboard loop`);
+      break;
     }
-    cbLog(`fillLoginOtp box ${i}`, { disabled, digit: '*' });
-    await box.click({ force: true });
-    await box.focus();
-    await page.keyboard.press('ControlOrMeta+A').catch(() => {});
-    await page.keyboard.press('Backspace').catch(() => {});
-    await page.keyboard.type(digits[i], { delay: 40 });
-    await sleep(220);
-    const val = await box.inputValue().catch(() => '');
-    cbLog(`fillLoginOtp box ${i} after type`, { valueLen: val.length, value: val ? '*' : '', stillDisabled: await box.isDisabled().catch(() => null) });
+    await box.click();
+    await page.keyboard.type(digits[i], { delay: 30 });
+    await sleep(250);
+    cbLog(`fillLoginOtp after box ${i}`, await readOtpSnap(page));
   }
-  await sleep(400);
   await dumpPage(page, 'after-keyboard-otp');
 
   const result = await fillOtpViaDom(page, digits);
