@@ -865,10 +865,13 @@ async function fillAndSubmit(page, variant) {
 
   const unsub = page.locator('#includeUnsubscribeFooter');
   if (await unsub.count()) {
-    const checked = await unsub.isChecked();
-    const marketing = (variant.category || 'MARKETING') === 'MARKETING';
-    if (marketing && !checked) await unsub.check();
-    if (!marketing && checked) await unsub.uncheck();
+    const enabled = await unsub.isEnabled().catch(() => false);
+    if (enabled) {
+      const checked = await unsub.isChecked();
+      const marketing = (variant.category || 'MARKETING') === 'MARKETING';
+      if (marketing && !checked) await unsub.check();
+      if (!marketing && checked) await unsub.uncheck();
+    }
   }
 
   await submitTemplate(page);
