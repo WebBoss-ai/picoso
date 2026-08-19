@@ -64,11 +64,22 @@ function headingCreateVisible() {
 
 async function openCreateModal() {
   if (headingCreateVisible()) return;
-  const btns = [...document.querySelectorAll('button, a')];
-  const match = btns.find((b) => /create (new )?template/i.test((b.textContent || '').trim()));
-  if (match) match.click();
+
+  const byTitle = document.querySelector('button[title="Create a new template"]');
+  const byText = [...document.querySelectorAll('button')].find((b) =>
+    /\bNew Template\b/i.test((b.textContent || '').replace(/\s+/g, ' ').trim())
+  );
+  const fallback = [...document.querySelectorAll('button, a')].find((b) =>
+    /create (new )?template/i.test((b.textContent || '').trim())
+  );
+
+  const btn = byTitle || byText || fallback;
+  if (!btn) throw new Error('New Template button not found on CampaignBot.');
+  if (btn.disabled) throw new Error('New Template is disabled on CampaignBot.');
+  btn.click();
+
   const ok = await waitFor(headingCreateVisible, 20000);
-  if (!ok) throw new Error('Could not open Create Template on CampaignBot. Stay on /templates and logged in.');
+  if (!ok) throw new Error('Create Template form did not open after clicking New Template.');
 }
 
 async function selectLanguage(code) {
