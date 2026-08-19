@@ -42,6 +42,84 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function cbLog(msg, extra) {
+  cbAuth.cbLog(msg, extra);
+}
+
+async function dumpPage(page, label) {
+  try {
+    const info = await page.evaluate(() => {
+      const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
+      const boxes = [...document.querySelectorAll('input.otp-box')];
+      const vueOf = (el) => {
+        let n = el;
+        while (n) {
+          if (n.__vueParentComponent) return { kind: 'vue3', inst: n.__vueParentComponent };
+          if (n.__vue__) return { kind: 'vue2', inst: n.__vue__ };
+          n = n.parentElement;
+        }
+        return null;
+      };
+      const found = form ? vueOf(form) : null;
+      const keys = [];
+      if (found?.kind === 'vue3') {
+        const inst = found.inst;
+        for (const bag of [inst.setupState, inst.ctx, inst.proxy]) {
+          if (!bag) continue;
+          try { keys.push(...Object.keys(bag).filter((k) => !k.startsWith('_') && !k.startsWith('$'))); } catch { /* ignore */ }
+        }
+      }
+      if (found?.kind === 'vue2') {
+        try { keys.push(...Object.keys(found.inst.$data || found.inst)); } catch { /* ignore */ }
+      }
+      const errNodes = [...document.querySelectorAll('.text-red-500, .text-red-600, [class*="error"], .toast, .alert')];
+      return {
+        url: location.href,
+        title: document.title,
+        modal: Boolean(document.querySelector('div.fixed.inset-0 form')),
+        phone: document.querySelector('input[placeholder="Enter mobile number"]')?.value || '',
+        otpBoxes: boxes.map((el) => ({ value: el.value, disabled: el.disabled, max: el.maxLength })),
+        sendOtpDisabled: [...document.querySelectorAll('button')].find((b) => /send otp/i.test(b.textContent || ''))?.disabled ?? null,
+        signUpPresent: [...document.querySelectorAll('button')].some((b) => /sign up/i.test(b.textContent || '')),
+        buttons: [...document.querySelectorAll('button')].slice(0, 16).map((b) => ({
+          text: (b.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 48),
+          disabled: b.disabled,
+          type: b.getAttribute('type') || '',
+        })),
+        vue: found ? { kind: found.kind, keys: [...new Set(keys)].slice(0, 40) } : null,
+        errors: errNodes.map((n) => (n.innerText || '').trim().slice(0, 120)).filter(Boolean).slice(0, 6),
+        body: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+      };
+    });
+    if (info.phone) info.phone = cbAuth.maskPhone(info.phone);
+    if (Array.isArray(info.otpBoxes)) {
+      info.otpBoxes = info.otpBoxes.map((b) => ({ ...b, value: b.value ? `len:${String(b.value).length}` : '' }));
+    }
+    cbLog(`dump:${label}`, info);
+  } catch (err) {
+    cbLog(`dump:${label} FAILED`, { error: err.message, url: page.url() });
+  }
+}
+
+function attachNetworkLogger(page) {
+  if (page._cbNetLog) return;
+  page._cbNetLog = true;
+  page.on('response', async (res) => {
+    const url = res.url();
+    if (!/campaignbot\.online/i.test(url)) return;
+    if (!/otp|verify|login|signup|auth|user|session|template/i.test(url)) return;
+    let body = '';
+    try { body = String(await res.text()).slice(0, 400); } catch { /* ignore */ }
+    cbLog('http', { status: res.status(), url, body });
+  });
+  page.on('console', (msg) => {
+    const text = msg.text();
+    if (/otp|login|error|vue|axios|fail/i.test(text)) {
+      cbLog(`page.console:${msg.type()}`, text.slice(0, 300));
+    }
+  });
+}
+
 export async function checkEdgeCdp() {
   // Self-launching Playwright — always "ready". First run may ask for CampaignBot login in the opened window.
   return {
@@ -157,27 +235,39 @@ async function waitForLoginOrApp(page) {
 
 async function openMobileForm(page) {
   const phoneInput = page.locator('input[placeholder="Enter mobile number"][type="tel"]').first();
-  if (await phoneInput.isVisible().catch(() => false)) return;
+  if (await phoneInput.isVisible().catch(() => false)) {
+    cbLog('openMobileForm: phone field already visible');
+    return;
+  }
 
   const start = page.locator('button').filter({ hasText: 'Start with Mobile Number' }).first();
+  cbLog('openMobileForm: waiting for Start with Mobile Number');
   await start.waitFor({ state: 'visible', timeout: 20000 });
   await start.click();
+  cbLog('openMobileForm: clicked Start with Mobile Number');
   await phoneInput.waitFor({ state: 'visible', timeout: 15000 });
+  await dumpPage(page, 'after-start-mobile');
 }
 
 async function fillLoginPhone(page, phone) {
+  cbLog('fillLoginPhone start', { phone: cbAuth.maskPhone(phone), url: page.url() });
   if (!page.url().includes('/login')) {
     await page.goto(LOGIN, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await sleep(800);
+    cbLog('fillLoginPhone navigated to login', { url: page.url() });
   }
 
+  await dumpPage(page, 'before-phone-fill');
   await openMobileForm(page);
 
   const input = page.locator('input[placeholder="Enter mobile number"][type="tel"]').first();
   await input.waitFor({ state: 'visible', timeout: 15000 });
   await setVueInput(input, phone);
-  if ((await input.inputValue()) !== phone) {
+  const afterType = await input.inputValue().catch(() => '');
+  cbLog('fillLoginPhone typed', { want: cbAuth.maskPhone(phone), got: cbAuth.maskPhone(afterType), match: afterType === phone });
+  if (afterType !== phone) {
     await input.fill(phone);
+    cbLog('fillLoginPhone fallback fill', { got: cbAuth.maskPhone(await input.inputValue().catch(() => '')) });
   }
 
   const sendOtp = page.locator('button').filter({ hasText: /^\s*Send OTP\s*$/ }).first();
@@ -186,13 +276,19 @@ async function fillLoginPhone(page, phone) {
     if (await sendOtp.isEnabled().catch(() => false)) break;
     await sleep(250);
   }
-  if (!(await sendOtp.isEnabled().catch(() => false))) {
+  const sendEnabled = await sendOtp.isEnabled().catch(() => false);
+  cbLog('fillLoginPhone Send OTP enabled?', sendEnabled);
+  await dumpPage(page, 'before-send-otp');
+  if (!sendEnabled) {
     throw new Error('CampaignBot Send OTP stayed disabled. The mobile number may not have registered on the form.');
   }
   await sendOtp.click();
+  cbLog('fillLoginPhone clicked Send OTP');
 
   const otpBox = page.locator('input.otp-box').first();
   await otpBox.waitFor({ state: 'visible', timeout: 25000 });
+  cbLog('fillLoginPhone OTP boxes appeared');
+  await dumpPage(page, 'after-send-otp');
 }
 
 async function loginModalVisible(page) {
@@ -286,77 +382,112 @@ async function fillOtpViaDom(page, digits) {
 
     return {
       ok: true,
-      values: boxes.map((el) => el.value),
+      values: boxes.map((el) => ({ value: el.value, disabled: el.disabled })),
+      vueFound: Boolean(inst),
+      vueKind: inst?.setupState ? 'vue3' : (inst?.$data ? 'vue2' : (inst ? 'unknown' : null)),
+      vueKeys: (() => {
+        const keys = [];
+        for (const bag of bags.filter(Boolean)) {
+          try { keys.push(...Object.keys(bag).filter((k) => !k.startsWith('_') && !k.startsWith('$'))); } catch { /* ignore */ }
+        }
+        return [...new Set(keys)].slice(0, 40);
+      })(),
     };
   }, digits);
 }
 
 async function submitLoginForm(page) {
+  cbLog('submitLoginForm start', { url: page.url() });
+  await dumpPage(page, 'before-signup-click');
   const clicked = await page.evaluate(() => {
     const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
-    if (!form) return false;
+    if (!form) return { ok: false, reason: 'no form' };
     const btn = [...form.querySelectorAll('button')].find((b) => /sign up/i.test(b.textContent || ''));
     if (btn) {
       btn.disabled = false;
       btn.click();
-      return true;
+      return { ok: true, via: 'button.click', text: (btn.textContent || '').trim() };
     }
     if (typeof form.requestSubmit === 'function') {
       form.requestSubmit();
-      return true;
+      return { ok: true, via: 'requestSubmit' };
     }
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    return true;
+    return { ok: true, via: 'submit-event' };
   });
-  if (!clicked) {
+  cbLog('submitLoginForm result', clicked);
+  if (!clicked?.ok) {
     const modal = page.locator('div.fixed.inset-0.z-50').filter({ has: page.locator('form') });
     await modal.locator('button[type="submit"]').filter({ hasText: 'Sign Up' }).first().click({ force: true });
+    cbLog('submitLoginForm fallback Playwright click Sign Up');
   }
   await sleep(800);
+  await dumpPage(page, 'after-signup-click');
 }
 
 async function fillLoginOtp(page, otp) {
   const digits = String(otp).replace(/\D/g, '').slice(0, 6);
+  cbLog('fillLoginOtp start', { otp: cbAuth.maskOtp(digits), length: digits.length, url: page.url() });
   if (digits.length !== 6) throw new Error('CampaignBot OTP must be 6 digits');
 
   const first = page.locator('input.otp-box').first();
   await first.waitFor({ state: 'visible', timeout: 20000 });
+  await dumpPage(page, 'otp-boxes-ready');
 
-  // One digit at a time so Vue can enable and focus the next box (maxlength=1).
   for (let i = 0; i < digits.length; i++) {
     const box = page.locator('input.otp-box').nth(i);
     const unlock = Date.now() + 8000;
-    while (Date.now() < unlock && await box.isDisabled().catch(() => true)) await sleep(80);
+    let disabled = await box.isDisabled().catch(() => true);
+    while (Date.now() < unlock && disabled) {
+      await sleep(80);
+      disabled = await box.isDisabled().catch(() => true);
+    }
+    cbLog(`fillLoginOtp box ${i}`, { disabled, digit: '*' });
     await box.click({ force: true });
     await box.focus();
     await page.keyboard.press('ControlOrMeta+A').catch(() => {});
     await page.keyboard.press('Backspace').catch(() => {});
     await page.keyboard.type(digits[i], { delay: 40 });
     await sleep(220);
+    const val = await box.inputValue().catch(() => '');
+    cbLog(`fillLoginOtp box ${i} after type`, { valueLen: val.length, value: val ? '*' : '', stillDisabled: await box.isDisabled().catch(() => null) });
   }
   await sleep(400);
+  await dumpPage(page, 'after-keyboard-otp');
 
-  // Sign Up reads Vue state, not the input DOM — always write both, then submit.
   const result = await fillOtpViaDom(page, digits);
-  console.log('[CB Templates] OTP Vue/DOM fill:', result);
+  cbLog('fillLoginOtp Vue/DOM fill', result);
   await sleep(250);
+  await dumpPage(page, 'after-vue-otp');
   await submitLoginForm(page);
 
   const goneBy = Date.now() + 25000;
   while (Date.now() < goneBy) {
-    if (!(await loginModalVisible(page)) && !page.url().includes('/login')) return;
-    if (!(await loginModalVisible(page)) && page.url().includes('/login') === false) return;
-    if (!page.url().includes('/login') && !(await pageLooksLikeOtp(page))) return;
-    await sleep(400);
+    const modal = await loginModalVisible(page);
+    const url = page.url();
+    cbLog('fillLoginOtp waiting for modal close', { modal, url });
+    if (!modal && !url.includes('/login')) {
+      cbLog('fillLoginOtp success: left login');
+      return;
+    }
+    if (!url.includes('/login') && !(await pageLooksLikeOtp(page))) {
+      cbLog('fillLoginOtp success: OTP UI gone');
+      return;
+    }
+    await sleep(1000);
   }
 
   if (await loginModalVisible(page)) {
+    cbLog('fillLoginOtp modal still open, clicking Sign Up again');
     await submitLoginForm(page);
     await sleep(1500);
+    await dumpPage(page, 'after-second-signup');
   }
 }
 
 async function ensureLoggedIn(page, experimentId) {
+  attachNetworkLogger(page);
+  cbLog('ensureLoggedIn start', { experimentId, url: page.url() });
   cbAuth.setCbAuth({
     phase: 'launching',
     experimentId: experimentId || null,
@@ -365,9 +496,12 @@ async function ensureLoggedIn(page, experimentId) {
 
   await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await sleep(1200);
+  await dumpPage(page, 'after-templates-goto');
 
   const screen = await waitForLoginOrApp(page);
+  cbLog('waitForLoginOrApp', { screen, url: page.url() });
   if (screen === 'app' && await isLoggedIn(page)) {
+    cbLog('already logged in');
     cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session ready' });
     return;
   }
@@ -375,9 +509,12 @@ async function ensureLoggedIn(page, experimentId) {
   if (!page.url().includes('/login')) {
     await page.goto(LOGIN, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await sleep(800);
+    cbLog('navigated to login', { url: page.url() });
+    await dumpPage(page, 'login-page');
   }
 
   if (await pageLooksLikeOtp(page)) {
+    cbLog('login screen is OTP');
     cbAuth.setCbAuth({
       phase: 'otp',
       message: 'Enter the 6-digit OTP from your phone in the card on this page, then Verify OTP.',
@@ -386,6 +523,7 @@ async function ensureLoggedIn(page, experimentId) {
     if (!otp) throw new Error('OTP was not entered in time. Enter it in the sign-in card and retry.');
     await fillLoginOtp(page, otp);
   } else {
+    cbLog('login screen is phone');
     cbAuth.setCbAuth({
       phase: 'phone',
       message: 'Enter the 10-digit CampaignBot mobile number in the card, then Send OTP.',
@@ -403,27 +541,42 @@ async function ensureLoggedIn(page, experimentId) {
   }
 
   const deadline = Date.now() + 90000;
+  let tick = 0;
   while (Date.now() < deadline) {
-    if (await sessionLeftLogin(page) || await hasTemplatesUi(page)) {
+    tick += 1;
+    const left = await sessionLeftLogin(page);
+    const templates = await hasTemplatesUi(page);
+    if (tick === 1 || tick % 5 === 0) {
+      cbLog('post-otp wait', { tick, left, templates, url: page.url() });
+      await dumpPage(page, `post-otp-${tick}`);
+    }
+    if (left || templates) {
       if (!page.url().includes('/templates')) {
         await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
         await sleep(1200);
       }
       if (await hasTemplatesUi(page)) {
+        cbLog('login complete, templates UI visible');
         cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
         return;
       }
-      // Logged in (modal gone) but templates UI still loading.
       if (await sessionLeftLogin(page) && !page.url().includes('/login')) {
         await sleep(2000);
         if (await hasTemplatesUi(page)) {
+          cbLog('login complete after extra wait');
           cbAuth.setCbAuth({ phase: 'ready', message: 'CampaignBot session saved. Creating templates.' });
           return;
         }
       }
     }
+    const retryOtp = cbAuth.peekPendingOtp();
+    if (retryOtp && await loginModalVisible(page)) {
+      cbLog('new OTP arrived during wait, retrying fillLoginOtp', { otp: cbAuth.maskOtp(retryOtp) });
+      await fillLoginOtp(page, await cbAuth.waitForOtp(1000));
+    }
     await sleep(1000);
   }
+  await dumpPage(page, 'login-timeout');
   throw new Error('CampaignBot login did not complete. Check the OTP on this page and click Retry login.');
 }
 
@@ -631,9 +784,13 @@ async function patchVariant(experimentId, variantNumber, fields) {
 }
 
 export async function publishVariantsToCampaignBot(experimentId, variantNumbers = null) {
+  cbLog('publish job requested', { experimentId, variantNumbers, busy });
   const waitUntil = Date.now() + 3 * 60 * 1000;
   while (busy && Date.now() < waitUntil) await sleep(1500);
-  if (busy) throw new Error('A CampaignBot publish job is already running');
+  if (busy) {
+    cbLog('publish job rejected: already running');
+    throw new Error('A CampaignBot publish job is already running');
+  }
   busy = true;
   cbAuth.resetCbAuth();
   cbAuth.setCbAuth({ phase: 'launching', experimentId, message: 'Starting CampaignBot on the server' });
@@ -667,7 +824,9 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
     });
     try {
       context = await getPersistentContext();
+      cbLog('browser launched');
     } catch (err) {
+      cbLog('browser launch FAILED', { error: err.message });
       cbAuth.setCbAuth({ phase: 'error', message: err.message });
       for (const v of variants) {
         await patchVariant(experimentId, v.variantNumber, {
@@ -726,6 +885,7 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
       results,
     };
   } catch (err) {
+    cbLog('publish job FAILED', { error: err.message, stack: err.stack?.split('\n').slice(0, 8) });
     cbAuth.setCbAuth({ phase: 'error', message: err.message });
     try {
       const exp = await WpExperiment.findById(experimentId);
