@@ -669,13 +669,45 @@ async function openCreateModal(page) {
 }
 
 async function selectLanguage(page, code) {
+  const value = code || 'en_US';
+  const label = LANG_LABEL[value] || 'English (US)';
+
+  const native = page.locator('select').filter({ has: page.locator(`option[value="${value}"]`) }).first();
+  if (await native.count()) {
+    await native.selectOption(value);
+    await native.evaluate((el) => {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }).catch(() => {});
+    cbLog('selectLanguage', { via: 'select', value });
+    return;
+  }
+
   const trigger = page.locator('#languageTrigger');
   if (!(await trigger.count())) return;
+  const shown = (await trigger.innerText().catch(() => '')).replace(/\s+/g, ' ');
+  if (shown.toLowerCase().includes(label.toLowerCase())) {
+    cbLog('selectLanguage already set', { shown });
+    return;
+  }
+
   await trigger.click();
-  const label = LANG_LABEL[code] || 'English (US)';
-  const option = page.getByText(new RegExp(label.replace(/[()]/g, '\\$&'), 'i')).first();
-  await option.waitFor({ state: 'visible', timeout: 8000 });
-  await option.click();
+  await sleep(250);
+  const matches = page.locator('li, [role="option"], button, div, span').filter({
+    hasText: new RegExp(`^\\s*${label.replace(/[()]/g, '\\$&')}\\s*$`),
+  });
+  const n = await matches.count();
+  for (let i = 0; i < n; i++) {
+    const el = matches.nth(i);
+    const tag = await el.evaluate((node) => node.tagName).catch(() => '');
+    if (tag === 'OPTION') continue;
+    if (await el.isVisible().catch(() => false)) {
+      await el.click();
+      cbLog('selectLanguage', { via: 'dropdown', value });
+      return;
+    }
+  }
+  cbLog('selectLanguage skipped', { value, shown });
 }
 
 async function fillBody(page, body) {
