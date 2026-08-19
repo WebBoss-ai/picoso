@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import {
   WpExperiment, WpContactList, WpMessageLog, WpCampaignRun, WpTrackingLink, WpScheduledJob,
 } from '../models/wpMarketingModels.js';
-import { sendTemplate } from './campaignBot.js';
+import { sendTemplate, sendText } from './campaignBot.js';
 import { CohereProvider } from '../llm/provider/cohere.js';
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -67,24 +67,50 @@ function allocateContacts(contacts, variantCount, maxPerVariant = Infinity) {
   return allocations;
 }
 
-/** Build WhatsApp template params from the AI-developed variant copy. */
-function buildTemplateParams(variant, contact) {
+/** Count positional {{n}} variables in a template body. */
+function bodyVarCount(body) {
+  const matches = [...String(body || '').matchAll(/\{\{(\d+)\}\}/g)];
+  return matches.reduce((max, m) => Math.max(max, parseInt(m[1], 10)), 0);
+}
+
+/** Params for WhatsApp template send — {{1}} = name, {{2}} = tracking code. */
+function buildTemplateParams(variant, contact, shortCode) {
   const name = contact.name || 'Customer';
-  const personalised = (variant.message || '')
-    .replace(/\{\{name\}\}/gi, name)
-    .trim();
-
-  const offer = variant.offer || '';
-  const cta   = variant.cta   || 'Order Now';
-
-  if (personalised) {
-    const lines = personalised.split('\n').filter(Boolean);
-    if (lines.length >= 3) return [name, lines.slice(0, -1).join(' ').slice(0, 500), lines[lines.length - 1].slice(0, 200)];
-    if (lines.length === 2) return [name, lines[0].slice(0, 500), lines[1].slice(0, 200)];
-    if (lines.length === 1 && !offer) return [name, lines[0].slice(0, 500), cta];
+  const count = bodyVarCount(variant.body || variant.message);
+  const params = [];
+  for (let i = 1; i <= Math.max(count, 1); i++) {
+    if (i === 1) params.push(name);
+    else if (i === 2) params.push(shortCode);
+    else params.push(variant.offer || '');
   }
+  return params;
+}
 
-  return [name, offer || personalised.slice(0, 500) || 'Special offer for you', cta];
+function variantHasUrlButton(variant) {
+  return (variant.buttons || []).some((b) => b.type === 'URL') || variant.footerType === 'BUTTONS';
+}
+
+function renderTextBody(variant, contact, trackingUrl) {
+  const name = contact.name || 'Customer';
+  let body = String(variant.body || variant.message || '')
+    .replace(/\{\{name\}\}/gi, name)
+    .replace(/\{\{1\}\}/g, name)
+    .replace(/\{\{2\}\}/g, trackingUrl);
+  if (variant.headerType === 'TEXT' && variant.headerText) {
+    body = `*${variant.headerText}*\n\n${body}`;
+  }
+  if (variant.footerType === 'TEXT' && variant.footerText) {
+    body += `\n\n_${variant.footerText}_`;
+  }
+  if (trackingUrl && variantHasUrlButton(variant)) {
+    body += `\n${trackingUrl}`;
+  }
+  return body.trim();
+}
+
+function variantDestUrl(variant, fallback = 'https://picoso.in') {
+  const btn = (variant.buttons || []).find((b) => b.type === 'URL' && b.url);
+  return btn?.url || fallback;
 }
 
 /** Merge saved experiment templateConfig with per-run overrides. */
@@ -178,27 +204,7 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
     throw new Error(`Phase ${phaseIndex + 1} already has ${phase.rounds} runs completed`);
   }
 
-  const tmpl = resolveTemplateConfig(experiment, templateConfig);
-  if (!tmpl.templateName) {
-    throw new Error('WhatsApp template name is required — set it in campaign settings or the execute form');
-  }
-
-  // Persist template config on experiment for subsequent runs
-  if (templateConfig.templateName || templateConfig.templateId) {
-    await WpExperiment.updateOne(
-      { _id: experimentId },
-      {
-        $set: {
-          'plan.templateConfig.templateId':     tmpl.templateId,
-          'plan.templateConfig.templateName':   tmpl.templateName,
-          'plan.templateConfig.languageCode':   tmpl.languageCode,
-          'plan.templateConfig.hasUrlButton': tmpl.hasUrlButton,
-          ...(templateConfig.destinationUrl ? { 'plan.templateConfig.destinationUrl': tmpl.destinationUrl } : {}),
-          updatedAt: new Date(),
-        },
-      },
-    );
-  }
+  const destFallback = experiment.plan?.templateConfig?.destinationUrl || templateConfig.destinationUrl || 'https://picoso.in';
 
   const activeVariants = activeVariantsForPhase(experiment.variants, phaseIndex);
   if (activeVariants.length === 0) throw new Error('No active variants for this phase');
@@ -248,10 +254,14 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
 
       const shortCode     = generateShortCode();
       const trackingUrl   = `${API_BASE}/t/${shortCode}`;
-      const tParams       = buildTemplateParams(variant, contact);
-      const dynButtons    = tmpl.hasUrlButton
+      const tParams       = buildTemplateParams(variant, contact, shortCode);
+      const hasUrlBtn     = variantHasUrlButton(variant);
+      const dynButtons    = hasUrlBtn
         ? [{ type: 'url', index: 0, variableValue: shortCode }]
         : undefined;
+      const destUrl       = variantDestUrl(variant, destFallback);
+      const lang          = variant.language || 'en_US';
+      const tplName       = variant.templateName || '';
 
       const msgLog = await WpMessageLog.create({
         clientId:          experiment.clientId,
@@ -263,7 +273,7 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
         contactPhone:      contact.phone,
         contactName:       contact.name || '',
         status:            'queued',
-        templateName:      tmpl.templateName,
+        templateName:      tplName,
         trackingShortCode: shortCode,
         trackingUrl,
       });
@@ -275,23 +285,41 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
         variantNumber: variant.variantNumber,
         contactPhone:  contact.phone,
         contactName:   contact.name || '',
-        originalUrl:   tmpl.destinationUrl,
+        originalUrl:   destUrl,
       });
 
       const dynamicHeader = variant.mediaWaId
         ? { type: 'image', mediaId: variant.mediaWaId, filename: 'promo.jpg' }
-        : tmpl.dynamicHeader || undefined;
+        : undefined;
 
       try {
-        const result = await sendTemplate({
-          recipientPhone: phone,
-          recipientName:  contact.name || '',
-          templateName:   tmpl.templateName,
-          languageCode:   tmpl.languageCode,
-          templateParams: tParams,
-          dynamicHeader,
-          dynamicButtons: dynButtons,
-        });
+        let result;
+        if (tplName) {
+          try {
+            result = await sendTemplate({
+              recipientPhone: phone,
+              recipientName:  contact.name || '',
+              templateName:   tplName,
+              languageCode:   lang,
+              templateParams: tParams,
+              dynamicHeader,
+              dynamicButtons: dynButtons,
+            });
+          } catch (tplErr) {
+            console.warn(`[WP Exec] template ${tplName} failed (${tplErr.message}) — falling back to text`);
+            result = await sendText({
+              recipientPhone: phone,
+              recipientName:  contact.name || '',
+              messageContent: renderTextBody(variant, contact, trackingUrl),
+            });
+          }
+        } else {
+          result = await sendText({
+            recipientPhone: phone,
+            recipientName:  contact.name || '',
+            messageContent: renderTextBody(variant, contact, trackingUrl),
+          });
+        }
 
         const wamid = result?.payload?.messageId || null;
 
@@ -332,7 +360,7 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
   }
 
   if (totalSent === 0 && totalFailed > 0) {
-    throw new Error(`All ${totalFailed} message(s) failed to send — check template name and API connection`);
+    throw new Error(`All ${totalFailed} message(s) failed to send — check variant templates and API connection`);
   }
 
   return run;
@@ -341,7 +369,13 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
 /* ── Update variant copy ─────────────────────────────────────────────────── */
 
 export async function updateVariant(experimentId, variantNumber, updates, clientId) {
-  const allowed = ['label', 'copyAngle', 'tone', 'offer', 'cta', 'message', 'imageConceptDescription', 'mediaS3Url', 'mediaWaId'];
+  const allowed = [
+    'label', 'copyAngle', 'tone', 'offer', 'cta', 'message', 'imageConceptDescription',
+    'mediaS3Url', 'mediaWaId', 'scheduledSendTime',
+    'templateName', 'category', 'language', 'headerType', 'headerText',
+    'body', 'footerType', 'footerText', 'buttons',
+    'waPublishStatus', 'waPublishError', 'waPublishedAt',
+  ];
   const patch = {};
   for (const key of allowed) {
     if (updates[key] !== undefined) patch[`variants.$.${key}`] = updates[key];
@@ -410,17 +444,13 @@ export async function startPhaseWithSchedule(experimentId, phaseNumber, clientId
     );
   }
 
-  // Validate & persist template config
-  const tmpl = resolveTemplateConfig(experiment, templateConfig);
-  if (!tmpl.templateName) throw new Error('WhatsApp template name is required');
+  const destUrl = templateConfig.destinationUrl
+    || experiment.plan?.templateConfig?.destinationUrl
+    || 'https://picoso.in';
 
   await WpExperiment.updateOne({ _id: experimentId }, {
     $set: {
-      'plan.templateConfig.templateId':     tmpl.templateId,
-      'plan.templateConfig.templateName':   tmpl.templateName,
-      'plan.templateConfig.languageCode':   tmpl.languageCode,
-      'plan.templateConfig.hasUrlButton':   tmpl.hasUrlButton,
-      'plan.templateConfig.destinationUrl': tmpl.destinationUrl,
+      'plan.templateConfig.destinationUrl': destUrl,
       updatedAt: new Date(),
     },
   });
@@ -439,11 +469,7 @@ export async function startPhaseWithSchedule(experimentId, phaseNumber, clientId
       scheduledAt: new Date(sched.scheduledAt),
       status:      isSendNow ? 'running' : 'pending',
       templateConfig: {
-        templateId:     tmpl.templateId,
-        templateName:   tmpl.templateName,
-        languageCode:   tmpl.languageCode,
-        hasUrlButton:   tmpl.hasUrlButton,
-        destinationUrl: tmpl.destinationUrl,
+        destinationUrl: destUrl,
       },
     });
     createdJobs.push(job.toObject());
@@ -455,7 +481,7 @@ export async function startPhaseWithSchedule(experimentId, phaseNumber, clientId
     const jobId = run1Job._id;
     setImmediate(async () => {
       try {
-        const run = await executePhaseRun(experimentId, phaseIndex, tmpl);
+        const run = await executePhaseRun(experimentId, phaseIndex, { destinationUrl: destUrl });
         await WpScheduledJob.findByIdAndUpdate(jobId, {
           status: 'completed', executedAt: new Date(), runId: run._id,
         });
@@ -725,6 +751,18 @@ export async function buildDashboardSnapshot(experimentId) {
       offer:         v.offer,
       cta:           v.cta,
       message:       v.message,
+      templateName:  v.templateName,
+      category:      v.category,
+      language:      v.language,
+      headerType:    v.headerType,
+      headerText:    v.headerText,
+      body:          v.body,
+      footerType:    v.footerType,
+      footerText:    v.footerText,
+      buttons:       v.buttons,
+      waPublishStatus: v.waPublishStatus,
+      waPublishError:  v.waPublishError,
+      waPublishedAt:   v.waPublishedAt,
       imageConceptDescription: v.imageConceptDescription,
       status:        v.status,
       sent:          s.sent         || 0,

@@ -180,8 +180,62 @@ const COPY_ANGLES = [
   'FOMO + Scarcity',
 ];
 
-function generateShortCode() {
-  return crypto.randomBytes(5).toString('hex'); // 10-char hex
+function slugifyTemplateName(raw, i) {
+  const cleaned = String(raw || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  return cleaned || `picoso_variant_${VARIANT_LABELS[i] || i + 1}`.toLowerCase();
+}
+
+function normaliseVariantTemplate(v, i) {
+  const label = v.label || `Variant ${VARIANT_LABELS[i]}`;
+  const cta   = (v.cta || 'Order Now').slice(0, 25);
+  let body    = v.body || v.message || '';
+  body = body.replace(/\{\{name\}\}/gi, '{{1}}');
+  if (!/\{\{1\}\}/.test(body) && body) {
+    body = `Hey *{{1}}*! ${body}`;
+  }
+  const buttons = Array.isArray(v.buttons) && v.buttons.length
+    ? v.buttons.slice(0, 2).map((b) => ({
+        type: ['URL', 'QUICK_REPLY', 'PHONE'].includes(b.type) ? b.type : 'URL',
+        text: (b.text || cta).slice(0, 25),
+        url:  b.url || 'https://picoso.in',
+        phone: b.phone || '',
+      }))
+    : [{ type: 'URL', text: cta, url: 'https://picoso.in' }];
+
+  const headerType = ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'].includes(v.headerType)
+    ? v.headerType
+    : (v.headerText ? 'TEXT' : 'NONE');
+  const footerType = ['NONE', 'TEXT', 'BUTTONS'].includes(v.footerType)
+    ? v.footerType
+    : 'BUTTONS';
+  const category = ['MARKETING', 'UTILITY', 'AUTHENTICATION'].includes(v.category)
+    ? v.category
+    : 'MARKETING';
+
+  return {
+    variantNumber: v.variantNumber || (i + 1),
+    label,
+    copyAngle: v.copyAngle || COPY_ANGLES[i],
+    tone: v.tone || '',
+    offer: v.offer || '',
+    cta,
+    imageConceptDescription: v.imageConceptDescription || '',
+    message: body,
+    templateName: slugifyTemplateName(v.templateName || `picoso_${label}_${i + 1}`, i),
+    category,
+    language: v.language || 'en_US',
+    headerType,
+    headerText: (v.headerText || '').slice(0, 60),
+    body,
+    footerType,
+    footerText: (v.footerText || '').slice(0, 60),
+    buttons,
+    status: 'active',
+  };
 }
 
 function scheduleDates(startDate, count, gapDays) {
@@ -220,9 +274,18 @@ export const generatePlan = async (req, res) => {
 
 STRICT RULES:
 - Exactly 10 variants, labels "Variant A" through "Variant J"
+- Each variant is a complete WhatsApp message TEMPLATE (not a free-form note)
+- Follow the official WhatsApp template structure exactly: templateName, category, language, header, body, footer/buttons
+- templateName: lowercase snake_case, letters/numbers/underscores only, unique, e.g. picoso_urgency_offer_01
+- category: always MARKETING unless the copy is clearly transactional (then UTILITY)
+- language: always en_US
+- headerType: NONE or TEXT (TEXT header max 60 chars, no variables unless needed)
+- body: 2–4 short sentences, conversational WhatsApp tone, relevant emojis allowed
+- Body variables MUST use positional {{1}}, {{2}} — never {{name}}
+- {{1}} is ALWAYS the customer first name
+- Do not use more than 2 body variables
+- footerType: BUTTONS with exactly one URL button whose text is the CTA (e.g. Order Now)
 - Each variant uses a genuinely different psychological/creative angle — NOT just rewording
-- WhatsApp messages: 2-4 sentences max, conversational, include relevant emojis, use {{name}} personalisation
-- Each variant has a meaningfully different offer, tone, and creative angle
 - Return ONLY valid JSON with no markdown fences, no text outside the JSON object
 
 JSON schema to return:
@@ -243,9 +306,17 @@ JSON schema to return:
       "copyAngle": "Urgency + Time-Limited Offer",
       "tone": "Urgent & Direct",
       "offer": "specific offer text shown in this variant",
-      "cta": "primary call-to-action button text",
+      "cta": "Order Now",
       "imageConceptDescription": "detailed description of the visual/creative for this variant",
-      "message": "complete WhatsApp message with {{name}} and emojis"
+      "templateName": "picoso_urgency_offer_01",
+      "category": "MARKETING",
+      "language": "en_US",
+      "headerType": "TEXT",
+      "headerText": "24 hours only",
+      "body": "Hey *{{1}}*! Don't miss this — 50% off your next bowl, today only.",
+      "footerType": "BUTTONS",
+      "footerText": "",
+      "buttons": [{ "type": "URL", "text": "Order Now", "url": "https://picoso.in" }]
     }
   ]
 }
@@ -327,17 +398,7 @@ Generate all 10 variants now. Make each genuinely distinct.`;
           progressionLogic: 'Top performers by conversion rate advance; revenue weighted 2×.',
         },
       },
-      variants: variants.map((v, i) => ({
-        variantNumber: v.variantNumber || (i + 1),
-        label: v.label || `Variant ${VARIANT_LABELS[i]}`,
-        copyAngle: v.copyAngle || COPY_ANGLES[i],
-        tone: v.tone || '',
-        offer: v.offer || '',
-        cta: v.cta || '',
-        imageConceptDescription: v.imageConceptDescription || '',
-        message: v.message || '',
-        status: 'active',
-      })),
+      variants: variants.map((v, i) => normaliseVariantTemplate(v, i)),
     });
 
     // Update campaign status

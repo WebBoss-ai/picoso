@@ -105,6 +105,13 @@ const wpVariantMetricsSchema = new mongoose.Schema({
   revenue:           { type: Number, default: 0 },
 }, { _id: false });
 
+const wpVariantButtonSchema = new mongoose.Schema({
+  type: { type: String, enum: ['URL', 'QUICK_REPLY', 'PHONE'], default: 'URL' },
+  text: { type: String, default: '' },
+  url:  { type: String, default: '' },
+  phone:{ type: String, default: '' },
+}, { _id: false });
+
 const wpVariantSchema = new mongoose.Schema({
   variantNumber:           { type: Number, required: true },  // 1–10
   label:                   { type: String, required: true },  // "Variant A"
@@ -113,10 +120,23 @@ const wpVariantSchema = new mongoose.Schema({
   offer:                   { type: String, default: '' },
   cta:                     { type: String, default: '' },
   imageConceptDescription: { type: String, default: '' },
-  message:                 { type: String, default: '' },
+  message:                 { type: String, default: '' }, // legacy alias of body
+  // WhatsApp template structure (Create Template form)
+  templateName:            { type: String, default: '' },
+  category:                { type: String, enum: ['MARKETING', 'UTILITY', 'AUTHENTICATION'], default: 'MARKETING' },
+  language:                { type: String, default: 'en_US' },
+  headerType:              { type: String, enum: ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'], default: 'NONE' },
+  headerText:              { type: String, default: '' },
+  body:                    { type: String, default: '' },
+  footerType:              { type: String, enum: ['NONE', 'TEXT', 'BUTTONS'], default: 'NONE' },
+  footerText:              { type: String, default: '' },
+  buttons:                 [wpVariantButtonSchema],
   mediaS3Url:              { type: String, default: '' },
   mediaWaId:               { type: String, default: '' },
   scheduledSendTime:       { type: String, default: '10:00' }, // HH:mm, editable per variant
+  waPublishStatus:         { type: String, enum: ['draft', 'publishing', 'published', 'failed'], default: 'draft' },
+  waPublishError:          { type: String, default: '' },
+  waPublishedAt:           { type: Date, default: null },
   status: {
     type: String,
     enum: ['active', 'top5', 'top3', 'winner', 'eliminated'],

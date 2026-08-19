@@ -19,7 +19,7 @@ import {
   AlignLeft, ExternalLink, Paperclip, MessageSquarePlus,
   ToggleLeft, ToggleRight, ClipboardList, SquareStack,
   // Scheduling & calendar
-  CalendarDays, BellRing, Pencil, Ban, Edit2,
+  CalendarDays, BellRing, Pencil, Ban, Edit2, Italic, HelpCircle,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
 
@@ -683,14 +683,330 @@ function fmtDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
+const TPL_LANGUAGES = [
+  { code: 'en_US', label: 'English (US) (en_US)' },
+  { code: 'en_GB', label: 'English (UK) (en_GB)' },
+  { code: 'hi',    label: 'Hindi (hi)' },
+];
+
+function countTplVars(body) {
+  return [...String(body || '').matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
+}
+
+function variantToTpl(v) {
+  const body = (v?.body || v?.message || '').replace(/\{\{name\}\}/gi, '{{1}}');
+  const cta  = v?.cta || 'Order Now';
+  return {
+    templateName: v?.templateName || '',
+    category:     v?.category || 'MARKETING',
+    language:     v?.language || 'en_US',
+    headerType:   v?.headerType || (v?.headerText ? 'TEXT' : 'NONE'),
+    headerText:   v?.headerText || '',
+    body,
+    footerType:   v?.footerType || (v?.cta ? 'BUTTONS' : 'NONE'),
+    footerText:   v?.footerText || '',
+    buttons:      Array.isArray(v?.buttons) && v.buttons.length
+      ? v.buttons
+      : (cta ? [{ type: 'URL', text: cta, url: 'https://picoso.in' }] : []),
+    copyAngle:    v?.copyAngle || '',
+    offer:        v?.offer || '',
+    tone:         v?.tone || '',
+  };
+}
+
+function wrapFmt(body, start, end, marker) {
+  const sel = body.slice(start, end);
+  if (!sel) return { body: `${body}${marker}text${marker}`, caret: null };
+  return { body: body.slice(0, start) + `${marker}${sel}${marker}` + body.slice(end), caret: null };
+}
+
+/* ── WhatsApp phone preview ─────────────────────────────────────────────── */
+function WaPhonePreview({ tpl, businessName = 'Picoso' }) {
+  const preview = (tpl.body || '')
+    .replace(/\{\{1\}\}/g, 'Aarav')
+    .replace(/\{\{2\}\}/g, 'TRACK')
+    .replace(/\*([^*]+)\*/g, '$1');
+  const buttons = tpl.footerType === 'BUTTONS' ? (tpl.buttons || []) : [];
+  const vars = countTplVars(tpl.body);
+
+  return (
+    <div className="flex flex-col">
+      <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.14em] mb-3">Live preview</p>
+      <div className="relative mx-auto w-[260px] bg-[#0b141a] rounded-[2.2rem] border-[7px] border-zinc-900 shadow-[0_24px_60px_rgba(0,0,0,0.35)] overflow-hidden h-[480px] flex flex-col">
+        <div className="absolute top-0 inset-x-0 h-5 bg-zinc-900 rounded-b-2xl w-28 mx-auto z-20" />
+        <div className="bg-[#075e54] text-white px-3 pt-7 pb-2.5 flex items-center gap-2 shrink-0">
+          <ChevronLeft className="w-4 h-4 opacity-80" />
+          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-[11px] font-bold">{businessName.slice(0, 1)}</div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12.5px] font-semibold truncate leading-tight">{businessName}</p>
+            <p className="text-[10px] text-white/70">online</p>
+          </div>
+        </div>
+        <div
+          className="flex-1 overflow-y-auto p-3"
+          style={{ background: '#e5ddd5 url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png) repeat' }}
+        >
+          <div className="max-w-[88%] bg-white rounded-lg rounded-tl-sm shadow-sm px-2.5 pt-2 pb-1.5">
+            {tpl.headerType === 'TEXT' && tpl.headerText && (
+              <p className="text-[12.5px] font-bold text-zinc-900 mb-1">{tpl.headerText}</p>
+            )}
+            {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(tpl.headerType) && (
+              <div className="h-24 rounded-md bg-zinc-100 mb-2 flex items-center justify-center text-[11px] text-zinc-400 uppercase tracking-wider">
+                {tpl.headerType} header
+              </div>
+            )}
+            <p className="text-[13px] text-[#111b21] whitespace-pre-wrap leading-relaxed">
+              {preview || <span className="italic text-zinc-400">[Message body]</span>}
+            </p>
+            {tpl.footerType === 'TEXT' && tpl.footerText && (
+              <p className="text-[11px] text-zinc-400 mt-1.5">{tpl.footerText}</p>
+            )}
+            <div className="flex justify-end items-center gap-0.5 mt-1">
+              <span className="text-[10px] text-zinc-400">10:00 AM</span>
+              <span className="text-[#53bdeb] text-[11px] leading-none">✓✓</span>
+            </div>
+            {buttons.length > 0 && (
+              <div className="mt-1.5 pt-1.5 border-t border-zinc-100 space-y-1">
+                {buttons.map((b, i) => (
+                  <p key={i} className="text-center text-[12.5px] font-medium text-[#00a5f4] py-1">{b.text || 'Button'}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {[
+          ['Category', tpl.category || '—'],
+          ['Language', tpl.language || 'en_US'],
+          ['Variables', `${vars} parameter${vars === 1 ? '' : 's'}`],
+          ['Buttons', `${buttons.length} attached`],
+        ].map(([k, val]) => (
+          <div key={k} className="rounded-xl border border-zinc-100 bg-white px-3 py-2">
+            <p className="text-[9.5px] font-semibold uppercase tracking-wider text-zinc-400">{k}</p>
+            <p className="text-[12px] font-semibold text-zinc-800 truncate mt-0.5">{val}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Create-template form (structure of CampaignBot, premium styling) ──── */
+function TemplateStudio({ tpl, onChange, readOnly }) {
+  const set = (k, v) => onChange({ ...tpl, [k]: v });
+  const bodyRef = useRef(null);
+  const vars = countTplVars(tpl.body);
+  const field = 'w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-[13.5px] text-zinc-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 transition-all disabled:bg-zinc-50';
+  const label = 'block text-[12px] font-medium text-zinc-600 mb-1.5';
+
+  const addVariable = () => {
+    const next = vars + 1;
+    set('body', `${tpl.body || ''}${tpl.body ? ' ' : ''}{{${next}}}`);
+  };
+
+  const applyFmt = (marker) => {
+    const el = bodyRef.current;
+    if (!el || readOnly) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const { body } = wrapFmt(tpl.body || '', start, end, marker);
+    set('body', body);
+  };
+
+  const updateButton = (i, patch) => {
+    const next = [...(tpl.buttons || [])];
+    next[i] = { ...next[i], ...patch };
+    set('buttons', next);
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className={label}>WhatsApp account</label>
+            <div className="flex items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5">
+              <MessageCircle className="w-4 h-4 text-emerald-500" />
+              <span className="text-[13.5px] font-medium text-zinc-800">Picoso Foods — +91 81670 80111</span>
+            </div>
+          </div>
+          <div>
+            <label className={label}>Template name *</label>
+            <input disabled={readOnly} value={tpl.templateName || ''} onChange={(e) => set('templateName', e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+              placeholder="e.g. picoso_urgency_01" className={`${field} font-mono`} />
+            <p className="mt-1 text-[11px] text-zinc-400">Lowercase letters, numbers, underscores</p>
+          </div>
+          <div>
+            <label className={label}>Category *</label>
+            <select disabled={readOnly} value={tpl.category || 'MARKETING'} onChange={(e) => set('category', e.target.value)} className={field}>
+              <option value="MARKETING">Marketing</option>
+              <option value="UTILITY">Utility</option>
+              <option value="AUTHENTICATION">Authentication</option>
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className={label}>Language *</label>
+            <select disabled={readOnly} value={tpl.language || 'en_US'} onChange={(e) => set('language', e.target.value)} className={field}>
+              {TPL_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-100 pt-5">
+          <h4 className="text-[13px] font-semibold text-zinc-800 mb-3">Header</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={label}>Header type</label>
+              <select disabled={readOnly} value={tpl.headerType || 'NONE'} onChange={(e) => set('headerType', e.target.value)} className={field}>
+                <option value="NONE">None</option>
+                <option value="TEXT">Text</option>
+                <option value="IMAGE">Image</option>
+                <option value="VIDEO">Video</option>
+                <option value="DOCUMENT">Document</option>
+              </select>
+            </div>
+            {tpl.headerType === 'TEXT' && (
+              <div>
+                <label className={label}>Header text</label>
+                <input disabled={readOnly} maxLength={60} value={tpl.headerText || ''} onChange={(e) => set('headerText', e.target.value)} className={field} placeholder="e.g. Today only" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-100 pt-5">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-[13px] font-semibold text-zinc-800">Body *</h4>
+            {!readOnly && (
+              <button type="button" onClick={addVariable} className="text-[12px] font-medium px-2.5 py-1 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">
+                Add variable
+              </button>
+            )}
+          </div>
+          <div className="mb-2 flex items-center gap-1 p-1.5 bg-zinc-50 rounded-xl border border-zinc-100">
+            <button type="button" disabled={readOnly} onClick={() => applyFmt('*')} title="Bold (*text*)" className="p-1.5 rounded-lg text-zinc-500 hover:bg-white hover:text-zinc-800 disabled:opacity-40">
+              <Bold className="w-3.5 h-3.5" />
+            </button>
+            <button type="button" disabled={readOnly} onClick={() => applyFmt('_')} title="Italic (_text_)" className="p-1.5 rounded-lg text-zinc-500 hover:bg-white hover:text-zinc-800 disabled:opacity-40">
+              <Italic className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[11px] text-zinc-400 pl-2 flex items-center gap-1"><HelpCircle className="w-3 h-3" /> *bold*  _italic_  {'{{1}}'} name</span>
+          </div>
+          <textarea
+            ref={bodyRef}
+            disabled={readOnly}
+            value={tpl.body || ''}
+            onChange={(e) => set('body', e.target.value.slice(0, 1024))}
+            rows={6}
+            placeholder="Enter message. Use {{1}} for the customer name."
+            className={`${field} resize-none min-h-[120px]`}
+          />
+          <div className="mt-1.5 flex items-center justify-between">
+            <p className="text-[11px] text-zinc-400">{'{'}{'{1}'}{'}'} = customer name · click Add variable for more</p>
+            <p className={`text-[11px] font-medium ${(tpl.body || '').length > 900 ? 'text-amber-600' : 'text-zinc-400'}`}>{(tpl.body || '').length}/1024</p>
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-100 pt-5">
+          <h4 className="text-[13px] font-semibold text-zinc-800 mb-3">Footer</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={label}>Footer type</label>
+              <select disabled={readOnly} value={tpl.footerType || 'NONE'} onChange={(e) => set('footerType', e.target.value)} className={field}>
+                <option value="NONE">None</option>
+                <option value="TEXT">Text</option>
+                <option value="BUTTONS">Buttons</option>
+              </select>
+            </div>
+            {tpl.footerType === 'TEXT' && (
+              <div>
+                <label className={label}>Footer text</label>
+                <input disabled={readOnly} maxLength={60} value={tpl.footerText || ''} onChange={(e) => set('footerText', e.target.value)} className={field} />
+              </div>
+            )}
+          </div>
+          {tpl.footerType === 'BUTTONS' && (
+            <div className="mt-3 space-y-2">
+              {(tpl.buttons || []).map((b, i) => (
+                <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-2 p-3 rounded-xl bg-zinc-50 border border-zinc-100">
+                  <select disabled={readOnly} value={b.type || 'URL'} onChange={(e) => updateButton(i, { type: e.target.value })} className={field}>
+                    <option value="URL">URL</option>
+                    <option value="QUICK_REPLY">Quick reply</option>
+                    <option value="PHONE">Phone</option>
+                  </select>
+                  <input disabled={readOnly} value={b.text || ''} onChange={(e) => updateButton(i, { text: e.target.value })} placeholder="Button text" className={field} />
+                  {b.type !== 'QUICK_REPLY' && (
+                    <input disabled={readOnly} value={b.url || b.phone || ''} onChange={(e) => updateButton(i, b.type === 'PHONE' ? { phone: e.target.value } : { url: e.target.value })} placeholder={b.type === 'PHONE' ? 'Phone' : 'https://picoso.in'} className={field} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="lg:col-span-1">
+        <div className="lg:sticky lg:top-4 rounded-2xl border border-zinc-100 bg-zinc-50/80 p-4">
+          <WaPhonePreview tpl={tpl} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExperimentPlanView({ experiment, onApprove, approving, approved, onReload }) {
   const [activeVariant, setActiveVariant] = useState(0);
   const [expandedSection, setExpandedSection] = useState(null);
   const [copiedIdx, setCopiedIdx] = useState(null);
+  const [draftTpl, setDraftTpl] = useState(null);
+  const [savingTpl, setSavingTpl] = useState(false);
+  const [tplError, setTplError] = useState('');
+  const [edge, setEdge] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState('');
 
   const { plan = {}, variants = [] } = experiment;
   const phases = plan.phases || [];
   const criteria = plan.optimizationCriteria || {};
+
+  useEffect(() => {
+    if (variants[activeVariant]) setDraftTpl(variantToTpl(variants[activeVariant]));
+  }, [activeVariant, experiment]);
+
+  useEffect(() => {
+    wpMarketing.getEdgeStatus().then((r) => setEdge(r.data)).catch(() => setEdge({ connected: false }));
+  }, []);
+
+  const anyPublishing = (variants || []).some((v) => v.waPublishStatus === 'publishing');
+  useEffect(() => {
+    if (!publishing && !anyPublishing) return;
+    const t = setInterval(() => { onReload?.(); }, 2500);
+    return () => clearInterval(t);
+  }, [publishing, anyPublishing, onReload]);
+
+  const publishedCount = (variants || []).filter((v) => v.waPublishStatus === 'published').length;
+  const failedCount = (variants || []).filter((v) => v.waPublishStatus === 'failed').length;
+
+  useEffect(() => {
+    if (!publishing) return;
+    if (!variants.length) return;
+    const still = variants.some((v) => v.waPublishStatus === 'publishing');
+    if (!still && publishedCount + failedCount > 0) setPublishing(false);
+  }, [publishing, variants, publishedCount, failedCount]);
+
+  const handlePublish = async () => {
+    if (!experiment?._id) return;
+    setPublishing(true); setPublishMsg('');
+    try {
+      const r = await wpMarketing.publishTemplates(experiment._id);
+      setPublishMsg(r.data?.message || 'Publishing in Edge…');
+      onReload?.();
+    } catch (err) {
+      setPublishMsg(err?.response?.data?.error || 'Could not start publish');
+      setPublishing(false);
+    }
+  };
 
   const copyMsg = async (i, text) => {
     await navigator.clipboard.writeText(text || '');
@@ -862,15 +1178,47 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
         </div>
       )}
 
-      {/* ── 10 Campaign Variants ────────────────────────────────── */}
+      {/* ── 10 Campaign Variants as WhatsApp templates ─────────── */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4.5 h-4.5 text-blue-600" />
-            <p className="text-[14px] font-semibold text-gray-900">10 Campaign Variants</p>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 gap-3 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2">
+              <Layers className="w-4.5 h-4.5 text-blue-600" />
+              <p className="text-[14px] font-semibold text-gray-900">10 WhatsApp templates</p>
+            </div>
+            <p className="text-[12px] text-gray-400 mt-0.5">Each variant is a full template — name, category, header, body, footer</p>
           </div>
-          <p className="text-[12px] text-gray-400">Each tests a different creative angle</p>
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${edge?.connected ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+              {edge?.connected ? (edge.onCampaignBot ? 'Edge · CampaignBot' : 'Edge connected') : 'Edge offline'}
+            </span>
+            {publishedCount > 0 && (
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-700">{publishedCount} published</span>
+            )}
+            {failedCount > 0 && (
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600">{failedCount} failed</span>
+            )}
+            <button
+              onClick={handlePublish}
+              disabled={publishing || anyPublishing}
+              className="flex items-center gap-1.5 px-3 py-2 bg-zinc-900 text-white text-[12.5px] font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {(publishing || anyPublishing) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+              {(publishing || anyPublishing) ? 'Filling Edge…' : 'Create on CampaignBot'}
+            </button>
+          </div>
         </div>
+
+        {(publishMsg || !edge?.connected) && (
+          <div className={`px-5 py-3 text-[12.5px] border-b ${edge?.connected ? 'bg-zinc-50 text-zinc-600 border-zinc-100' : 'bg-amber-50 text-amber-800 border-amber-100'}`}>
+            {edge?.connected
+              ? publishMsg
+              : 'Edge is not in debug mode. Run `npm run edge:debug` in the backend folder, log in to campaignbot.online/templates, then retry.'}
+            {variants[activeVariant]?.waPublishError && (
+              <p className="text-red-600 mt-1">{variants[activeVariant].waPublishError}</p>
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         <div className="flex border-b border-gray-100 overflow-x-auto scrollbar-hide">
@@ -878,74 +1226,65 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved }) {
             <button
               key={v.variantNumber || i}
               onClick={() => setActiveVariant(i)}
-              className={`flex-shrink-0 px-4 py-2.5 text-[12.5px] font-semibold border-b-2 transition-all
+              className={`flex-shrink-0 px-4 py-2.5 text-[12.5px] font-semibold border-b-2 transition-all flex items-center gap-1.5
                 ${activeVariant === i
-                  ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+                  ? 'border-zinc-900 text-zinc-900 bg-zinc-50'
                   : 'border-transparent text-gray-400 hover:text-gray-600'
                 }`}
             >
               {v.label || `Var ${VARIANT_LABELS[i]}`}
+              {v.waPublishStatus === 'published' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+              {v.waPublishStatus === 'failed' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+              {v.waPublishStatus === 'publishing' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
             </button>
           ))}
         </div>
 
-        {/* Active variant detail */}
-        {variants[activeVariant] && (() => {
-          const v = variants[activeVariant];
-          return (
-            <div className="p-5 space-y-4">
-              {/* Meta row */}
-              <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
-                  <Target className="w-3 h-3" />
-                  {v.copyAngle}
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-[12px] text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                  {v.tone}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3.5 bg-green-50 rounded-xl border border-green-100">
-                  <p className="text-[10.5px] font-semibold text-green-600 uppercase tracking-wider mb-1">Offer</p>
-                  <p className="text-[13.5px] font-semibold text-gray-900">{v.offer || '—'}</p>
-                </div>
-                <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-100">
-                  <p className="text-[10.5px] font-semibold text-blue-600 uppercase tracking-wider mb-1">Call to Action</p>
-                  <p className="text-[13.5px] font-semibold text-gray-900">{v.cta || '—'}</p>
-                </div>
-              </div>
-
-              {/* Message */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider">WhatsApp Message</p>
-                  <button
-                    onClick={() => copyMsg(activeVariant, v.message)}
-                    className="flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700"
-                  >
-                    {copiedIdx === activeVariant ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedIdx === activeVariant ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <div className="bg-gray-900 rounded-xl p-4">
-                  <pre className="text-[13px] text-green-400 whitespace-pre-wrap font-mono leading-relaxed">{v.message}</pre>
-                </div>
-              </div>
-
-              {/* Image concept */}
-              {v.imageConceptDescription && (
-                <div className="flex items-start gap-3 p-4 bg-violet-50 rounded-xl border border-violet-100">
-                  <Palette className="w-4.5 h-4.5 text-violet-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-[11px] font-semibold text-violet-600 uppercase tracking-wider mb-0.5">Image / Creative Concept</p>
-                    <p className="text-[13.5px] text-gray-700">{v.imageConceptDescription}</p>
-                  </div>
-                </div>
+        {variants[activeVariant] && draftTpl && (
+          <div className="p-5 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-zinc-900 text-white px-3 py-1 rounded-full">
+                {variants[activeVariant].copyAngle}
+              </span>
+              {variants[activeVariant].tone && (
+                <span className="text-[12px] text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">{variants[activeVariant].tone}</span>
+              )}
+              {variants[activeVariant].offer && (
+                <span className="text-[12px] text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full">{variants[activeVariant].offer}</span>
               )}
             </div>
-          );
-        })()}
+            <TemplateStudio
+              tpl={draftTpl}
+              onChange={setDraftTpl}
+              readOnly={!!approved}
+            />
+            {!approved && experiment?._id && (
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-100">
+                {tplError && <p className="text-[12.5px] text-red-600 mr-auto">{tplError}</p>}
+                <button
+                  onClick={async () => {
+                    setSavingTpl(true); setTplError('');
+                    try {
+                      await wpMarketing.updateVariant(experiment._id, variants[activeVariant].variantNumber, {
+                        ...draftTpl,
+                        message: draftTpl.body,
+                        cta: draftTpl.buttons?.[0]?.text || variants[activeVariant].cta,
+                      });
+                    } catch (err) {
+                      setTplError(err?.response?.data?.error || 'Could not save template');
+                    }
+                    setSavingTpl(false);
+                  }}
+                  disabled={savingTpl}
+                  className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-[13px] font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  {savingTpl ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Save template
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Performance Signals ─────────────────────────────────── */}
@@ -1183,6 +1522,11 @@ function CampaignStep2({ selectedList, onBack, onDraftSaved }) {
             onApprove={approvePlan}
             approving={approving}
             approved={approved}
+            onReload={async () => {
+              if (!campaignId) return;
+              const r = await wpMarketing.getPlan(campaignId);
+              setExperiment(r.data);
+            }}
           />
         </div>
       ) : (
@@ -1631,24 +1975,18 @@ function VariantRow({ v, rank, onEdit }) {
 }
 
 function VariantEditModal({ variant, experimentId, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    label: variant.label || '',
-    copyAngle: variant.copyAngle || '',
-    tone: variant.tone || '',
-    offer: variant.offer || '',
-    cta: variant.cta || '',
-    message: variant.message || '',
-    imageConceptDescription: variant.imageConceptDescription || '',
-  });
+  const [tpl, setTpl] = useState(() => variantToTpl(variant));
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
-
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
     setSaving(true); setError('');
     try {
-      await wpMarketing.updateVariant(experimentId, variant.variantNumber, form);
+      await wpMarketing.updateVariant(experimentId, variant.variantNumber, {
+        ...tpl,
+        message: tpl.body,
+        cta: tpl.buttons?.[0]?.text || variant.cta,
+      });
       onSaved();
       onClose();
     } catch (err) {
@@ -1658,39 +1996,26 @@ function VariantEditModal({ variant, experimentId, onClose, onSaved }) {
     }
   };
 
-  const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500';
-
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="text-[15px] font-semibold text-gray-900">Edit {variant.label}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="px-6 py-5 space-y-3">
-          {[['label', 'Label'], ['copyAngle', 'Copy Angle'], ['tone', 'Tone'], ['offer', 'Offer'], ['cta', 'Call to Action']].map(([k, label]) => (
-            <div key={k}>
-              <label className="block text-[12px] font-medium text-gray-600 mb-1">{label}</label>
-              <input value={form[k]} onChange={(e) => set(k, e.target.value)} className={inp} />
-            </div>
-          ))}
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
           <div>
-            <label className="block text-[12px] font-medium text-gray-600 mb-1">WhatsApp Message</label>
-            <textarea value={form.message} onChange={(e) => set('message', e.target.value)} rows={5}
-              className={`${inp} font-mono text-[13px] resize-none`} />
+            <h3 className="text-[16px] font-semibold text-zinc-900">Create template — {variant.label}</h3>
+            <p className="text-[12px] text-zinc-400 mt-0.5">{variant.copyAngle}</p>
           </div>
-          <div>
-            <label className="block text-[12px] font-medium text-gray-600 mb-1">Image / Creative Concept</label>
-            <textarea value={form.imageConceptDescription} onChange={(e) => set('imageConceptDescription', e.target.value)} rows={2} className={`${inp} resize-none`} />
-          </div>
-          {error && <p className="text-[13px] text-red-600">{error}</p>}
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400"><X className="w-5 h-5" /></button>
         </div>
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-[13px] text-gray-500 border border-gray-200 rounded-xl">Cancel</button>
+        <div className="px-6 py-5 overflow-y-auto flex-1">
+          <TemplateStudio tpl={tpl} onChange={setTpl} />
+          {error && <p className="text-[13px] text-red-600 mt-3">{error}</p>}
+        </div>
+        <div className="px-6 py-4 border-t border-zinc-100 flex justify-end gap-2 bg-white">
+          <button onClick={onClose} className="px-4 py-2 text-[13px] text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50">Cancel</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-[13px] font-semibold rounded-xl disabled:opacity-50">
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-[13px] font-semibold rounded-xl disabled:opacity-50">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-            Save Changes
+            Save template
           </button>
         </div>
       </div>
@@ -1708,11 +2033,7 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
   const [execError,   setExecError]   = useState('');
   const [analysis,    setAnalysis]    = useState(null);
   const [showStartForm, setShowStartForm] = useState(false);
-
-  // Template config fields
-  const [tmplName,  setTmplName]  = useState(templateConfig?.templateName || '');
-  const [hasUrlBtn, setHasUrlBtn] = useState(templateConfig?.hasUrlButton ?? true);
-  const [destUrl,   setDestUrl]   = useState(templateConfig?.destinationUrl || 'https://picoso.in');
+  const [destUrl, setDestUrl] = useState(templateConfig?.destinationUrl || 'https://picoso.in');
 
   // Per-run schedule state: [{runNumber, date, time, sendNow}]
   const [runSchedules, setRunSchedules] = useState([]);
@@ -1721,8 +2042,6 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
   const [editTime, setEditTime] = useState('');
 
   useEffect(() => {
-    if (templateConfig?.templateName) setTmplName(templateConfig.templateName);
-    if (templateConfig?.hasUrlButton != null) setHasUrlBtn(templateConfig.hasUrlButton);
     if (templateConfig?.destinationUrl) setDestUrl(templateConfig.destinationUrl);
   }, [templateConfig]);
 
@@ -1782,7 +2101,6 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
   };
 
   const handleStart = async () => {
-    if (!tmplName.trim()) { setExecError('Template name is required'); return; }
     setStarting(true); setExecError('');
     try {
       const schedules = runSchedules.map((s) => ({
@@ -1793,7 +2111,7 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
       await wpMarketing.startPhase(experimentId, {
         phaseNumber:    phase.phaseNumber,
         runSchedules:   schedules,
-        templateConfig: { templateName: tmplName, hasUrlButton: hasUrlBtn, destinationUrl: destUrl },
+        templateConfig: { destinationUrl: destUrl },
       });
       setShowStartForm(false);
       onRefresh();
@@ -1859,8 +2177,6 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
   const statusBadge = { pending: 'bg-gray-100 text-gray-500', running: 'bg-amber-100 text-amber-700', completed: 'bg-green-100 text-green-700' };
   const jobBadge    = { pending: 'bg-zinc-100 text-zinc-500', running: 'bg-blue-100 text-blue-700', completed: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-600', cancelled: 'bg-gray-100 text-gray-400' };
   const phaseColor  = PHASE_COLORS[phaseIndex % PHASE_COLORS.length];
-
-  const inp = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
   return (
     <div className={`bg-white rounded-2xl border overflow-hidden ${isRunning ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'}`}>
@@ -1994,21 +2310,9 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
               Schedule all {phase.rounds} runs at once
             </p>
 
-            {/* Template config */}
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">WhatsApp Base Template</p>
-              <p className="text-[11.5px] text-gray-500">
-                Each variant&apos;s unique AI-crafted message fills the body variable. One approved template powers all {phase.variantCount} variant templates.
-              </p>
-              <input value={tmplName} onChange={(e) => setTmplName(e.target.value)} placeholder="Template name (e.g. picoso_promo)" className={inp} />
-              <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
-                <input type="checkbox" checked={hasUrlBtn} onChange={(e) => setHasUrlBtn(e.target.checked)} className="rounded" />
-                Template has URL button (unique tracking link per recipient)
-              </label>
-              {hasUrlBtn && (
-                <input value={destUrl} onChange={(e) => setDestUrl(e.target.value)} placeholder="https://picoso.in" className={inp} />
-              )}
-            </div>
+            <p className="text-[11.5px] text-zinc-500">
+              Contacts are split across this phase&apos;s variant templates. Each group receives only that variant&apos;s template — no extra template name needed.
+            </p>
 
             {/* Run schedule inputs */}
             <div className="space-y-2">
@@ -2114,53 +2418,48 @@ function VariantTemplateCard({ variant, onEdit }) {
     winner:     'bg-green-50 text-green-700',
     eliminated: 'bg-gray-100 text-gray-400',
   };
+  const tpl = variantToTpl(variant);
+  const preview = (tpl.body || '').replace(/\{\{1\}\}/g, '{{name}}').replace(/\{\{2\}\}/g, '…');
   return (
-    <div className={`bg-white rounded-2xl border overflow-hidden transition-all ${variant.status === 'eliminated' ? 'border-gray-100 opacity-50' : 'border-gray-200 hover:border-gray-300'}`}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-bold text-gray-900">{variant.label}</span>
+    <div className={`bg-white rounded-2xl border overflow-hidden transition-all ${variant.status === 'eliminated' ? 'border-gray-100 opacity-50' : 'border-zinc-200 hover:border-zinc-300'}`}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[13px] font-bold text-zinc-900">{variant.label}</span>
           <span className={`text-[10.5px] font-medium px-2 py-0.5 rounded-full ${statusColor[variant.status] || 'bg-gray-100 text-gray-500'}`}>{variant.status}</span>
         </div>
-        <button onClick={() => onEdit(variant)} className="flex items-center gap-1 text-[11.5px] text-gray-400 hover:text-gray-700 transition-colors">
+        <button onClick={() => onEdit(variant)} className="flex items-center gap-1 text-[11.5px] text-zinc-400 hover:text-zinc-800 transition-colors">
           <Edit2 className="w-3 h-3" /> Edit
         </button>
       </div>
+      <div className="px-4 pt-3">
+        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{tpl.templateName || 'untitled_template'}</p>
+        <p className="text-[11px] text-zinc-500 mt-0.5">{tpl.category} · {tpl.language} · {tpl.headerType === 'NONE' ? 'No header' : tpl.headerType}</p>
+      </div>
       {variant.copyAngle && (
-        <div className="px-4 pt-3">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Strategy</p>
-          <p className="text-[12.5px] text-gray-700 font-medium">{variant.copyAngle}</p>
+        <div className="px-4 pt-2">
+          <p className="text-[12.5px] text-zinc-700 font-medium">{variant.copyAngle}</p>
         </div>
       )}
-      {variant.message ? (
-        <div className="px-4 pt-3 pb-3">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Message Template</p>
-          <div className="bg-[#dcf8c6] rounded-2xl rounded-tl-sm px-3 py-2.5 max-w-[95%]">
-            <p className="text-[12px] text-[#111b21] whitespace-pre-line leading-relaxed">{variant.message}</p>
-            {variant.cta && (
-              <div className="mt-2 pt-2 border-t border-[#b5e8a0]">
-                <p className="text-[12px] font-semibold text-[#005c4b]">→ {variant.cta}</p>
-              </div>
-            )}
-            <p className="text-[10px] text-[#667781] text-right mt-1">10:00 AM ✓✓</p>
-          </div>
+      <div className="px-4 py-3">
+        <div className="bg-[#dcf8c6] rounded-2xl rounded-tl-sm px-3 py-2.5">
+          {tpl.headerType === 'TEXT' && tpl.headerText && (
+            <p className="text-[12px] font-bold text-[#111b21] mb-1">{tpl.headerText}</p>
+          )}
+          <p className="text-[12px] text-[#111b21] whitespace-pre-line leading-relaxed">{preview || 'No body yet'}</p>
+          {tpl.buttons?.[0]?.text && (
+            <div className="mt-2 pt-2 border-t border-[#b5e8a0]">
+              <p className="text-[12px] font-semibold text-[#00a5f4] text-center">{tpl.buttons[0].text}</p>
+            </div>
+          )}
+          <p className="text-[10px] text-[#667781] text-right mt-1">10:00 AM ✓✓</p>
         </div>
-      ) : (
-        <div className="px-4 pt-3 pb-3">
-          <p className="text-[12px] text-gray-400 italic">No message drafted yet</p>
-        </div>
-      )}
-      {variant.offer && (
-        <div className="px-4 pb-3">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Offer</p>
-          <p className="text-[12px] text-gray-600">{variant.offer}</p>
-        </div>
-      )}
+      </div>
       {(variant.sent > 0 || variant.delivered > 0) && (
-        <div className="grid grid-cols-4 gap-0 border-t border-gray-100">
-          {[['Sent', variant.sent], ['Read', variant.read], ['Clicks', variant.uniqueClicks], ['Conv.', variant.conversions]].map(([l, v]) => (
+        <div className="grid grid-cols-4 gap-0 border-t border-zinc-100">
+          {[['Sent', variant.sent], ['Read', variant.read], ['Clicks', variant.uniqueClicks], ['Conv.', variant.conversions]].map(([l, val]) => (
             <div key={l} className="py-2 text-center">
-              <p className="text-[10px] text-gray-400">{l}</p>
-              <p className="text-[13px] font-bold text-gray-800">{v || 0}</p>
+              <p className="text-[10px] text-zinc-400">{l}</p>
+              <p className="text-[13px] font-bold text-zinc-800">{val || 0}</p>
             </div>
           ))}
         </div>
@@ -2472,7 +2771,7 @@ function CampaignDashboard({ campaignId, onBack }) {
           <div className="flex items-center gap-2 mb-3">
             <MessageSquare className="w-4 h-4 text-gray-400" />
             <p className="text-[14px] font-semibold text-gray-900">Variant Templates</p>
-            <span className="text-[12px] text-gray-400">each variant = a unique WhatsApp message</span>
+            <span className="text-[12px] text-gray-400">each variant is its own WhatsApp template</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {variants.map((v) => (

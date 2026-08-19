@@ -307,6 +307,8 @@ export const wpMarketing = {
   updateJobTime:     (jobId, data) => wpMarketingApi.put(`/wp-marketing/scheduled-jobs/${jobId}`, data),
   updateVariant:     (expId, variantNum, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/variants/${variantNum}`, data),
   saveTemplateConfig:(expId, data) => wpMarketingApi.put(`/wp-marketing/experiments/${expId}/template-config`, data),
+  getEdgeStatus:     ()        => wpMarketingApi.get('/wp-marketing/edge/status'),
+  publishTemplates:  (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/publish-templates`, data || {}),
 };
 
 export default api;

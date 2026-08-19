@@ -258,6 +258,8 @@ router.get('/wp-marketing/experiments/:id/schedule',       requireWpPin, wpExecu
 router.put('/wp-marketing/experiments/:id/variants/:variantNumber', requireWpPin, wpExecution.updateVariant);
 router.put('/wp-marketing/experiments/:id/template-config', requireWpPin, wpExecution.saveTemplateConfig);
 router.get('/wp-marketing/campaigns/:id/experiment',       requireWpPin, wpExecution.getExperimentByCampaign);
+router.get('/wp-marketing/edge/status',                    requireWpPin, wpExecution.getEdgeStatus);
+router.post('/wp-marketing/experiments/:id/publish-templates', requireWpPin, wpExecution.publishTemplates);
 
 // ── WP Marketing — Scheduled job management ───────────────────────────────
 router.delete('/wp-marketing/scheduled-jobs/:jobId',       requireWpPin, wpExecution.cancelJob);

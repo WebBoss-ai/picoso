@@ -8,6 +8,7 @@ import { WpExperiment, WpCampaignRun } from '../models/wpMarketingModels.js';
 import * as engine from '../services/wpExecutionEngine.js';
 import * as bot    from '../services/campaignBot.js';
 import { uploadBufferToS3 } from '../utils/s3.js';
+import { checkEdgeCdp, publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
 
 /* ── WhatsApp connection & templates ─────────────────────────────────────── */
 
@@ -418,5 +419,55 @@ export const updateJobTime = async (req, res) => {
   } catch (err) {
     const isClient = /only reschedule|Access denied/.test(err.message);
     res.status(isClient ? 400 : 500).json({ error: err.message });
+  }
+};
+
+/* ── CampaignBot template UI (Playwright → Edge CDP) ─────────────────────── */
+
+export const getEdgeStatus = async (_req, res) => {
+  try {
+    const status = await checkEdgeCdp();
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /wp-marketing/experiments/:id/publish-templates
+ * Fills CampaignBot's create-template form in the attached Edge tab.
+ * Runs in the background; poll GET experiment for waPublishStatus on each variant.
+ */
+export const publishTemplates = async (req, res) => {
+  try {
+    const experiment = await WpExperiment.findOne({
+      _id: req.params.id,
+      clientId: req.wpClient._id,
+    });
+    if (!experiment) return res.status(404).json({ error: 'Experiment not found' });
+
+    const edge = await checkEdgeCdp();
+    if (!edge.connected) {
+      return res.status(400).json({ error: edge.error });
+    }
+
+    const variantNumbers = Array.isArray(req.body?.variantNumbers) ? req.body.variantNumbers : null;
+
+    setImmediate(async () => {
+      try {
+        const result = await publishVariantsToCampaignBot(req.params.id, variantNumbers);
+        console.log(`[CB Templates] job done — published:${result.published} failed:${result.failed}`);
+      } catch (err) {
+        console.error('[CB Templates] job error:', err.message);
+      }
+    });
+
+    res.json({
+      success: true,
+      started: true,
+      message: 'Publishing templates in the Edge window. Keep Edge focused on CampaignBot.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
