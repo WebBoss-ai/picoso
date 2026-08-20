@@ -10,6 +10,13 @@ const nextConfig = {
       { protocol: 'http', hostname: 'picoso.in' },
     ],
   },
+  experimental: {
+    serverActions: {
+      // Required when Next sits behind nginx / a public hostname (avoids
+      // "Missing origin header from a forwarded Server Actions request").
+      allowedOrigins: ['picoso.in', 'www.picoso.in', 'localhost:3000'],
+    },
+  },
 };
 
 module.exports = nextConfig;

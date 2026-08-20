@@ -657,14 +657,23 @@ function resolvedCategory(variant) {
 }
 
 async function modalScope(page) {
+  const byRole = page.getByRole('dialog', { name: /Create New Template/i });
+  if (await byRole.count()) return byRole.last();
+
   const heading = page.getByRole('heading', { name: /Create New Template/i });
   const panel = page.locator('div.inline-block.align-bottom, div.inline-block').filter({ has: heading });
   if (await panel.count()) return panel.last();
-  const dialog = page.locator('[role="dialog"]').filter({ has: heading });
-  if (await dialog.count()) return dialog.last();
+
   const fixed = page.locator('div.fixed.inset-0').filter({ has: heading });
   if (await fixed.count()) return fixed.last();
-  return page;
+
+  // Never fall back to bare page for #id lookups — page filters share the same ids.
+  throw new Error('Create New Template dialog not found');
+}
+
+/** Always prefer the create-modal field, never the templates-list filter (#category etc). */
+function modalField(form, selector) {
+  return form.locator(selector).last();
 }
 
 async function nativeFill(locator, value) {
@@ -676,7 +685,7 @@ async function nativeFill(locator, value) {
 }
 
 async function setSelectValue(scope, selector, value) {
-  const el = scope.locator(selector).first();
+  const el = modalField(scope, selector);
   if (!(await el.count())) return false;
   await el.selectOption(value).catch(() => {});
   await el.evaluate((node, val) => {
@@ -752,8 +761,9 @@ async function openCreateModal(page) {
     await byText.click({ force: true });
   }
   await heading.waitFor({ state: 'visible', timeout: 25000 });
-  await page.locator('#name').waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('#category').waitFor({ state: 'visible', timeout: 10000 });
+  const form = await modalScope(page);
+  await modalField(form, '#name').waitFor({ state: 'visible', timeout: 10000 });
+  await modalField(form, '#category').waitFor({ state: 'visible', timeout: 10000 });
   await sleep(400);
 }
 
@@ -803,7 +813,7 @@ async function selectLanguage(form, code) {
 }
 
 async function pickCategory(form, category) {
-  const sel = form.locator('#category').first();
+  const sel = modalField(form, '#category');
   await sel.waitFor({ state: 'visible', timeout: 10000 });
   await sel.selectOption(category).catch(() => {});
   await sel.evaluate((el, val) => {
@@ -831,7 +841,7 @@ async function pickCategory(form, category) {
     }
   }, category);
 
-  const unsub = form.locator('#includeUnsubscribeFooter');
+  const unsub = modalField(form, '#includeUnsubscribeFooter');
   for (let i = 0; i < 16; i++) {
     const val = await sel.inputValue().catch(() => '');
     const enabled = await unsub.isEnabled({ timeout: 400 }).catch(() => null);
@@ -847,7 +857,6 @@ async function pickCategory(form, category) {
       cbLog('selectCategory', { value: category, via: 'select-value', attempt: i, unsubEnabled: enabled });
       return true;
     }
-    // Re-fire change if Vue ignored the first select
     if (i === 4 || i === 9) {
       await sel.selectOption(category).catch(() => {});
       await sel.dispatchEvent('change').catch(() => {});
@@ -860,7 +869,7 @@ async function pickCategory(form, category) {
 }
 
 async function applyUnsubscribeFooter(form, category) {
-  const unsub = form.locator('#includeUnsubscribeFooter');
+  const unsub = modalField(form, '#includeUnsubscribeFooter');
   if (!(await unsub.count())) return;
 
   await sleep(300);
@@ -1112,37 +1121,34 @@ async function submitTemplate(page) {
 
 async function repairDisabledForm(page, form, variant, name, category, body) {
   cbLog('repairing disabled Create Template');
-  await setVueInput(page.locator('#name'), name);
-  await pickCategory(page, category);
-  await setSelectValue(page, '#templateFormat', 'STANDARD');
-  await setSelectValue(page, '#headerType', 'NONE');
+  await setVueInput(modalField(form, '#name'), name);
+  await pickCategory(form, category);
+  await setSelectValue(form, '#templateFormat', 'STANDARD');
+  await setSelectValue(form, '#headerType', 'NONE');
   await fillBody(form, page, body);
   await fillVariableExamples(form, body, variant.variableExamples || { 1: 'Rahul' });
 
-  // Prefer BUTTONS; if button fields never appear, fall back to NONE so Create can enable
-  await setSelectValue(page, '#footerType', 'BUTTONS');
+  await setSelectValue(form, '#footerType', 'BUTTONS');
   await sleep(400);
   const hasBtn = await form.locator('label').filter({ hasText: /button text/i }).first().isVisible().catch(() => false);
   if (hasBtn) {
     await fillButtons(form, variant);
   } else {
     cbLog('button fields missing — falling back to footer NONE');
-    await setSelectValue(page, '#footerType', 'NONE');
+    await setSelectValue(form, '#footerType', 'NONE');
   }
 
-  await applyUnsubscribeFooter(page, category);
+  await applyUnsubscribeFooter(form, category);
 
-  // Marketing must have Stop checked; click the label if check() no-ops
   if (category === 'MARKETING') {
-    const unsub = page.locator('#includeUnsubscribeFooter');
+    const unsub = modalField(form, '#includeUnsubscribeFooter');
     if (await unsub.count() && !(await unsub.isChecked().catch(() => false))) {
-      await page.locator('label[for="includeUnsubscribeFooter"]').click().catch(() => {});
+      await form.locator('label[for="includeUnsubscribeFooter"]').click().catch(() => {});
       await unsub.check({ force: true }).catch(() => {});
     }
   }
 
-  // Nudge Vue validation by touching body again
-  await page.locator('[contenteditable="true"]').first().click().catch(() => {});
+  await form.locator('[contenteditable="true"]').first().click().catch(() => {});
   await sleep(300);
 }
 
@@ -1163,33 +1169,29 @@ async function fillAndSubmit(page, variant, attempt = 0) {
     bodyLen: body.length,
   });
 
-  const nameField = page.locator('#name');
+  const nameField = modalField(form, '#name');
   await nameField.waitFor({ state: 'visible', timeout: 10000 });
   await setVueInput(nameField, name);
   if ((await nameField.inputValue().catch(() => '')) !== name) {
     await nameField.fill(name);
   }
 
-  await pickCategory(page, category);
-  await setSelectValue(page, '#templateFormat', 'STANDARD');
+  await pickCategory(form, category);
+  await setSelectValue(form, '#templateFormat', 'STANDARD');
   await selectLanguage(form, variant.language || 'en_US');
-
-  // Always NONE header — IMAGE/VIDEO blocks Create without media upload
-  await setSelectValue(page, '#headerType', 'NONE');
+  await setSelectValue(form, '#headerType', 'NONE');
   await sleep(200);
 
   await fillBody(form, page, body);
   await fillVariableExamples(form, body, examples);
-
-  // Buttons with URL — most reliable CTA path on CampaignBot
   await fillButtons(form, variant);
-  await applyUnsubscribeFooter(page, category);
+  await applyUnsubscribeFooter(form, category);
 
   if (category === 'MARKETING') {
-    const unsub = page.locator('#includeUnsubscribeFooter');
+    const unsub = modalField(form, '#includeUnsubscribeFooter');
     for (let i = 0; i < 10; i++) {
       if (await unsub.isEnabled().catch(() => false) && await unsub.isChecked().catch(() => false)) break;
-      await page.locator('label[for="includeUnsubscribeFooter"]').click().catch(() => {});
+      await form.locator('label[for="includeUnsubscribeFooter"]').click().catch(() => {});
       await unsub.check({ force: true }).catch(() => {});
       await sleep(150);
     }
@@ -1205,11 +1207,10 @@ async function fillAndSubmit(page, variant, attempt = 0) {
   }
 
   if (await submit.isDisabled().catch(() => true)) {
-    // Last resort: drop buttons so only name+body+category(+stop) are required
-    await setSelectValue(page, '#footerType', 'NONE');
-    await applyUnsubscribeFooter(page, category);
+    await setSelectValue(form, '#footerType', 'NONE');
+    await applyUnsubscribeFooter(form, category);
     if (category === 'MARKETING') {
-      await page.locator('#includeUnsubscribeFooter').check({ force: true }).catch(() => {});
+      await modalField(form, '#includeUnsubscribeFooter').check({ force: true }).catch(() => {});
     }
     await fillBody(form, page, body);
     await fillVariableExamples(form, body, examples);
