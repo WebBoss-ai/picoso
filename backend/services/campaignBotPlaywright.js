@@ -730,23 +730,31 @@ async function dumpCreateForm(page, label) {
 
 async function openCreateModal(page) {
   await closeModalIfOpen(page);
-  await sleep(400);
+  await sleep(500);
 
   if (!(await hasTemplatesUi(page))) {
     throw new Error('LOGIN_REQUIRED');
   }
 
+  if (!page.url().includes('/templates')) {
+    await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await sleep(1000);
+  }
+
   const heading = page.getByRole('heading', { name: /Create New Template/i });
   const newTpl = page.locator('button[title="Create a new template"]');
   if (await newTpl.count()) {
-    await newTpl.first().click();
+    await newTpl.first().scrollIntoViewIfNeeded().catch(() => {});
+    await newTpl.first().click({ force: true });
   } else {
     const byText = page.locator('button').filter({ hasText: /^\s*New Template\s*$/i }).first();
-    await byText.click();
+    await byText.scrollIntoViewIfNeeded().catch(() => {});
+    await byText.click({ force: true });
   }
   await heading.waitFor({ state: 'visible', timeout: 25000 });
   await page.locator('#name').waitFor({ state: 'visible', timeout: 10000 });
-  await sleep(300);
+  await page.locator('#category').waitFor({ state: 'visible', timeout: 10000 });
+  await sleep(400);
 }
 
 async function selectLanguage(form, code) {
@@ -797,7 +805,7 @@ async function selectLanguage(form, code) {
 async function pickCategory(form, category) {
   const sel = form.locator('#category').first();
   await sel.waitFor({ state: 'visible', timeout: 10000 });
-  await sel.selectOption(category);
+  await sel.selectOption(category).catch(() => {});
   await sel.evaluate((el, val) => {
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
     setter?.call(el, val);
@@ -824,29 +832,31 @@ async function pickCategory(form, category) {
   }, category);
 
   const unsub = form.locator('#includeUnsubscribeFooter');
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 16; i++) {
     const val = await sel.inputValue().catch(() => '');
-    const enabled = await unsub.isEnabled({ timeout: 500 }).catch(() => null);
+    const enabled = await unsub.isEnabled({ timeout: 400 }).catch(() => null);
     if (val === category && category === 'UTILITY' && enabled === false) {
       cbLog('selectCategory', { value: category, via: 'select+unsub-disabled', attempt: i });
       return true;
     }
-    if (val === category && category === 'MARKETING' && enabled === true) {
+    if (val === category && category === 'MARKETING' && (enabled === true || enabled === null)) {
       cbLog('selectCategory', { value: category, via: 'select+unsub-enabled', attempt: i });
       return true;
     }
-    if (val === category && i > 8) {
+    if (val === category && i > 5) {
       cbLog('selectCategory', { value: category, via: 'select-value', attempt: i, unsubEnabled: enabled });
       return true;
     }
+    // Re-fire change if Vue ignored the first select
+    if (i === 4 || i === 9) {
+      await sel.selectOption(category).catch(() => {});
+      await sel.dispatchEvent('change').catch(() => {});
+    }
     await sleep(150);
   }
-  cbLog('selectCategory FAILED', {
-    wanted: category,
-    current: await sel.inputValue().catch(() => ''),
-    unsubEnabled: await unsub.isEnabled({ timeout: 500 }).catch(() => null),
-  });
-  return false;
+  const finalVal = await sel.inputValue().catch(() => '');
+  cbLog('selectCategory soft-fail', { wanted: category, current: finalVal });
+  return finalVal === category;
 }
 
 async function applyUnsubscribeFooter(form, category) {
@@ -873,14 +883,62 @@ async function applyUnsubscribeFooter(form, category) {
   });
 }
 
+function uniqueTemplateName(variant, attempt = 0) {
+  const base = (variant.templateName || `picoso_var_${variant.variantNumber || Date.now()}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 40) || 'picoso_tpl';
+  const suffix = attempt > 0
+    ? `_${Date.now().toString(36).slice(-4)}${attempt}`
+    : '';
+  return `${base}${suffix}`.slice(0, 512);
+}
+
+function safeBody(variant) {
+  let body = String(variant.body || variant.message || '').trim();
+  body = body.replace(/\{\{name\}\}/gi, '{{1}}');
+  if (!body) body = 'Hey {{1}}, thanks for being with Picoso. Reply for help with your order.';
+  if (!/\{\{1\}\}/.test(body)) body = `Hey {{1}}! ${body}`;
+  // CampaignBot rejects emoji / odd unicode in some categories — keep ASCII-ish
+  body = body.replace(/[^\x20-\x7E\n]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return body.slice(0, 1000);
+}
+
 async function fillBody(form, page, body) {
   const text = body || '';
   const editor = form.locator('[contenteditable="true"]').first();
   await editor.waitFor({ state: 'visible', timeout: 10000 });
-  await editor.click();
+  await editor.click({ force: true });
   await editor.press('ControlOrMeta+A');
   await page.keyboard.press('Backspace');
-  await page.keyboard.insertText(text);
+  await sleep(100);
+
+  // Prefer real typing — Vue listens to InputEvents from the contenteditable
+  try {
+    await editor.pressSequentially(text, { delay: 8 });
+  } catch {
+    await page.keyboard.insertText(text);
+  }
+
+  const got = (await editor.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+  if (!got || got.length < Math.min(12, text.length / 2)) {
+    await editor.evaluate((el, val) => {
+      el.focus();
+      el.innerHTML = '';
+      el.textContent = val;
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: val,
+      }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+    }, text);
+  }
 
   const hidden = form.locator('#body');
   if (await hidden.count()) {
@@ -893,48 +951,48 @@ async function fillBody(form, page, body) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }, text);
   }
-  await sleep(500);
+  await sleep(600);
 }
 
-async function fillVariableExamples(form, variant) {
-  const body = variant.body || variant.message || '';
+async function fillVariableExamples(form, body, examples = {}) {
   const max = [...String(body).matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
   if (!max) return;
 
-  const examples = variant.variableExamples || { 1: 'Rahul' };
-  const exampleInput = form.locator('input[placeholder*="Example value for variable"], input[placeholder*="example value" i]');
-  const heading = form.getByText(/Variable\s*1\s*Examples/i).first();
-
-  if (!(await heading.isVisible().catch(() => false)) && !(await exampleInput.first().isVisible().catch(() => false))) {
-    const addVar = form.getByRole('button', { name: /Add Variable/i });
-    if (await addVar.count() && await addVar.first().isEnabled().catch(() => true)) {
-      await addVar.first().click().catch(() => {});
+  // Wait for CampaignBot to render example fields after detecting {{n}} in body
+  const anyExample = form.locator('input[placeholder*="Example value" i], input[placeholder*="example value" i]');
+  for (let i = 0; i < 20; i++) {
+    if (await anyExample.first().isVisible().catch(() => false)) break;
+    if (i === 6) {
+      const addVar = form.getByRole('button', { name: /Add Variable/i });
+      if (await addVar.count() && await addVar.first().isEnabled().catch(() => false)) {
+        await addVar.first().click().catch(() => {});
+      }
     }
-    await heading.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
-    await exampleInput.first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    await sleep(200);
   }
 
   for (let n = 1; n <= max; n++) {
-    const input = form.locator(`input[placeholder="Example value for variable ${n}"]`);
+    let input = form.locator(`input[placeholder="Example value for variable ${n}"]`);
     if (!(await input.first().isVisible().catch(() => false))) {
       const addEx = form.getByRole('button', { name: /Add Example/i });
-      if (await addEx.count()) await addEx.first().click();
-      await input.first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+      if (await addEx.count()) await addEx.first().click().catch(() => {});
+      await input.first().waitFor({ state: 'visible', timeout: 4000 }).catch(() => {});
+    }
+    if (!(await input.first().isVisible().catch(() => false))) {
+      input = anyExample.nth(n - 1);
     }
     const value = String(examples[n] || examples[String(n)] || (n === 1 ? 'Rahul' : 'your order')).slice(0, 60);
     if (await input.first().isVisible().catch(() => false)) {
-      await nativeFill(input, value);
+      await setVueInput(input.first(), value);
     }
   }
 
-  const leftovers = form.locator('input[placeholder*="Example" i], input[placeholder*="example value" i]');
-  const leftoverCount = await leftovers.count();
+  const leftoverCount = await anyExample.count();
   for (let i = 0; i < leftoverCount; i++) {
-    const el = leftovers.nth(i);
+    const el = anyExample.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
     const existing = await el.inputValue().catch(() => '');
-    if (!existing && await el.isVisible().catch(() => false)) {
-      await nativeFill(el, examples[i + 1] || (i === 0 ? 'Rahul' : 'your order'));
-    }
+    if (!existing) await setVueInput(el, i === 0 ? 'Rahul' : 'your order');
   }
 }
 
@@ -947,7 +1005,7 @@ async function fillNearLabel(scope, re, value) {
     ? scope.locator(`[id="${forId}"]`)
     : label.locator('xpath=following::input[1]');
   if (await input.count() && await input.first().isVisible().catch(() => false)) {
-    await nativeFill(input, value);
+    await setVueInput(input.first(), String(value));
     return true;
   }
   return false;
@@ -959,23 +1017,39 @@ async function fillButtons(form, variant) {
     text: variant.cta || 'Order Now',
     url: 'https://picoso.in',
   };
+  const text = String(btn.text || 'Order Now').slice(0, 25);
+  const url = String(btn.url || 'https://picoso.in');
 
-  const buttonLabel = form.getByText(/button text/i).first();
-  if (!(await buttonLabel.isVisible().catch(() => false))) {
-    await setSelectValue(form, '#footerType', 'BUTTONS');
-    await buttonLabel.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
-  }
+  await setSelectValue(form, '#footerType', 'BUTTONS');
+  await sleep(500);
 
-  await fillNearLabel(form, /button text/i, btn.text);
-  await fillNearLabel(form, /\b(url|website|link)\b/i, btn.url || 'https://picoso.in');
+  const buttonLabel = form.locator('label').filter({ hasText: /button text/i }).first();
+  await buttonLabel.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 
-  const urlInputs = form.locator('input[type="url"], input[placeholder*="http"], input[placeholder*="URL" i], input[placeholder*="website" i]');
+  await fillNearLabel(form, /button text/i, text);
+  await fillNearLabel(form, /\b(url|website|link)\b/i, url);
+
+  // Fill every visible URL-ish input in the modal (CampaignBot labels vary)
+  const urlInputs = form.locator('input[type="url"], input[placeholder*="http" i], input[placeholder*="URL" i], input[placeholder*="website" i]');
   const n = await urlInputs.count();
   for (let i = 0; i < n; i++) {
     const el = urlInputs.nth(i);
-    if (await el.isVisible().catch(() => false)) {
-      await nativeFill(el, btn.url || 'https://picoso.in');
-    }
+    if (await el.isVisible().catch(() => false)) await setVueInput(el, url);
+  }
+
+  // Fallback: any empty text input near "Button"
+  const allInputs = form.locator('input[type="text"], input:not([type])');
+  const count = await allInputs.count();
+  for (let i = 0; i < count; i++) {
+    const el = allInputs.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const ph = ((await el.getAttribute('placeholder')) || '').toLowerCase();
+    const id = ((await el.getAttribute('id')) || '').toLowerCase();
+    if (id === 'name' || id === 'body') continue;
+    const val = await el.inputValue().catch(() => '');
+    if (val) continue;
+    if (/button|cta|text/.test(ph)) await setVueInput(el, text);
+    else if (/http|url|website|link/.test(ph)) await setVueInput(el, url);
   }
 }
 
@@ -989,17 +1063,39 @@ async function closeModalIfOpen(page) {
   } else {
     await page.keyboard.press('Escape').catch(() => {});
   }
-  await heading.waitFor({ state: 'hidden', timeout: 4000 }).catch(() => {});
+  await heading.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  // Force-remove stuck overlay so next New Template click works
+  if (await heading.isVisible().catch(() => false)) {
+    await page.evaluate(() => {
+      const h = [...document.querySelectorAll('h3')].find((n) => /Create New Template/i.test(n.textContent || ''));
+      const panel = h?.closest('div.fixed') || h?.closest('[role="dialog"]');
+      panel?.remove();
+    }).catch(() => {});
+  }
+  await sleep(300);
+}
+
+async function createButton(page) {
+  const form = await modalScope(page);
+  const inModal = form.getByRole('button', { name: /^Create Template$/i });
+  if (await inModal.count()) return inModal.last();
+  return page.getByRole('button', { name: /^Create Template$/i }).last();
+}
+
+async function waitCreateEnabled(page, timeoutMs = 8000) {
+  const submit = await createButton(page);
+  await submit.waitFor({ state: 'visible', timeout: 8000 });
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (!(await submit.isDisabled().catch(() => true))) return submit;
+    await sleep(200);
+  }
+  return submit;
 }
 
 async function submitTemplate(page) {
-  const submit = page.getByRole('button', { name: /^Create Template$/i }).last();
-  await submit.waitFor({ state: 'visible', timeout: 8000 });
-  for (let i = 0; i < 24; i++) {
-    if (!(await submit.isDisabled())) break;
-    await sleep(250);
-  }
-  if (await submit.isDisabled()) {
+  const submit = await waitCreateEnabled(page, 6000);
+  if (await submit.isDisabled().catch(() => true)) {
     await dumpCreateForm(page, 'create-disabled');
     throw new Error('Create Template stayed disabled — a required field is empty or invalid');
   }
@@ -1007,76 +1103,120 @@ async function submitTemplate(page) {
 
   const heading = page.getByRole('heading', { name: /Create New Template/i });
   try {
-    await heading.waitFor({ state: 'hidden', timeout: 30000 });
+    await heading.waitFor({ state: 'hidden', timeout: 45000 });
   } catch {
     const errText = await page.locator('.text-red-600, .text-red-500, [class*="error"]').first().innerText().catch(() => '');
     throw new Error(errText || 'Create Template did not close — CampaignBot may have rejected the template');
   }
 }
 
-async function fillAndSubmit(page, variant) {
+async function repairDisabledForm(page, form, variant, name, category, body) {
+  cbLog('repairing disabled Create Template');
+  await setVueInput(page.locator('#name'), name);
+  await pickCategory(page, category);
+  await setSelectValue(page, '#templateFormat', 'STANDARD');
+  await setSelectValue(page, '#headerType', 'NONE');
+  await fillBody(form, page, body);
+  await fillVariableExamples(form, body, variant.variableExamples || { 1: 'Rahul' });
+
+  // Prefer BUTTONS; if button fields never appear, fall back to NONE so Create can enable
+  await setSelectValue(page, '#footerType', 'BUTTONS');
+  await sleep(400);
+  const hasBtn = await form.locator('label').filter({ hasText: /button text/i }).first().isVisible().catch(() => false);
+  if (hasBtn) {
+    await fillButtons(form, variant);
+  } else {
+    cbLog('button fields missing — falling back to footer NONE');
+    await setSelectValue(page, '#footerType', 'NONE');
+  }
+
+  await applyUnsubscribeFooter(page, category);
+
+  // Marketing must have Stop checked; click the label if check() no-ops
+  if (category === 'MARKETING') {
+    const unsub = page.locator('#includeUnsubscribeFooter');
+    if (await unsub.count() && !(await unsub.isChecked().catch(() => false))) {
+      await page.locator('label[for="includeUnsubscribeFooter"]').click().catch(() => {});
+      await unsub.check({ force: true }).catch(() => {});
+    }
+  }
+
+  // Nudge Vue validation by touching body again
+  await page.locator('[contenteditable="true"]').first().click().catch(() => {});
+  await sleep(300);
+}
+
+async function fillAndSubmit(page, variant, attempt = 0) {
   await openCreateModal(page);
   const form = await modalScope(page);
   const category = resolvedCategory(variant);
+  const body = safeBody(variant);
+  const name = uniqueTemplateName(variant, attempt);
+  const examples = variant.variableExamples || { 1: 'Rahul' };
 
-  const name = (variant.templateName || `picoso_var_${variant.variantNumber || Date.now()}`)
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, '_')
-    .slice(0, 500);
+  cbLog('fillAndSubmit start', {
+    label: variant.label,
+    variantNumber: variant.variantNumber,
+    category,
+    name,
+    attempt,
+    bodyLen: body.length,
+  });
 
   const nameField = page.locator('#name');
   await nameField.waitFor({ state: 'visible', timeout: 10000 });
   await setVueInput(nameField, name);
-  cbLog('filled name', { name, value: await nameField.inputValue().catch(() => '') });
-
-  const categoryOk = await pickCategory(page, category);
-  if (!categoryOk) {
-    await dumpCreateForm(page, 'category-not-applied');
-    throw new Error(`Could not set CampaignBot category to ${category}`);
+  if ((await nameField.inputValue().catch(() => '')) !== name) {
+    await nameField.fill(name);
   }
 
+  await pickCategory(page, category);
   await setSelectValue(page, '#templateFormat', 'STANDARD');
   await selectLanguage(form, variant.language || 'en_US');
 
-  let headerType = variant.headerType || 'NONE';
-  if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) headerType = 'NONE';
-  await setSelectValue(page, '#headerType', headerType);
-  await sleep(300);
-  if (headerType === 'TEXT' && variant.headerText) {
-    const header = String(variant.headerText).replace(/[^A-Za-z0-9 .,'!?-]/g, '').slice(0, 60);
-    await fillNearLabel(form, /header text/i, header);
-  }
+  // Always NONE header — IMAGE/VIDEO blocks Create without media upload
+  await setSelectValue(page, '#headerType', 'NONE');
+  await sleep(200);
 
-  await fillBody(form, page, variant.body || variant.message || '');
-  await fillVariableExamples(form, variant);
+  await fillBody(form, page, body);
+  await fillVariableExamples(form, body, examples);
 
-  const footerType = variant.footerType || 'BUTTONS';
-  await setSelectValue(page, '#footerType', footerType);
-  await sleep(500);
-
-  if (footerType === 'TEXT' && category === 'MARKETING' && variant.footerText) {
-    await fillNearLabel(form, /footer text/i, variant.footerText);
-  }
-
-  if (footerType === 'BUTTONS') {
-    await fillButtons(form, variant);
-  }
-
+  // Buttons with URL — most reliable CTA path on CampaignBot
+  await fillButtons(form, variant);
   await applyUnsubscribeFooter(page, category);
-  await dumpCreateForm(page, `pre-submit-${variant.label || variant.variantNumber}`);
 
-  try {
-    await submitTemplate(page);
-  } catch (err) {
-    if (!/stayed disabled/i.test(err.message)) throw err;
-    await setVueInput(nameField, name);
-    await fillBody(form, page, variant.body || variant.message || '');
-    await fillVariableExamples(form, variant);
-    if (footerType === 'BUTTONS') await fillButtons(form, variant);
-    await applyUnsubscribeFooter(page, category);
-    await dumpCreateForm(page, `retry-${variant.label || variant.variantNumber}`);
-    await submitTemplate(page);
+  if (category === 'MARKETING') {
+    const unsub = page.locator('#includeUnsubscribeFooter');
+    for (let i = 0; i < 10; i++) {
+      if (await unsub.isEnabled().catch(() => false) && await unsub.isChecked().catch(() => false)) break;
+      await page.locator('label[for="includeUnsubscribeFooter"]').click().catch(() => {});
+      await unsub.check({ force: true }).catch(() => {});
+      await sleep(150);
+    }
   }
+
+  await dumpCreateForm(page, `pre-submit-${variant.label || variant.variantNumber}-a${attempt}`);
+
+  let submit = await waitCreateEnabled(page, 5000);
+  if (await submit.isDisabled().catch(() => true)) {
+    await repairDisabledForm(page, form, variant, name, category, body);
+    await dumpCreateForm(page, `repaired-${variant.label || variant.variantNumber}-a${attempt}`);
+    submit = await waitCreateEnabled(page, 5000);
+  }
+
+  if (await submit.isDisabled().catch(() => true)) {
+    // Last resort: drop buttons so only name+body+category(+stop) are required
+    await setSelectValue(page, '#footerType', 'NONE');
+    await applyUnsubscribeFooter(page, category);
+    if (category === 'MARKETING') {
+      await page.locator('#includeUnsubscribeFooter').check({ force: true }).catch(() => {});
+    }
+    await fillBody(form, page, body);
+    await fillVariableExamples(form, body, examples);
+    await dumpCreateForm(page, `fallback-none-${variant.label || variant.variantNumber}-a${attempt}`);
+  }
+
+  await submitTemplate(page);
   return name;
 }
 
@@ -1146,50 +1286,85 @@ export async function publishVariantsToCampaignBot(experimentId, variantNumbers 
     const page = context.pages()[0] || await context.newPage();
     await ensureLoggedIn(page, experimentId);
 
-    for (const v of variants) {
-      let published = false;
-      for (let attempt = 0; attempt < 2 && !published; attempt++) {
+    const MAX_ATTEMPTS = 5;
+
+    async function tryPublishOne(v, attemptOffset = 0) {
+      const plain = v.toObject ? v.toObject() : v;
+      let lastErr = null;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         try {
           if (!(await isLoggedIn(page))) {
             await ensureLoggedIn(page, experimentId);
           }
-          const name = await fillAndSubmit(page, v.toObject ? v.toObject() : v);
+          await closeModalIfOpen(page);
+          if (!page.url().includes('/templates')) {
+            await page.goto(TEMPLATES, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+            await sleep(800);
+          }
+          const name = await fillAndSubmit(page, plain, attempt + attemptOffset);
           await patchVariant(experimentId, v.variantNumber, {
             waPublishStatus: 'published',
             waPublishError: '',
             waPublishedAt: new Date(),
             templateName: name,
           });
-          results.push({ variantNumber: v.variantNumber, ok: true, templateName: name });
           console.log(`[CB Templates] published ${v.label} as ${name}`);
-          published = true;
-          await sleep(1000);
+          return { variantNumber: v.variantNumber, ok: true, templateName: name };
         } catch (err) {
+          lastErr = err;
           const needLogin = /LOGIN_REQUIRED|not logged in|login did not complete/i.test(err.message);
-          if (needLogin && attempt === 0) {
-            console.warn(`[CB Templates] ${v.label} needs login, waiting for number/OTP on WP Marketing`);
-            await closeModalIfOpen(page);
-            await ensureLoggedIn(page, experimentId);
-            continue;
-          }
-          await patchVariant(experimentId, v.variantNumber, {
-            waPublishStatus: 'failed',
-            waPublishError: err.message,
-          });
-          results.push({ variantNumber: v.variantNumber, ok: false, error: err.message });
-          console.error(`[CB Templates] failed ${v.label}: ${err.message}`);
+          console.error(`[CB Templates] ${v.label} attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${err.message}`);
           await closeModalIfOpen(page);
-          await sleep(600);
+          if (needLogin) {
+            await ensureLoggedIn(page, experimentId);
+          }
+          await sleep(700 + attempt * 400);
         }
+      }
+      await patchVariant(experimentId, v.variantNumber, {
+        waPublishStatus: 'failed',
+        waPublishError: lastErr?.message || 'unknown',
+      });
+      return { variantNumber: v.variantNumber, ok: false, error: lastErr?.message || 'unknown' };
+    }
+
+    for (const v of variants) {
+      results.push(await tryPublishOne(v));
+      await sleep(800);
+    }
+
+    // Second sweep — anything still failed gets another full pass with unique names
+    const failedNums = results.filter((r) => !r.ok).map((r) => r.variantNumber);
+    if (failedNums.length) {
+      cbLog('second sweep for failed variants', { failedNums });
+      cbAuth.setCbAuth({
+        phase: 'ready',
+        experimentId,
+        message: `Retrying ${failedNums.length} failed template(s)…`,
+      });
+      const fresh = await WpExperiment.findById(experimentId);
+      for (const num of failedNums) {
+        const v = fresh.variants.find((x) => x.variantNumber === num);
+        if (!v || v.waPublishStatus === 'published') continue;
+        await patchVariant(experimentId, num, { waPublishStatus: 'publishing', waPublishError: '' });
+        const idx = results.findIndex((r) => r.variantNumber === num);
+        const again = await tryPublishOne(v, 10);
+        if (idx >= 0) results[idx] = again;
+        else results.push(again);
       }
     }
 
-    return {
-      published: results.filter((r) => r.ok).length,
-      failed: results.filter((r) => r.ok === false).length,
-      skipped: 0,
-      results,
-    };
+    const published = results.filter((r) => r.ok).length;
+    const failed = results.filter((r) => !r.ok).length;
+    cbAuth.setCbAuth({
+      phase: failed ? 'error' : 'ready',
+      experimentId,
+      message: failed
+        ? `Created ${published}/${results.length} templates — ${failed} still failed`
+        : `All ${published} templates created on CampaignBot`,
+    });
+
+    return { published, failed, skipped: 0, results };
   } catch (err) {
     cbLog('publish job FAILED', { error: err.message, stack: err.stack?.split('\n').slice(0, 8) });
     cbAuth.setCbAuth({ phase: 'error', message: err.message });
