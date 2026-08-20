@@ -649,14 +649,92 @@ async function ensureLoggedIn(page, experimentId) {
   throw new Error('CampaignBot login did not complete. Check the OTP on this page and click Retry login.');
 }
 
+function resolvedCategory(variant) {
+  const n = Number(variant?.variantNumber) || 0;
+  if (n >= 1 && n <= 7) return 'UTILITY';
+  if (n >= 8) return 'MARKETING';
+  return String(variant?.category || 'MARKETING').toUpperCase() === 'UTILITY' ? 'UTILITY' : 'MARKETING';
+}
+
+async function modalScope(page) {
+  const modal = page.locator('div.fixed.inset-0').filter({
+    has: page.getByRole('heading', { name: /Create New Template/i }),
+  }).last();
+  if (await modal.count()) return modal;
+  return page.locator('form').filter({ has: page.locator('#name') }).last();
+}
+
+async function nativeFill(locator, value) {
+  const str = String(value ?? '');
+  if (!(await locator.count())) return false;
+  await locator.first().click({ force: true }).catch(() => {});
+  await locator.first().fill('').catch(() => {});
+  await locator.first().fill(str).catch(() => {});
+  await locator.first().evaluate((el, val) => {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    setter?.call(el, val);
+    el.value = val;
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: val, inputType: 'insertText' }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, str).catch(() => {});
+  return true;
+}
+
+async function setSelectValue(scope, selector, value) {
+  const el = scope.locator(selector).first();
+  if (!(await el.count())) return false;
+  await el.selectOption(value).catch(() => {});
+  await el.evaluate((node, val) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    setter?.call(node, val);
+    node.value = val;
+    const opt = [...node.options].find((o) => o.value === val);
+    if (opt) opt.selected = true;
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+    node.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+  return true;
+}
+
+async function dumpCreateForm(page, label) {
+  try {
+    const info = await page.evaluate(() => {
+      const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
+      if (!form) return { missing: true };
+      const val = (sel) => form.querySelector(sel)?.value ?? null;
+      const unsub = form.querySelector('#includeUnsubscribeFooter');
+      return {
+        name: val('#name'),
+        category: val('#category'),
+        format: val('#templateFormat'),
+        header: val('#headerType'),
+        footer: val('#footerType'),
+        body: (val('#body') || form.querySelector('[contenteditable="true"]')?.innerText || '').slice(0, 160),
+        language: (form.querySelector('#languageTrigger')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+        unsub: unsub ? { disabled: unsub.disabled, checked: unsub.checked } : null,
+        examples: [...form.querySelectorAll('input[placeholder*="xample" i], input[placeholder*="variable" i]')].map((e) => ({
+          ph: e.placeholder, v: e.value, disabled: e.disabled,
+        })),
+        urls: [...form.querySelectorAll('input[type="url"], input[placeholder*="http"], input[placeholder*="url" i]')].map((e) => e.value),
+        createDisabled: [...form.querySelectorAll('button')].find((b) => /create template/i.test(b.textContent || ''))?.disabled ?? null,
+      };
+    });
+    cbLog(`form:${label}`, info);
+  } catch (err) {
+    cbLog(`form:${label} FAILED`, { error: err.message });
+  }
+}
+
 async function openCreateModal(page) {
-  const heading = page.getByRole('heading', { name: /Create New Template/i });
-  if (await heading.isVisible().catch(() => false)) return;
+  await closeModalIfOpen(page);
+  await sleep(400);
 
   if (!(await hasTemplatesUi(page))) {
     throw new Error('LOGIN_REQUIRED');
   }
 
+  const heading = page.getByRole('heading', { name: /Create New Template/i });
   const newTpl = page.locator('button[title="Create a new template"]');
   if (await newTpl.count()) {
     await newTpl.first().click();
@@ -666,34 +744,38 @@ async function openCreateModal(page) {
   }
   await heading.waitFor({ state: 'visible', timeout: 25000 });
   await page.locator('#name').waitFor({ state: 'visible', timeout: 10000 });
+  await sleep(300);
 }
 
-async function selectLanguage(page, code) {
+async function selectLanguage(form, code) {
   const value = code || 'en_US';
   const label = LANG_LABEL[value] || 'English (US)';
 
-  const native = page.locator('select').filter({ has: page.locator(`option[value="${value}"]`) }).first();
-  if (await native.count()) {
-    await native.selectOption(value);
-    await native.evaluate((el) => {
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }).catch(() => {});
-    cbLog('selectLanguage', { via: 'select', value });
-    return;
+  const named = form.locator('#language, select[name="language"]').first();
+  if (await named.count()) {
+    await setSelectValue(form, '#language', value);
+    await named.selectOption(value).catch(() => {});
+    cbLog('selectLanguage', { via: 'named-select', value });
   }
 
-  const trigger = page.locator('#languageTrigger');
+  const trigger = form.locator('#languageTrigger');
   if (!(await trigger.count())) return;
   const shown = (await trigger.innerText().catch(() => '')).replace(/\s+/g, ' ');
-  if (shown.toLowerCase().includes(label.toLowerCase())) {
-    cbLog('selectLanguage already set', { shown });
+  if (shown.toLowerCase().includes(label.toLowerCase()) || shown.includes(`(${value})`)) {
+    cbLog('selectLanguage', { via: 'already', value, shown });
     return;
   }
 
   await trigger.click();
-  await sleep(250);
-  const matches = page.locator('li, [role="option"], button, div, span').filter({
+  await sleep(300);
+  const opt = form.getByRole('option', { name: new RegExp(label.replace(/[()]/g, '\\$&'), 'i') });
+  if (await opt.count() && await opt.first().isVisible().catch(() => false)) {
+    await opt.first().click();
+    cbLog('selectLanguage', { via: 'option', value });
+    return;
+  }
+
+  const matches = form.locator('li, [role="option"], button, div, span').filter({
     hasText: new RegExp(`^\\s*${label.replace(/[()]/g, '\\$&')}\\s*$`),
   });
   const n = await matches.count();
@@ -710,69 +792,199 @@ async function selectLanguage(page, code) {
   cbLog('selectLanguage skipped', { value, shown });
 }
 
-async function fillBody(page, body) {
-  const editor = page.locator('[contenteditable="true"]').first();
+async function pickCategory(form, category) {
+  const label = category === 'UTILITY' ? 'Utility' : category === 'AUTHENTICATION' ? 'Authentication' : 'Marketing';
+
+  await form.locator('#category').evaluate((el, val) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    setter?.call(el, val);
+    el.value = val;
+    const opt = [...el.options].find((o) => o.value === val);
+    if (opt) opt.selected = true;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    let n = el;
+    while (n) {
+      const inst = n.__vueParentComponent;
+      if (inst) {
+        for (const bag of [inst.setupState, inst.ctx, inst.proxy]) {
+          if (!bag || typeof bag !== 'object') continue;
+          for (const key of Object.keys(bag)) {
+            if (/categor/i.test(key) && typeof bag[key] === 'string') {
+              try { bag[key] = val; } catch { /* ignore */ }
+            }
+          }
+        }
+      }
+      if (n.__vue__ && typeof n.__vue__.category === 'string') {
+        try { n.__vue__.category = val; } catch { /* ignore */ }
+      }
+      n = n.parentElement;
+    }
+  }, category).catch(() => {});
+
+  await setSelectValue(form, '#category', category);
+  await form.locator('#category').click().catch(() => {});
+  await sleep(200);
+  const opt = form.getByRole('option', { name: new RegExp(`^${label}$`, 'i') });
+  if (await opt.count() && await opt.first().isVisible().catch(() => false)) {
+    await opt.first().click();
+  } else {
+    const textOpt = form.locator('div, li, button, span, p').filter({ hasText: new RegExp(`^\\s*${label}\\s*$`, 'i') }).first();
+    if (await textOpt.isVisible().catch(() => false)) await textOpt.click();
+  }
+
+  const unsub = form.locator('#includeUnsubscribeFooter');
+  for (let i = 0; i < 20; i++) {
+    const enabled = await unsub.isEnabled().catch(() => null);
+    // Vue actually switched when the Stop checkbox enables (marketing) or disables (utility).
+    if (category === 'UTILITY' && enabled === false) {
+      cbLog('selectCategory', { value: category, via: 'unsub-disabled', attempt: i });
+      return true;
+    }
+    if (category === 'MARKETING' && enabled === true) {
+      cbLog('selectCategory', { value: category, via: 'unsub-enabled', attempt: i });
+      return true;
+    }
+    if (!(await unsub.count()) && i > 6) {
+      const val = await form.locator('#category').inputValue().catch(() => '');
+      if (val === category) {
+        cbLog('selectCategory', { value: category, via: 'select-no-unsub', attempt: i });
+        return true;
+      }
+    }
+    await sleep(150);
+  }
+  cbLog('selectCategory FAILED', {
+    wanted: category,
+    current: await form.locator('#category').inputValue().catch(() => ''),
+    unsubEnabled: await unsub.isEnabled().catch(() => null),
+  });
+  return false;
+}
+
+async function applyUnsubscribeFooter(form, category) {
+  const unsub = form.locator('#includeUnsubscribeFooter');
+  if (!(await unsub.count())) return;
+
+  await sleep(300);
+  if (category === 'MARKETING') {
+    for (let i = 0; i < 12; i++) {
+      if (await unsub.isEnabled().catch(() => false)) break;
+      await sleep(150);
+    }
+    if (await unsub.isEnabled().catch(() => false) && !(await unsub.isChecked())) {
+      await unsub.check();
+    }
+  } else if (await unsub.isEnabled().catch(() => false) && await unsub.isChecked()) {
+    await unsub.uncheck().catch(() => {});
+  }
+
+  cbLog('unsubscribe footer', {
+    category,
+    checked: await unsub.isChecked().catch(() => null),
+    enabled: await unsub.isEnabled().catch(() => null),
+  });
+}
+
+async function fillBody(form, page, body) {
+  const text = body || '';
+  const editor = form.locator('[contenteditable="true"]').first();
   await editor.waitFor({ state: 'visible', timeout: 10000 });
   await editor.click();
   await editor.press('ControlOrMeta+A');
-  await page.keyboard.press('Backspace');
-  await page.keyboard.insertText(body || '');
+  await page.keyboard.insertText(text);
+  await editor.evaluate((el, val) => {
+    el.focus();
+    el.innerHTML = '';
+    el.innerText = val;
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: val, inputType: 'insertText' }));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, text);
 
-  const hidden = page.locator('#body');
+  const hidden = form.locator('#body');
   if (await hidden.count()) {
     await hidden.evaluate((el, val) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(el, val);
       el.value = val;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, body || '');
+    }, text);
   }
+  await sleep(400);
 }
 
-async function fillVariableExamples(page, variant) {
+async function fillVariableExamples(form, variant) {
   const body = variant.body || variant.message || '';
   const max = [...String(body).matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
   if (!max) return;
 
   const examples = variant.variableExamples || { 1: 'Rahul' };
+  const heading = form.getByText(/Variable\s*1\s*Examples/i).first();
+  if (!(await heading.isVisible().catch(() => false))) {
+    const addVar = form.getByRole('button', { name: /^Add Variable$/i });
+    if (await addVar.count()) await addVar.first().click();
+    await heading.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+  }
 
   for (let n = 1; n <= max; n++) {
-    const input = page.locator(`input[placeholder="Example value for variable ${n}"]`);
-    const heading = page.getByText(new RegExp(`Variable\\s*${n}\\s*Examples`, 'i')).first();
-
-    const hasSection = await heading.isVisible().catch(() => false);
-    if (!hasSection) {
-      const addVar = page.getByRole('button', { name: /^Add Variable$/i });
-      if (await addVar.count()) await addVar.first().click();
-      await heading.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
-    }
-
+    const input = form.locator(`input[placeholder="Example value for variable ${n}"]`);
     if (!(await input.first().isVisible().catch(() => false))) {
-      const addEx = page.getByRole('button', { name: /Add Example/i });
+      const addEx = form.getByRole('button', { name: /Add Example/i });
       if (await addEx.count()) await addEx.first().click();
       await input.first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
     }
-
+    const value = String(examples[n] || examples[String(n)] || (n === 1 ? 'Rahul' : 'your order')).slice(0, 60);
     if (await input.first().isVisible().catch(() => false)) {
-      const value = String(examples[n] || examples[String(n)] || (n === 1 ? 'Rahul' : 'your order')).slice(0, 60);
-      await input.first().click();
-      await input.first().fill('');
-      await input.first().fill(value);
-      await input.first().evaluate((el, val) => {
-        const proto = HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        setter?.call(el, val);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      }, value);
+      await nativeFill(input, value);
+    }
+  }
+
+  const leftovers = form.locator('input[placeholder*="Example" i], input[placeholder*="example value" i]');
+  const leftoverCount = await leftovers.count();
+  for (let i = 0; i < leftoverCount; i++) {
+    const el = leftovers.nth(i);
+    const existing = await el.inputValue().catch(() => '');
+    if (!existing && await el.isVisible().catch(() => false)) {
+      await nativeFill(el, examples[i + 1] || (i === 0 ? 'Rahul' : 'your order'));
     }
   }
 }
 
-async function fillOptionalByLabel(page, labelRe, value) {
-  if (!value) return;
-  const input = page.getByLabel(labelRe).first();
-  if (await input.count() && await input.isVisible().catch(() => false)) {
-    await input.fill(String(value));
+async function fillNearLabel(scope, re, value) {
+  if (!value) return false;
+  const label = scope.locator('label').filter({ hasText: re }).first();
+  if (!(await label.count())) return false;
+  const forId = await label.getAttribute('for');
+  const input = forId
+    ? scope.locator(`[id="${forId}"]`)
+    : label.locator('xpath=following::input[1]');
+  if (await input.count() && await input.first().isVisible().catch(() => false)) {
+    await nativeFill(input, value);
+    return true;
+  }
+  return false;
+}
+
+async function fillButtons(form, variant) {
+  const btn = (variant.buttons && variant.buttons[0]) || {
+    type: 'URL',
+    text: variant.cta || 'Order Now',
+    url: 'https://picoso.in',
+  };
+  await fillNearLabel(form, /button text/i, btn.text);
+  await fillNearLabel(form, /\b(url|website|link)\b/i, btn.url || 'https://picoso.in');
+
+  const urlInputs = form.locator('input[type="url"], input[placeholder*="http"], input[placeholder*="URL" i], input[placeholder*="website" i]');
+  const n = await urlInputs.count();
+  for (let i = 0; i < n; i++) {
+    const el = urlInputs.nth(i);
+    if (await el.isVisible().catch(() => false)) {
+      await nativeFill(el, btn.url || 'https://picoso.in');
+    }
   }
 }
 
@@ -783,16 +995,22 @@ async function closeModalIfOpen(page) {
   if (await cancel.count() && await cancel.first().isVisible().catch(() => false)) {
     await cancel.first().click().catch(() => {});
   }
+  const heading = page.getByRole('heading', { name: /Create New Template/i });
+  for (let i = 0; i < 8 && await heading.isVisible().catch(() => false); i++) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(200);
+  }
 }
 
 async function submitTemplate(page) {
   const submit = page.getByRole('button', { name: /^Create Template$/i }).last();
   await submit.waitFor({ state: 'visible', timeout: 8000 });
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 24; i++) {
     if (!(await submit.isDisabled())) break;
     await sleep(250);
   }
   if (await submit.isDisabled()) {
+    await dumpCreateForm(page, 'create-disabled');
     throw new Error('Create Template stayed disabled — a required field is empty or invalid');
   }
   await submit.click();
@@ -808,73 +1026,61 @@ async function submitTemplate(page) {
 
 async function fillAndSubmit(page, variant) {
   await openCreateModal(page);
+  const form = await modalScope(page);
+  const category = resolvedCategory(variant);
 
   const name = (variant.templateName || `picoso_var_${variant.variantNumber || Date.now()}`)
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, '_')
-    .slice(0, 512);
+    .slice(0, 500);
 
-  await page.locator('#name').fill(name);
+  await nativeFill(form.locator('#name'), name);
 
-  if (await page.locator('#category').count()) {
-    await page.selectOption('#category', variant.category || 'MARKETING');
+  const categoryOk = await pickCategory(form, category);
+  if (!categoryOk) {
+    await dumpCreateForm(page, 'category-not-applied');
+    throw new Error(`Could not set CampaignBot category to ${category}`);
   }
-  if (await page.locator('#templateFormat').count()) {
-    await page.selectOption('#templateFormat', 'STANDARD');
-  }
 
-  await selectLanguage(page, variant.language || 'en_US');
+  await setSelectValue(form, '#templateFormat', 'STANDARD');
+  await selectLanguage(form, variant.language || 'en_US');
 
   let headerType = variant.headerType || 'NONE';
   if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) headerType = 'NONE';
-  if (await page.locator('#headerType').count()) {
-    await page.selectOption('#headerType', headerType);
-    await sleep(300);
-  }
+  await setSelectValue(form, '#headerType', headerType);
+  await sleep(300);
   if (headerType === 'TEXT' && variant.headerText) {
     const header = String(variant.headerText).replace(/[^A-Za-z0-9 .,'!?-]/g, '').slice(0, 60);
-    await fillOptionalByLabel(page, /header text/i, header);
+    await fillNearLabel(form, /header text/i, header);
   }
 
-  await fillBody(page, variant.body || variant.message || '');
-  await fillVariableExamples(page, variant);
+  await fillBody(form, page, variant.body || variant.message || '');
+  await fillVariableExamples(form, variant);
 
   const footerType = variant.footerType || 'BUTTONS';
-  if (await page.locator('#footerType').count()) {
-    await page.selectOption('#footerType', footerType);
-    await sleep(400);
-  }
+  await setSelectValue(form, '#footerType', footerType);
+  await sleep(400);
 
-  if (footerType === 'TEXT') {
-    await fillOptionalByLabel(page, /footer text/i, variant.footerText);
+  if (footerType === 'TEXT' && category === 'MARKETING' && variant.footerText) {
+    await fillNearLabel(form, /footer text/i, variant.footerText);
   }
 
   if (footerType === 'BUTTONS') {
-    const btn = (variant.buttons && variant.buttons[0]) || {
-      type: 'URL',
-      text: variant.cta || 'Order Now',
-      url: 'https://picoso.in',
-    };
-    await fillOptionalByLabel(page, /button text/i, btn.text);
-    await fillOptionalByLabel(page, /^(url|website|link)/i, btn.url || 'https://picoso.in');
-    const urlInput = page.locator('input[placeholder*="http"], input[placeholder*="URL"], input[placeholder*="url"]').first();
-    if (await urlInput.count() && await urlInput.isVisible().catch(() => false)) {
-      await urlInput.fill(btn.url || 'https://picoso.in');
-    }
+    await fillButtons(form, variant);
   }
 
-  const unsub = page.locator('#includeUnsubscribeFooter');
-  if (await unsub.count()) {
-    const enabled = await unsub.isEnabled().catch(() => false);
-    if (enabled) {
-      const checked = await unsub.isChecked();
-      const marketing = (variant.category || 'MARKETING') === 'MARKETING';
-      if (marketing && !checked) await unsub.check();
-      if (!marketing && checked) await unsub.uncheck();
-    }
-  }
+  await applyUnsubscribeFooter(form, category);
+  await dumpCreateForm(page, `pre-submit-${variant.label || variant.variantNumber}`);
 
-  await submitTemplate(page);
+  try {
+    await submitTemplate(page);
+  } catch (err) {
+    if (!/stayed disabled/i.test(err.message)) throw err;
+    await fillVariableExamples(form, variant);
+    if (footerType === 'BUTTONS') await fillButtons(form, variant);
+    await applyUnsubscribeFooter(form, category);
+    await submitTemplate(page);
+  }
   return name;
 }
 

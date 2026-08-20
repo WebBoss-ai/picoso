@@ -245,6 +245,8 @@ function normaliseVariantTemplate(v, i) {
     : 'BUTTONS';
 
   const category = i < 7 ? 'UTILITY' : 'MARKETING';
+  const rawFooter = sanitiseHeader(v.footerText || '').slice(0, 60);
+  const footerText = category === 'MARKETING' && !/^stop$/i.test(rawFooter) ? rawFooter : '';
 
   const maxVar = [...body.matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
   const variableExamples = { 1: 'Rahul' };
@@ -266,7 +268,7 @@ function normaliseVariantTemplate(v, i) {
     headerText,
     body,
     footerType,
-    footerText: sanitiseHeader(v.footerText || '').slice(0, 60),
+    footerText,
     buttons,
     variableExamples,
     status: 'active',

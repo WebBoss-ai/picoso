@@ -691,18 +691,26 @@ function countTplVars(body) {
   return [...String(body || '').matchAll(/\{\{(\d+)\}\}/g)].reduce((m, x) => Math.max(m, parseInt(x[1], 10)), 0);
 }
 
+function categoryForVariantNumber(n, fallback) {
+  const num = Number(n) || 0;
+  if (num >= 1 && num <= 7) return 'UTILITY';
+  if (num >= 8) return 'MARKETING';
+  return fallback || 'MARKETING';
+}
+
 function variantToTpl(v) {
   const body = (v?.body || v?.message || '').replace(/\{\{name\}\}/gi, '{{1}}');
   const cta  = v?.cta || 'Order Now';
+  const category = categoryForVariantNumber(v?.variantNumber, v?.category);
   return {
     templateName: v?.templateName || '',
-    category:     v?.category || 'MARKETING',
+    category,
     language:     v?.language || 'en_US',
     headerType:   v?.headerType || (v?.headerText ? 'TEXT' : 'NONE'),
     headerText:   v?.headerText || '',
     body,
     footerType:   v?.footerType || (v?.cta ? 'BUTTONS' : 'NONE'),
-    footerText:   v?.footerText || '',
+    footerText:   category === 'MARKETING' ? (v?.footerText || '') : '',
     buttons:      Array.isArray(v?.buttons) && v.buttons.length
       ? v.buttons
       : (cta ? [{ type: 'URL', text: cta, url: 'https://picoso.in' }] : []),
@@ -756,8 +764,11 @@ function WaPhonePreview({ tpl, businessName = 'Picoso' }) {
             <p className="text-[13px] text-[#111b21] whitespace-pre-wrap leading-relaxed">
               {preview || <span className="italic text-zinc-400">[Message body]</span>}
             </p>
-            {tpl.footerType === 'TEXT' && tpl.footerText && (
+            {tpl.footerType === 'TEXT' && tpl.footerText && tpl.category === 'MARKETING' && (
               <p className="text-[11px] text-zinc-400 mt-1.5">{tpl.footerText}</p>
+            )}
+            {tpl.category === 'MARKETING' && (
+              <p className="text-[11px] text-zinc-400 mt-1.5">Stop</p>
             )}
             <div className="flex justify-end items-center gap-0.5 mt-1">
               <span className="text-[10px] text-zinc-400">10:00 AM</span>
@@ -837,11 +848,16 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
           </div>
           <div>
             <label className={label}>Category *</label>
-            <select disabled={readOnly} value={tpl.category || 'MARKETING'} onChange={(e) => set('category', e.target.value)} className={field}>
+            <select disabled value={tpl.category || 'MARKETING'} className={field}>
               <option value="MARKETING">Marketing</option>
               <option value="UTILITY">Utility</option>
               <option value="AUTHENTICATION">Authentication</option>
             </select>
+            <p className="mt-1 text-[11px] text-zinc-400">
+              {tpl.category === 'UTILITY'
+                ? 'Variants A–G are Utility. No Stop footer.'
+                : 'Variants H–J are Marketing. Stop footer is required.'}
+            </p>
           </div>
           <div className="md:col-span-2">
             <label className={label}>Language *</label>
@@ -925,13 +941,18 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
                 <option value="BUTTONS">Buttons</option>
               </select>
             </div>
-            {tpl.footerType === 'TEXT' && (
+            {tpl.footerType === 'TEXT' && tpl.category === 'MARKETING' && (
               <div>
                 <label className={label}>Footer text</label>
                 <input disabled={readOnly} maxLength={60} value={tpl.footerText || ''} onChange={(e) => set('footerText', e.target.value)} className={field} />
               </div>
             )}
           </div>
+          <p className="mt-2 text-[11px] text-zinc-400">
+            {tpl.category === 'MARKETING'
+              ? 'CampaignBot adds a Stop footer on Marketing templates.'
+              : 'Utility templates never include a Stop footer.'}
+          </p>
           {tpl.footerType === 'BUTTONS' && (
             <div className="mt-3 space-y-2">
               {(tpl.buttons || []).map((b, i) => (

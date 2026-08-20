@@ -380,6 +380,12 @@ export async function updateVariant(experimentId, variantNumber, updates, client
   for (const key of allowed) {
     if (updates[key] !== undefined) patch[`variants.$.${key}`] = updates[key];
   }
+  const n = Number(variantNumber);
+  if (n >= 1 && n <= 7) patch['variants.$.category'] = 'UTILITY';
+  else if (n >= 8) patch['variants.$.category'] = 'MARKETING';
+  if (patch['variants.$.category'] === 'UTILITY' && updates.footerText !== undefined) {
+    patch['variants.$.footerText'] = '';
+  }
   if (!Object.keys(patch).length) throw new Error('No valid fields to update');
 
   const result = await WpExperiment.findOneAndUpdate(

@@ -236,6 +236,13 @@ function closeModal() {
   cancel?.click();
 }
 
+function resolvedCategory(variant) {
+  const n = Number(variant?.variantNumber) || 0;
+  if (n >= 1 && n <= 7) return 'UTILITY';
+  if (n >= 8) return 'MARKETING';
+  return String(variant?.category || 'MARKETING').toUpperCase() === 'UTILITY' ? 'UTILITY' : 'MARKETING';
+}
+
 async function fillAndSubmit(variant) {
   await openCreateModal();
 
@@ -248,7 +255,7 @@ async function fillAndSubmit(variant) {
   if (!nameEl) throw new Error('Template Name (#name) not found');
   setNativeValue(nameEl, name);
 
-  const category = variant.category || 'MARKETING';
+  const category = resolvedCategory(variant);
   setSelect(q('#category'), category);
   setSelect(q('#templateFormat'), 'STANDARD');
   await selectLanguage(variant.language || 'en_US');
@@ -278,7 +285,7 @@ async function fillAndSubmit(variant) {
   setSelect(q('#footerType'), footerType);
   await sleep(400);
 
-  if (footerType === 'TEXT' && variant.footerText) {
+  if (footerType === 'TEXT' && category === 'MARKETING' && variant.footerText) {
     fillInputNearLabel(/Footer Text/i, variant.footerText);
   }
 
@@ -299,11 +306,11 @@ async function fillAndSubmit(variant) {
   }
 
   const unsub = q('#includeUnsubscribeFooter');
-  if (unsub && category === 'MARKETING' && !unsub.checked) {
+  if (unsub && category === 'MARKETING' && !unsub.disabled && !unsub.checked) {
     unsub.click();
     await sleep(150);
   }
-  if (unsub && category !== 'MARKETING' && unsub.checked) {
+  if (unsub && category !== 'MARKETING' && !unsub.disabled && unsub.checked) {
     unsub.click();
     await sleep(150);
   }
