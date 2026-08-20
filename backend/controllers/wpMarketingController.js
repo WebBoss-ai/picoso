@@ -2,7 +2,7 @@
  * WP Marketing controller — multi-client PIN auth, contact lists, campaign drafts,
  * and AI-powered campaign strategy generation via Cohere.
  */
-import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink, WpMessageLog } from '../models/wpMarketingModels.js';
+import { WpClient, WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink, WpMessageLog } from '../models/wpMarketingModels.js';
 import crypto from 'crypto';
 import { CohereProvider } from '../llm/provider/cohere.js';
 import { publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
@@ -13,8 +13,82 @@ export const verifyPin = (req, res) => {
   const c = req.wpClient;
   res.json({
     success: true,
-    client: { id: c._id, name: c.name, slug: c.slug, workspace: c.workspace },
+    client: {
+      id: c._id,
+      name: c.name,
+      slug: c.slug,
+      workspace: c.workspace,
+    },
   });
+};
+
+function defaultPosterDesign(ws = {}) {
+  const pd = ws.posterDesign || {};
+  const colors = pd.colors || {};
+  return {
+    businessDescription: pd.businessDescription || '',
+    colors: {
+      primary:   colors.primary   || '#1C1917',
+      secondary: colors.secondary || '#F97316',
+      accent:    colors.accent    || '#FEF3C7',
+    },
+    designType: pd.designType || 'premium_poster',
+  };
+}
+
+function posterOptsFromClient(client) {
+  const ws = client?.workspace || {};
+  const pd = defaultPosterDesign(ws);
+  return {
+    businessName: ws.businessName || client?.name || 'Picoso',
+    businessDescription: pd.businessDescription
+      || [ws.businessType, ws.industry].filter(Boolean).join(' — '),
+    colors: pd.colors,
+  };
+}
+
+/** PUT /wp-marketing/settings/poster-design */
+export const updatePosterDesign = async (req, res) => {
+  try {
+    const { businessDescription, colors, designType } = req.body || {};
+    const nextColors = {
+      primary:   String(colors?.primary || '#1C1917').trim(),
+      secondary: String(colors?.secondary || '#F97316').trim(),
+      accent:    String(colors?.accent || '#FEF3C7').trim(),
+    };
+    for (const [k, v] of Object.entries(nextColors)) {
+      if (!/^#[0-9A-Fa-f]{6}$/.test(v)) {
+        return res.status(400).json({ error: `Invalid ${k} colour — use #RRGGBB` });
+      }
+    }
+    const desc = String(businessDescription || '').trim().slice(0, 800);
+    if (!desc) {
+      return res.status(400).json({ error: 'Describe your business (what you sell / deliver).' });
+    }
+
+    const client = await WpClient.findByIdAndUpdate(
+      req.wpClient._id,
+      {
+        $set: {
+          'workspace.posterDesign.businessDescription': desc,
+          'workspace.posterDesign.colors.primary': nextColors.primary,
+          'workspace.posterDesign.colors.secondary': nextColors.secondary,
+          'workspace.posterDesign.colors.accent': nextColors.accent,
+          'workspace.posterDesign.designType': designType || 'premium_poster',
+        },
+      },
+      { new: true },
+    );
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    res.json({
+      success: true,
+      posterDesign: defaultPosterDesign(client.workspace),
+      workspace: client.workspace,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /* ── Overview stats ────────────────────────────────────────────────────────── */
@@ -330,7 +404,7 @@ STRICT RULES:
 - Do not use more than 2 body variables
 - footerType: BUTTONS with exactly one URL button whose text is the CTA
 - Each variant uses a genuinely different psychological/creative angle
-- imageConceptDescription: describe a SQUARE Instagram sticker-style illustration (vector stickers only, no real photos, no photoreal food). One short sentence.
+- imageConceptDescription: one short sentence for a PREMIUM full-bleed square business poster (modern UI, product-focused, no badges/membership seals, no gradients). Be specific to the offer.
 
 JSON schema to return:
 {
@@ -351,7 +425,7 @@ JSON schema to return:
       "tone": "Urgent and Direct",
       "offer": "specific offer text shown in this variant",
       "cta": "Order Now",
-      "imageConceptDescription": "square sticker-pack illustration idea (no real photos)",
+      "imageConceptDescription": "premium full-bleed poster idea for this offer",
       "templateName": "picoso_order_update_01",
       "category": "UTILITY",
       "language": "en_US",
@@ -448,11 +522,11 @@ Generate all 10 variants now. Make each genuinely distinct.`;
     await WpCampaignDraft.findByIdAndUpdate(campaign._id, { status: 'strategy_ready', updatedAt: new Date() });
 
     const experimentId = experiment._id.toString();
-    const businessName = req.wpClient.workspace?.businessName || req.wpClient.name || 'Picoso';
+    const posterOpts = posterOptsFromClient(req.wpClient);
 
     setImmediate(async () => {
       try {
-        const imgs = await generateVariantImages(experimentId, { businessName });
+        const imgs = await generateVariantImages(experimentId, posterOpts);
         console.log(`[WP Images] auto-gen — ready:${imgs.generated} failed:${imgs.failed}`);
       } catch (err) {
         console.error('[WP Images] auto-gen:', err.message);
@@ -482,7 +556,7 @@ export const regenerateVariantImages = async (req, res) => {
     });
     if (!experiment) return res.status(404).json({ error: 'Experiment not found' });
 
-    const businessName = req.wpClient.workspace?.businessName || req.wpClient.name || 'Picoso';
+    const posterOpts = posterOptsFromClient(req.wpClient);
     const force = Boolean(req.body?.force);
     const variantNumbers = Array.isArray(req.body?.variantNumbers) ? req.body.variantNumbers : null;
 
@@ -490,7 +564,7 @@ export const regenerateVariantImages = async (req, res) => {
     setImmediate(async () => {
       try {
         const result = await generateVariantImages(experiment._id.toString(), {
-          businessName,
+          ...posterOpts,
           force,
           variantNumbers,
         });
@@ -500,7 +574,7 @@ export const regenerateVariantImages = async (req, res) => {
       }
     });
 
-    res.json({ success: true, message: 'Image generation started' });
+    res.json({ success: true, message: 'Poster generation started' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

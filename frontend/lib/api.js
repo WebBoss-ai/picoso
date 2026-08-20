@@ -266,6 +266,7 @@ wpMarketingApi.interceptors.request.use((config) => {
 
 export const wpMarketing = {
   verifyPin:         (pin)     => wpMarketingApi.post('/wp-marketing/verify-pin', {}, { headers: { 'x-wp-pin': pin } }),
+  updatePosterDesign:(data)    => wpMarketingApi.put('/wp-marketing/settings/poster-design', data),
   getOverview:       ()        => wpMarketingApi.get('/wp-marketing/overview'),
   getContactLists:   ()        => wpMarketingApi.get('/wp-marketing/contacts'),
   createContactList: (data)    => wpMarketingApi.post('/wp-marketing/contacts', data),

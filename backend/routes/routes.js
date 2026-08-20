@@ -215,6 +215,7 @@ router.get('/marketing/stats',              requireMarketingPin, marketing.getSt
 
 // ── WP Marketing Platform (per-client PIN) ────────────────────────────────
 router.post('/wp-marketing/verify-pin',            requireWpPin, wpMarketing.verifyPin);
+router.put('/wp-marketing/settings/poster-design', requireWpPin, wpMarketing.updatePosterDesign);
 router.get('/wp-marketing/overview',               requireWpPin, wpMarketing.getOverview);
 // Contact lists
 router.get('/wp-marketing/contacts',               requireWpPin, wpMarketing.getContactLists);

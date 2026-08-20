@@ -14,6 +14,15 @@ const wpClientSchema = new mongoose.Schema({
     businessType: { type: String, default: '' },
     industry:     { type: String, default: '' },
     timezone:     { type: String, default: 'Asia/Kolkata' },
+    posterDesign: {
+      businessDescription: { type: String, default: '' },
+      colors: {
+        primary:   { type: String, default: '#1C1917' },
+        secondary: { type: String, default: '#F97316' },
+        accent:    { type: String, default: '#FEF3C7' },
+      },
+      designType: { type: String, default: 'premium_poster' },
+    },
   },
   createdAt: { type: Date, default: Date.now },
 });

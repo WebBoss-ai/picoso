@@ -58,9 +58,14 @@ export async function generateVariantImages(experimentId, opts = {}) {
   }
 
   const businessName = opts.businessName || 'Picoso';
+  const posterOpts = {
+    businessName,
+    businessDescription: opts.businessDescription || '',
+    colors: opts.colors || {},
+  };
   const results = await mapPool(variants, CONCURRENCY, async (v) => {
     try {
-      const { buffer, mimeType } = await generateStickerImage(v, { businessName });
+      const { buffer, mimeType } = await generateStickerImage(v, posterOpts);
       const ext = /jpeg|jpg/i.test(mimeType) ? 'jpg' : 'png';
       const filename = `${(v.templateName || `variant_${v.variantNumber}`).slice(0, 40)}_${v.variantNumber}.${ext}`;
       const uploaded = await uploadWpMarketingImage(buffer, mimeType, filename);

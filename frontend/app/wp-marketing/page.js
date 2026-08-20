@@ -883,13 +883,13 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
             <div className="mb-4 max-w-[220px]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={tpl.mediaS3Url} alt="Variant sticker" className="w-full aspect-square rounded-2xl object-cover border border-zinc-200 shadow-sm" />
-              <p className="mt-2 text-[11px] text-zinc-400">Square Gemini sticker · Instagram post format</p>
+              <p className="mt-2 text-[11px] text-zinc-400">Square brand poster · Instagram format</p>
             </div>
           ) : (
             <p className="mb-4 text-[12.5px] text-zinc-500">
               {tpl.imageGenStatus === 'generating' || tpl.imageGenStatus === 'pending'
-                ? 'Generating square sticker…'
-                : 'No sticker yet — use Generate stickers above.'}
+                ? 'Generating poster…'
+                : 'No poster yet — set design in Settings, then Generate posters.'}
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1346,7 +1346,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
           </div>
           <div className="flex items-center gap-2">
             {imagesReady > 0 && (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700">{imagesReady} stickers</span>
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700">{imagesReady} posters</span>
             )}
             {publishedCount > 0 && (
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">{publishedCount} live</span>
@@ -1360,7 +1360,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
               className="flex items-center gap-1.5 px-3.5 py-2 border border-zinc-200 bg-white text-zinc-800 text-[12.5px] font-medium rounded-xl hover:bg-zinc-50 disabled:opacity-50"
             >
               {(genImages || imagesBusy) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              {(genImages || imagesBusy) ? 'Stickers…' : imagesReady ? 'Regen stickers' : 'Generate stickers'}
+              {(genImages || imagesBusy) ? 'Posters…' : imagesReady ? 'Regen posters' : 'Generate posters'}
             </button>
             <button
               onClick={handlePublish}
@@ -1374,7 +1374,7 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
         </div>
 
         <div className="px-5 py-4 border-b border-zinc-100">
-          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-3">Sticker pack</p>
+          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-3">Poster pack</p>
           <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
             {variants.map((v, i) => (
               <button
@@ -2638,7 +2638,7 @@ function VariantTemplateCard({ variant, onEdit }) {
             {tpl.imageGenStatus === 'generating' || tpl.imageGenStatus === 'pending' ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                <p className="text-[11px] font-medium">Creating sticker…</p>
+                <p className="text-[11px] font-medium">Creating poster…</p>
               </>
             ) : tpl.imageGenStatus === 'failed' ? (
               <p className="text-[11px] text-slate-500 px-4 text-center">Image failed</p>
@@ -4445,12 +4445,61 @@ function PlaceholderSection({ icon: Icon, title, description, badge = 'Coming So
 /* ══════════════════════════════════════════════════════════════════════════════
    SETTINGS SECTION
 ══════════════════════════════════════════════════════════════════════════════ */
-function SettingsSection({ client }) {
+function SettingsSection({ client, onClientUpdate }) {
+  const pd = client?.workspace?.posterDesign || {};
+  const [desc, setDesc] = useState(pd.businessDescription || '');
+  const [colors, setColors] = useState({
+    primary:   pd.colors?.primary   || '#1C1917',
+    secondary: pd.colors?.secondary || '#F97316',
+    accent:    pd.colors?.accent    || '#FEF3C7',
+  });
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const next = client?.workspace?.posterDesign || {};
+    setDesc(next.businessDescription || '');
+    setColors({
+      primary:   next.colors?.primary   || '#1C1917',
+      secondary: next.colors?.secondary || '#F97316',
+      accent:    next.colors?.accent    || '#FEF3C7',
+    });
+  }, [client]);
+
+  const setColor = (key, value) => setColors((c) => ({ ...c, [key]: value }));
+
+  const handleSave = async () => {
+    setSaving(true); setError(''); setSavedMsg('');
+    try {
+      const res = await wpMarketing.updatePosterDesign({
+        businessDescription: desc,
+        colors,
+        designType: 'premium_poster',
+      });
+      onClientUpdate?.({
+        ...client,
+        workspace: res.data?.workspace || {
+          ...client.workspace,
+          posterDesign: res.data?.posterDesign,
+        },
+      });
+      setSavedMsg('Poster design saved. New and regenerated posters will use this look.');
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not save poster design');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[13.5px] text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400';
+  const label = 'block text-[12px] font-medium text-slate-600 mb-1.5';
+
   return (
     <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
       <div className="mb-8">
         <h2 className="text-[22px] font-semibold text-slate-900 tracking-tight">Settings</h2>
-        <p className="text-[13.5px] text-slate-500 mt-1">Workspace and CampaignBot helper</p>
+        <p className="text-[13.5px] text-slate-500 mt-1">Workspace and poster generation design</p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -4464,19 +4513,89 @@ function SettingsSection({ client }) {
             { label: 'Business type',  value: client?.workspace?.businessType },
             { label: 'Industry',       value: client?.workspace?.industry },
             { label: 'Timezone',       value: client?.workspace?.timezone },
-          ].map(({ label, value }) => (
-            <div key={label} className="flex items-center justify-between px-5 py-3.5">
-              <p className="text-[13px] text-slate-500">{label}</p>
+          ].map(({ label: l, value }) => (
+            <div key={l} className="flex items-center justify-between px-5 py-3.5">
+              <p className="text-[13px] text-slate-500">{l}</p>
               <p className="text-[13.5px] font-medium text-slate-900">{value || '—'}</p>
             </div>
           ))}
         </div>
 
-        <div className="bg-white rounded-2xl border border-blue-100 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <p className="text-[13px] font-semibold text-slate-900 mb-1">Template creation</p>
-          <p className="text-[13px] text-slate-500 leading-relaxed">
-            Stay in WP Marketing. After you generate a plan, the server creates each template on CampaignBot and this page shows queued, creating, and live status. You do not need to open campaignbot.online.
-          </p>
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)] space-y-5">
+          <div>
+            <p className="text-[13px] font-semibold text-slate-900">Poster gen design</p>
+            <p className="text-[12.5px] text-slate-500 mt-1 leading-relaxed">
+              Premium full-bleed square posters for every variant. Be specific about what you sell — posters follow this brief and your 3 brand colours.
+            </p>
+          </div>
+
+          <div>
+            <label className={label}>What is your business?</label>
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value.slice(0, 800))}
+              rows={4}
+              placeholder="e.g. We deliver pizzas, grain bowls, and spicy curries across the city. Fresh, fast, premium comfort food."
+              className={`${field} resize-none min-h-[110px]`}
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400">{desc.length}/800 — the more specific, the better the posters</p>
+          </div>
+
+          <div>
+            <label className={label}>Colour theme — pick 3 matching colours</label>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { key: 'primary',   title: 'Primary' },
+                { key: 'secondary', title: 'Secondary' },
+                { key: 'accent',    title: 'Accent' },
+              ].map(({ key, title }) => (
+                <div key={key} className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+                  <div className="h-16 relative">
+                    <input
+                      type="color"
+                      value={colors[key]}
+                      onChange={(e) => setColor(key, e.target.value.toUpperCase())}
+                      className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0"
+                      title={title}
+                    />
+                  </div>
+                  <div className="px-2.5 py-2 space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{title}</p>
+                    <input
+                      value={colors[key]}
+                      onChange={(e) => setColor(key, e.target.value.toUpperCase())}
+                      className="w-full text-[12px] font-mono bg-white border border-slate-200 rounded-lg px-2 py-1.5"
+                      maxLength={7}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div
+              className="mt-3 h-12 rounded-xl overflow-hidden flex border border-slate-200"
+              title="Colour match preview"
+            >
+              <div className="flex-1" style={{ background: colors.primary }} />
+              <div className="flex-1" style={{ background: colors.secondary }} />
+              <div className="flex-1" style={{ background: colors.accent }} />
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              Used as flat brand colours — no gradients. Posters stay modern, full-screen, and badge-free.
+            </p>
+          </div>
+
+          {error && <p className="text-[12.5px] text-red-600">{error}</p>}
+          {savedMsg && <p className="text-[12.5px] text-emerald-700">{savedMsg}</p>}
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !desc.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-[13px] font-semibold rounded-xl hover:bg-slate-800 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Save poster design
+          </button>
         </div>
       </div>
     </div>
@@ -4486,7 +4605,7 @@ function SettingsSection({ client }) {
 /* ══════════════════════════════════════════════════════════════════════════════
    DASHBOARD SHELL
 ══════════════════════════════════════════════════════════════════════════════ */
-function Dashboard({ client, onLogout }) {
+function Dashboard({ client, onLogout, onClientUpdate }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [campaignSubView, setCampaignSubView] = useState(null);
 
@@ -4531,7 +4650,7 @@ function Dashboard({ client, onLogout }) {
           />
         );
       case 'settings':
-        return <SettingsSection client={client} />;
+        return <SettingsSection client={client} onClientUpdate={onClientUpdate} />;
       default:
         return <Overview client={client} onNavigate={handleNavigate} />;
     }
@@ -4586,5 +4705,14 @@ export default function WpMarketingPage() {
 
   if (!mounted) return null;
   if (!pinVerified) return <PinGate onSuccess={handleSuccess} />;
-  return <Dashboard client={client} onLogout={handleLogout} />;
+  return (
+    <Dashboard
+      client={client}
+      onLogout={handleLogout}
+      onClientUpdate={(c) => {
+        setClient(c);
+        try { sessionStorage.setItem(WP_CLIENT_KEY, JSON.stringify(c)); } catch { /* ignore */ }
+      }}
+    />
+  );
 }
