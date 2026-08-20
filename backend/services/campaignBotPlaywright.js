@@ -657,27 +657,21 @@ function resolvedCategory(variant) {
 }
 
 async function modalScope(page) {
-  const modal = page.locator('div.fixed.inset-0').filter({
-    has: page.getByRole('heading', { name: /Create New Template/i }),
-  }).last();
-  if (await modal.count()) return modal;
-  return page.locator('form').filter({ has: page.locator('#name') }).last();
+  const heading = page.getByRole('heading', { name: /Create New Template/i });
+  const panel = page.locator('div.inline-block.align-bottom, div.inline-block').filter({ has: heading });
+  if (await panel.count()) return panel.last();
+  const dialog = page.locator('[role="dialog"]').filter({ has: heading });
+  if (await dialog.count()) return dialog.last();
+  const fixed = page.locator('div.fixed.inset-0').filter({ has: heading });
+  if (await fixed.count()) return fixed.last();
+  return page;
 }
 
 async function nativeFill(locator, value) {
   const str = String(value ?? '');
   if (!(await locator.count())) return false;
-  await locator.first().click({ force: true }).catch(() => {});
-  await locator.first().fill('').catch(() => {});
-  await locator.first().fill(str).catch(() => {});
-  await locator.first().evaluate((el, val) => {
-    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    setter?.call(el, val);
-    el.value = val;
-    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: val, inputType: 'insertText' }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }, str).catch(() => {});
+  await locator.first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+  await setVueInput(locator.first(), str);
   return true;
 }
 
@@ -700,24 +694,32 @@ async function setSelectValue(scope, selector, value) {
 async function dumpCreateForm(page, label) {
   try {
     const info = await page.evaluate(() => {
-      const form = document.querySelector('div.fixed.inset-0 form') || document.querySelector('form');
-      if (!form) return { missing: true };
-      const val = (sel) => form.querySelector(sel)?.value ?? null;
-      const unsub = form.querySelector('#includeUnsubscribeFooter');
+      const heading = [...document.querySelectorAll('h3')].find((h) => /Create New Template/i.test(h.textContent || ''));
+      const root = heading?.closest('div.inline-block') || heading?.closest('[role="dialog"]') || document;
+      const q = (sel) => root.querySelector(sel) || document.querySelector(sel);
+      const unsub = q('#includeUnsubscribeFooter');
+      const createBtn = [...(root.querySelectorAll?.('button') || document.querySelectorAll('button'))].find((b) =>
+        /create template/i.test((b.textContent || '').replace(/\s+/g, ' '))
+      );
       return {
-        name: val('#name'),
-        category: val('#category'),
-        format: val('#templateFormat'),
-        header: val('#headerType'),
-        footer: val('#footerType'),
-        body: (val('#body') || form.querySelector('[contenteditable="true"]')?.innerText || '').slice(0, 160),
-        language: (form.querySelector('#languageTrigger')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+        hasHeading: Boolean(heading),
+        rootTag: root === document ? 'document' : (root.tagName || ''),
+        name: q('#name')?.value ?? null,
+        category: q('#category')?.value ?? null,
+        format: q('#templateFormat')?.value ?? null,
+        header: q('#headerType')?.value ?? null,
+        footer: q('#footerType')?.value ?? null,
+        body: (q('#body')?.value || q('[contenteditable="true"]')?.innerText || '').slice(0, 160),
+        language: (q('#languageTrigger')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 60),
         unsub: unsub ? { disabled: unsub.disabled, checked: unsub.checked } : null,
-        examples: [...form.querySelectorAll('input[placeholder*="xample" i], input[placeholder*="variable" i]')].map((e) => ({
-          ph: e.placeholder, v: e.value, disabled: e.disabled,
+        examples: [...document.querySelectorAll('input[placeholder*="xample" i], input[placeholder*="variable" i]')].map((e) => ({
+          ph: e.placeholder, v: e.value, disabled: e.disabled, visible: e.offsetParent !== null,
         })),
-        urls: [...form.querySelectorAll('input[type="url"], input[placeholder*="http"], input[placeholder*="url" i]')].map((e) => e.value),
-        createDisabled: [...form.querySelectorAll('button')].find((b) => /create template/i.test(b.textContent || ''))?.disabled ?? null,
+        urls: [...document.querySelectorAll('input[type="url"], input[placeholder*="http"], input[placeholder*="url" i]')].map((e) => ({
+          v: e.value, ph: e.placeholder, visible: e.offsetParent !== null,
+        })),
+        createDisabled: createBtn?.disabled ?? null,
+        createText: (createBtn?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40),
       };
     });
     cbLog(`form:${label}`, info);
@@ -793,9 +795,10 @@ async function selectLanguage(form, code) {
 }
 
 async function pickCategory(form, category) {
-  const label = category === 'UTILITY' ? 'Utility' : category === 'AUTHENTICATION' ? 'Authentication' : 'Marketing';
-
-  await form.locator('#category').evaluate((el, val) => {
+  const sel = form.locator('#category').first();
+  await sel.waitFor({ state: 'visible', timeout: 10000 });
+  await sel.selectOption(category);
+  await sel.evaluate((el, val) => {
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
     setter?.call(el, val);
     el.value = val;
@@ -816,49 +819,32 @@ async function pickCategory(form, category) {
           }
         }
       }
-      if (n.__vue__ && typeof n.__vue__.category === 'string') {
-        try { n.__vue__.category = val; } catch { /* ignore */ }
-      }
       n = n.parentElement;
     }
-  }, category).catch(() => {});
-
-  await setSelectValue(form, '#category', category);
-  await form.locator('#category').click().catch(() => {});
-  await sleep(200);
-  const opt = form.getByRole('option', { name: new RegExp(`^${label}$`, 'i') });
-  if (await opt.count() && await opt.first().isVisible().catch(() => false)) {
-    await opt.first().click();
-  } else {
-    const textOpt = form.locator('div, li, button, span, p').filter({ hasText: new RegExp(`^\\s*${label}\\s*$`, 'i') }).first();
-    if (await textOpt.isVisible().catch(() => false)) await textOpt.click();
-  }
+  }, category);
 
   const unsub = form.locator('#includeUnsubscribeFooter');
   for (let i = 0; i < 20; i++) {
-    const enabled = await unsub.isEnabled().catch(() => null);
-    // Vue actually switched when the Stop checkbox enables (marketing) or disables (utility).
-    if (category === 'UTILITY' && enabled === false) {
-      cbLog('selectCategory', { value: category, via: 'unsub-disabled', attempt: i });
+    const val = await sel.inputValue().catch(() => '');
+    const enabled = await unsub.isEnabled({ timeout: 500 }).catch(() => null);
+    if (val === category && category === 'UTILITY' && enabled === false) {
+      cbLog('selectCategory', { value: category, via: 'select+unsub-disabled', attempt: i });
       return true;
     }
-    if (category === 'MARKETING' && enabled === true) {
-      cbLog('selectCategory', { value: category, via: 'unsub-enabled', attempt: i });
+    if (val === category && category === 'MARKETING' && enabled === true) {
+      cbLog('selectCategory', { value: category, via: 'select+unsub-enabled', attempt: i });
       return true;
     }
-    if (!(await unsub.count()) && i > 6) {
-      const val = await form.locator('#category').inputValue().catch(() => '');
-      if (val === category) {
-        cbLog('selectCategory', { value: category, via: 'select-no-unsub', attempt: i });
-        return true;
-      }
+    if (val === category && i > 8) {
+      cbLog('selectCategory', { value: category, via: 'select-value', attempt: i, unsubEnabled: enabled });
+      return true;
     }
     await sleep(150);
   }
   cbLog('selectCategory FAILED', {
     wanted: category,
-    current: await form.locator('#category').inputValue().catch(() => ''),
-    unsubEnabled: await unsub.isEnabled().catch(() => null),
+    current: await sel.inputValue().catch(() => ''),
+    unsubEnabled: await unsub.isEnabled({ timeout: 500 }).catch(() => null),
   });
   return false;
 }
@@ -893,15 +879,8 @@ async function fillBody(form, page, body) {
   await editor.waitFor({ state: 'visible', timeout: 10000 });
   await editor.click();
   await editor.press('ControlOrMeta+A');
+  await page.keyboard.press('Backspace');
   await page.keyboard.insertText(text);
-  await editor.evaluate((el, val) => {
-    el.focus();
-    el.innerHTML = '';
-    el.innerText = val;
-    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: val, inputType: 'insertText' }));
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }, text);
 
   const hidden = form.locator('#body');
   if (await hidden.count()) {
@@ -914,7 +893,7 @@ async function fillBody(form, page, body) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }, text);
   }
-  await sleep(400);
+  await sleep(500);
 }
 
 async function fillVariableExamples(form, variant) {
@@ -923,11 +902,16 @@ async function fillVariableExamples(form, variant) {
   if (!max) return;
 
   const examples = variant.variableExamples || { 1: 'Rahul' };
+  const exampleInput = form.locator('input[placeholder*="Example value for variable"], input[placeholder*="example value" i]');
   const heading = form.getByText(/Variable\s*1\s*Examples/i).first();
-  if (!(await heading.isVisible().catch(() => false))) {
-    const addVar = form.getByRole('button', { name: /^Add Variable$/i });
-    if (await addVar.count()) await addVar.first().click();
-    await heading.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+
+  if (!(await heading.isVisible().catch(() => false)) && !(await exampleInput.first().isVisible().catch(() => false))) {
+    const addVar = form.getByRole('button', { name: /Add Variable/i });
+    if (await addVar.count() && await addVar.first().isEnabled().catch(() => true)) {
+      await addVar.first().click().catch(() => {});
+    }
+    await heading.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    await exampleInput.first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
   }
 
   for (let n = 1; n <= max; n++) {
@@ -975,6 +959,13 @@ async function fillButtons(form, variant) {
     text: variant.cta || 'Order Now',
     url: 'https://picoso.in',
   };
+
+  const buttonLabel = form.getByText(/button text/i).first();
+  if (!(await buttonLabel.isVisible().catch(() => false))) {
+    await setSelectValue(form, '#footerType', 'BUTTONS');
+    await buttonLabel.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+  }
+
   await fillNearLabel(form, /button text/i, btn.text);
   await fillNearLabel(form, /\b(url|website|link)\b/i, btn.url || 'https://picoso.in');
 
@@ -989,17 +980,16 @@ async function fillButtons(form, variant) {
 }
 
 async function closeModalIfOpen(page) {
-  const closeBtn = page.getByRole('button', { name: /close modal/i });
-  if (await closeBtn.count()) await closeBtn.click().catch(() => {});
-  const cancel = page.getByRole('button', { name: /^cancel$/i });
-  if (await cancel.count() && await cancel.first().isVisible().catch(() => false)) {
-    await cancel.first().click().catch(() => {});
-  }
   const heading = page.getByRole('heading', { name: /Create New Template/i });
-  for (let i = 0; i < 8 && await heading.isVisible().catch(() => false); i++) {
+  if (!(await heading.isVisible().catch(() => false))) return;
+
+  const closeBtn = page.getByRole('button', { name: /close modal/i });
+  if (await closeBtn.count() && await closeBtn.first().isVisible().catch(() => false)) {
+    await closeBtn.first().click().catch(() => {});
+  } else {
     await page.keyboard.press('Escape').catch(() => {});
-    await sleep(200);
   }
+  await heading.waitFor({ state: 'hidden', timeout: 4000 }).catch(() => {});
 }
 
 async function submitTemplate(page) {
@@ -1034,20 +1024,23 @@ async function fillAndSubmit(page, variant) {
     .replace(/[^a-z0-9_]/g, '_')
     .slice(0, 500);
 
-  await nativeFill(form.locator('#name'), name);
+  const nameField = page.locator('#name');
+  await nameField.waitFor({ state: 'visible', timeout: 10000 });
+  await setVueInput(nameField, name);
+  cbLog('filled name', { name, value: await nameField.inputValue().catch(() => '') });
 
-  const categoryOk = await pickCategory(form, category);
+  const categoryOk = await pickCategory(page, category);
   if (!categoryOk) {
     await dumpCreateForm(page, 'category-not-applied');
     throw new Error(`Could not set CampaignBot category to ${category}`);
   }
 
-  await setSelectValue(form, '#templateFormat', 'STANDARD');
+  await setSelectValue(page, '#templateFormat', 'STANDARD');
   await selectLanguage(form, variant.language || 'en_US');
 
   let headerType = variant.headerType || 'NONE';
   if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) headerType = 'NONE';
-  await setSelectValue(form, '#headerType', headerType);
+  await setSelectValue(page, '#headerType', headerType);
   await sleep(300);
   if (headerType === 'TEXT' && variant.headerText) {
     const header = String(variant.headerText).replace(/[^A-Za-z0-9 .,'!?-]/g, '').slice(0, 60);
@@ -1058,8 +1051,8 @@ async function fillAndSubmit(page, variant) {
   await fillVariableExamples(form, variant);
 
   const footerType = variant.footerType || 'BUTTONS';
-  await setSelectValue(form, '#footerType', footerType);
-  await sleep(400);
+  await setSelectValue(page, '#footerType', footerType);
+  await sleep(500);
 
   if (footerType === 'TEXT' && category === 'MARKETING' && variant.footerText) {
     await fillNearLabel(form, /footer text/i, variant.footerText);
@@ -1069,16 +1062,19 @@ async function fillAndSubmit(page, variant) {
     await fillButtons(form, variant);
   }
 
-  await applyUnsubscribeFooter(form, category);
+  await applyUnsubscribeFooter(page, category);
   await dumpCreateForm(page, `pre-submit-${variant.label || variant.variantNumber}`);
 
   try {
     await submitTemplate(page);
   } catch (err) {
     if (!/stayed disabled/i.test(err.message)) throw err;
+    await setVueInput(nameField, name);
+    await fillBody(form, page, variant.body || variant.message || '');
     await fillVariableExamples(form, variant);
     if (footerType === 'BUTTONS') await fillButtons(form, variant);
-    await applyUnsubscribeFooter(form, category);
+    await applyUnsubscribeFooter(page, category);
+    await dumpCreateForm(page, `retry-${variant.label || variant.variantNumber}`);
     await submitTemplate(page);
   }
   return name;
