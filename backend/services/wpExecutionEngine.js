@@ -371,7 +371,7 @@ export async function executePhaseRun(experimentId, phaseIndex, templateConfig =
 export async function updateVariant(experimentId, variantNumber, updates, clientId) {
   const allowed = [
     'label', 'copyAngle', 'tone', 'offer', 'cta', 'message', 'imageConceptDescription',
-    'mediaS3Url', 'mediaWaId', 'scheduledSendTime',
+    'mediaS3Url', 'mediaWaId', 'imageGenStatus', 'imageGenError', 'scheduledSendTime',
     'templateName', 'category', 'language', 'headerType', 'headerText',
     'body', 'footerType', 'footerText', 'buttons',
     'waPublishStatus', 'waPublishError', 'waPublishedAt',

@@ -230,6 +230,7 @@ router.delete('/wp-marketing/campaigns/:id',               requireWpPin, wpMarke
 router.post('/wp-marketing/campaigns/:id/analyze',         requireWpPin, wpMarketing.analyzeCampaign);
 // Experiment plan (Phase 2)
 router.post('/wp-marketing/campaigns/:id/generate-plan',   requireWpPin, wpMarketing.generatePlan);
+router.post('/wp-marketing/experiments/:id/generate-images', requireWpPin, wpMarketing.regenerateVariantImages);
 router.get('/wp-marketing/campaigns/:id/plan',             requireWpPin, wpMarketing.getPlan);
 router.post('/wp-marketing/campaigns/:id/approve-plan',    requireWpPin, wpMarketing.approvePlan);
 // Tracking links

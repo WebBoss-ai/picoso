@@ -702,12 +702,18 @@ function variantToTpl(v) {
   const body = (v?.body || v?.message || '').replace(/\{\{name\}\}/gi, '{{1}}');
   const cta  = v?.cta || 'Order Now';
   const category = categoryForVariantNumber(v?.variantNumber, v?.category);
+  const mediaS3Url = v?.mediaS3Url || '';
+  const headerType = mediaS3Url
+    ? 'IMAGE'
+    : (v?.headerType || (v?.headerText ? 'TEXT' : 'NONE'));
   return {
     templateName: v?.templateName || '',
     category,
     language:     v?.language || 'en_US',
-    headerType:   v?.headerType || (v?.headerText ? 'TEXT' : 'NONE'),
+    headerType,
     headerText:   v?.headerText || '',
+    mediaS3Url,
+    imageGenStatus: v?.imageGenStatus || (mediaS3Url ? 'ready' : 'pending'),
     body,
     footerType:   v?.footerType || (v?.cta ? 'BUTTONS' : 'NONE'),
     footerText:   category === 'MARKETING' ? (v?.footerText || '') : '',
@@ -753,14 +759,18 @@ function WaPhonePreview({ tpl, businessName = 'Picoso' }) {
           style={{ background: '#e5ddd5 url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png) repeat' }}
         >
           <div className="max-w-[88%] bg-white rounded-lg rounded-tl-sm shadow-sm px-2.5 pt-2 pb-1.5">
-            {tpl.headerType === 'TEXT' && tpl.headerText && (
-              <p className="text-[12.5px] font-bold text-zinc-900 mb-1">{tpl.headerText}</p>
-            )}
-            {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(tpl.headerType) && (
-              <div className="h-24 rounded-md bg-zinc-100 mb-2 flex items-center justify-center text-[11px] text-zinc-400 uppercase tracking-wider">
-                {tpl.headerType} header
+            {tpl.mediaS3Url ? (
+              <div className="rounded-md overflow-hidden mb-2 -mx-0.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={tpl.mediaS3Url} alt="" className="w-full aspect-square object-cover" />
               </div>
-            )}
+            ) : tpl.headerType === 'TEXT' && tpl.headerText ? (
+              <p className="text-[12.5px] font-bold text-zinc-900 mb-1">{tpl.headerText}</p>
+            ) : ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(tpl.headerType) ? (
+              <div className="h-24 rounded-md bg-zinc-100 mb-2 flex items-center justify-center text-[11px] text-zinc-400 uppercase tracking-wider">
+                {tpl.imageGenStatus === 'generating' ? 'Generating sticker…' : `${tpl.headerType} header`}
+              </div>
+            ) : null}
             <p className="text-[13px] text-[#111b21] whitespace-pre-wrap leading-relaxed">
               {preview || <span className="italic text-zinc-400">[Message body]</span>}
             </p>
@@ -868,19 +878,32 @@ function TemplateStudio({ tpl, onChange, readOnly }) {
         </div>
 
         <div className="border-t border-zinc-100 pt-5">
-          <h4 className="text-[13px] font-semibold text-zinc-800 mb-3">Header</h4>
+          <h4 className="text-[13px] font-semibold text-zinc-800 mb-3">Sticker header</h4>
+          {tpl.mediaS3Url ? (
+            <div className="mb-4 max-w-[220px]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={tpl.mediaS3Url} alt="Variant sticker" className="w-full aspect-square rounded-2xl object-cover border border-zinc-200 shadow-sm" />
+              <p className="mt-2 text-[11px] text-zinc-400">Square Gemini sticker · Instagram post format</p>
+            </div>
+          ) : (
+            <p className="mb-4 text-[12.5px] text-zinc-500">
+              {tpl.imageGenStatus === 'generating' || tpl.imageGenStatus === 'pending'
+                ? 'Generating square sticker…'
+                : 'No sticker yet — use Generate stickers above.'}
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={label}>Header type</label>
-              <select disabled={readOnly} value={tpl.headerType || 'NONE'} onChange={(e) => set('headerType', e.target.value)} className={field}>
+              <select disabled={readOnly} value={tpl.mediaS3Url ? 'IMAGE' : (tpl.headerType || 'NONE')} onChange={(e) => set('headerType', e.target.value)} className={field}>
                 <option value="NONE">None</option>
                 <option value="TEXT">Text</option>
-                <option value="IMAGE">Image</option>
+                <option value="IMAGE">Image (sticker)</option>
                 <option value="VIDEO">Video</option>
                 <option value="DOCUMENT">Document</option>
               </select>
             </div>
-            {tpl.headerType === 'TEXT' && (
+            {(tpl.headerType === 'TEXT' && !tpl.mediaS3Url) && (
               <div>
                 <label className={label}>Header text</label>
                 <input
@@ -1106,12 +1129,16 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
   const publishedCount = (variants || []).filter((v) => v.waPublishStatus === 'published').length;
   const failedCount = (variants || []).filter((v) => v.waPublishStatus === 'failed').length;
   const queuedCount = (variants || []).filter((v) => v.waPublishStatus === 'queued' || v.waPublishStatus === 'draft').length;
+  const imagesBusy = (variants || []).some((v) => v.imageGenStatus === 'generating' || v.imageGenStatus === 'pending');
+  const imagesReady = (variants || []).filter((v) => v.mediaS3Url).length;
+  const imagesFailed = (variants || []).filter((v) => v.imageGenStatus === 'failed').length;
+  const [genImages, setGenImages] = useState(false);
 
   useEffect(() => {
-    if (!publishing && !anyPublishing && queuedCount === 0) return;
+    if (!publishing && !anyPublishing && queuedCount === 0 && !imagesBusy && !genImages) return;
     const t = setInterval(() => { onReload?.(); }, 2500);
     return () => clearInterval(t);
-  }, [publishing, anyPublishing, queuedCount, onReload]);
+  }, [publishing, anyPublishing, queuedCount, imagesBusy, genImages, onReload]);
 
   useEffect(() => {
     if (!publishing) return;
@@ -1119,6 +1146,23 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
     const still = variants.some((v) => v.waPublishStatus === 'publishing');
     if (!still && publishedCount + failedCount > 0) setPublishing(false);
   }, [publishing, variants, publishedCount, failedCount]);
+
+  useEffect(() => {
+    if (!genImages) return;
+    if (!imagesBusy && (imagesReady > 0 || imagesFailed > 0)) setGenImages(false);
+  }, [genImages, imagesBusy, imagesReady, imagesFailed]);
+
+  const handleGenerateImages = async () => {
+    if (!experiment?._id) return;
+    setGenImages(true);
+    try {
+      await wpMarketing.generateImages(experiment._id, { force: true });
+      onReload?.();
+    } catch (err) {
+      setPublishMsg(err?.response?.data?.error || 'Could not start image generation');
+      setGenImages(false);
+    }
+  };
 
   const handlePublish = async () => {
     if (!experiment?._id) return;
@@ -1301,12 +1345,23 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
             <p className="text-[12px] text-slate-400 mt-0.5">Created on CampaignBot from the server. Stay on this page.</p>
           </div>
           <div className="flex items-center gap-2">
+            {imagesReady > 0 && (
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700">{imagesReady} stickers</span>
+            )}
             {publishedCount > 0 && (
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">{publishedCount} live</span>
             )}
             {failedCount > 0 && (
               <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border border-slate-200 text-slate-600">{failedCount} failed</span>
             )}
+            <button
+              onClick={handleGenerateImages}
+              disabled={genImages || imagesBusy}
+              className="flex items-center gap-1.5 px-3.5 py-2 border border-zinc-200 bg-white text-zinc-800 text-[12.5px] font-medium rounded-xl hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {(genImages || imagesBusy) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {(genImages || imagesBusy) ? 'Stickers…' : imagesReady ? 'Regen stickers' : 'Generate stickers'}
+            </button>
             <button
               onClick={handlePublish}
               disabled={publishing && !anyPublishing}
@@ -1315,6 +1370,35 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
               {(publishing || anyPublishing) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
               {(publishing || anyPublishing) ? 'Retry login' : failedCount ? 'Retry failed' : 'Create templates'}
             </button>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-b border-zinc-100">
+          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-3">Sticker pack</p>
+          <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
+            {variants.map((v, i) => (
+              <button
+                key={v.variantNumber || i}
+                type="button"
+                onClick={() => setActiveVariant(i)}
+                className={`relative aspect-square rounded-xl overflow-hidden border transition-all ${
+                  activeVariant === i ? 'border-zinc-900 ring-2 ring-zinc-900/15' : 'border-zinc-200 hover:border-zinc-300'
+                }`}
+              >
+                {v.mediaS3Url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={v.mediaS3Url} alt={v.label} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-zinc-50 flex items-center justify-center">
+                    {(v.imageGenStatus === 'generating' || v.imageGenStatus === 'pending') ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                    ) : (
+                      <span className="text-[10px] font-bold text-zinc-400">{VARIANT_LABELS[i] || i + 1}</span>
+                    )}
+                  </div>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -2545,6 +2629,25 @@ function VariantTemplateCard({ variant, onEdit }) {
   const preview = (tpl.body || '').replace(/\{\{1\}\}/g, '{{name}}').replace(/\{\{2\}\}/g, '…');
   return (
     <div className={`bg-white rounded-2xl border overflow-hidden transition-all ${variant.status === 'eliminated' ? 'border-gray-100 opacity-50' : 'border-zinc-200 hover:border-zinc-300'}`}>
+      <div className="relative aspect-square bg-zinc-50 border-b border-zinc-100">
+        {tpl.mediaS3Url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={tpl.mediaS3Url} alt={variant.label} className="w-full h-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400">
+            {tpl.imageGenStatus === 'generating' || tpl.imageGenStatus === 'pending' ? (
+              <>
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                <p className="text-[11px] font-medium">Creating sticker…</p>
+              </>
+            ) : tpl.imageGenStatus === 'failed' ? (
+              <p className="text-[11px] text-slate-500 px-4 text-center">Image failed</p>
+            ) : (
+              <p className="text-[11px]">No sticker yet</p>
+            )}
+          </div>
+        )}
+      </div>
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-bold text-zinc-900">{variant.label}</span>
@@ -2556,7 +2659,7 @@ function VariantTemplateCard({ variant, onEdit }) {
       </div>
       <div className="px-4 pt-3">
         <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{tpl.templateName || 'untitled_template'}</p>
-        <p className="text-[11px] text-zinc-500 mt-0.5">{tpl.category} · {tpl.language} · {tpl.headerType === 'NONE' ? 'No header' : tpl.headerType}</p>
+        <p className="text-[11px] text-zinc-500 mt-0.5">{tpl.category} · {tpl.language} · sticker</p>
       </div>
       {variant.copyAngle && (
         <div className="px-4 pt-2">
@@ -2565,7 +2668,11 @@ function VariantTemplateCard({ variant, onEdit }) {
       )}
       <div className="px-4 py-3">
         <div className="bg-[#dcf8c6] rounded-2xl rounded-tl-sm px-3 py-2.5">
-          {tpl.headerType === 'TEXT' && tpl.headerText && (
+          {tpl.mediaS3Url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={tpl.mediaS3Url} alt="" className="w-full rounded-lg mb-2 aspect-square object-cover" />
+          )}
+          {tpl.headerType === 'TEXT' && tpl.headerText && !tpl.mediaS3Url && (
             <p className="text-[12px] font-bold text-[#111b21] mb-1">{tpl.headerText}</p>
           )}
           <p className="text-[12px] text-[#111b21] whitespace-pre-line leading-relaxed">{preview || 'No body yet'}</p>

@@ -134,6 +134,8 @@ const wpVariantSchema = new mongoose.Schema({
   variableExamples:        { type: mongoose.Schema.Types.Mixed, default: () => ({ 1: 'Rahul' }) },
   mediaS3Url:              { type: String, default: '' },
   mediaWaId:               { type: String, default: '' },
+  imageGenStatus:          { type: String, enum: ['pending', 'generating', 'ready', 'failed'], default: 'pending' },
+  imageGenError:           { type: String, default: '' },
   scheduledSendTime:       { type: String, default: '10:00' }, // HH:mm, editable per variant
   waPublishStatus:         { type: String, enum: ['draft', 'queued', 'publishing', 'published', 'failed'], default: 'draft' },
   waPublishError:          { type: String, default: '' },

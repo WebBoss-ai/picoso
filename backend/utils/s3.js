@@ -69,6 +69,39 @@ export async function uploadBufferToS3(buffer, mimeType, filename) {
   return { url: result.Location, key };
 }
 
+/**
+ * Dedicated bucket for WP Marketing variant stickers.
+ * Defaults: wp-marketing-001 / ap-south-2
+ */
+export async function uploadWpMarketingImage(buffer, mimeType, filename) {
+  const bucket = process.env.WP_MARKETING_S3_BUCKET || 'wp-marketing-001';
+  const region = process.env.WP_MARKETING_S3_REGION || process.env.AWS_REGION || 'ap-south-2';
+  const client = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region,
+  });
+  const safe = String(filename || 'sticker.png').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const key = `variants/${Date.now()}-${safe}`;
+  const params = {
+    Bucket: bucket,
+    Key: key,
+    Body: buffer,
+    ContentType: mimeType || 'image/png',
+  };
+  // Some buckets block public ACLs — try with ACL, fall back without
+  try {
+    const result = await client.upload({ ...params, ACL: 'public-read' }).promise();
+    return { url: result.Location, key, bucket };
+  } catch (err) {
+    if (!/AccessControlListNotSupported|InvalidArgument|ACL/i.test(err.message || '')) throw err;
+    const result = await client.upload(params).promise();
+    const url = result.Location
+      || `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+    return { url, key, bucket };
+  }
+}
+
 /* ===========================
    DELETE FROM S3
 =========================== */

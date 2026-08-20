@@ -6,6 +6,8 @@ const nextConfig = {
       { protocol: 'https', hostname: 'images.unsplash.com' },
       { protocol: 'https', hostname: 'picsum.photos' },
       { protocol: 'https', hostname: '**.s3.ap-south-1.amazonaws.com' },
+      { protocol: 'https', hostname: '**.s3.ap-south-2.amazonaws.com' },
+      { protocol: 'https', hostname: 'wp-marketing-001.s3.ap-south-2.amazonaws.com' },
       { protocol: 'https', hostname: 'picoso.in' },
       { protocol: 'http', hostname: 'picoso.in' },
     ],

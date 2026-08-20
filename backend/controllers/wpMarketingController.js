@@ -6,6 +6,7 @@ import { WpContactList, WpCampaignDraft, WpExperiment, WpTrackingLink, WpMessage
 import crypto from 'crypto';
 import { CohereProvider } from '../llm/provider/cohere.js';
 import { publishVariantsToCampaignBot } from '../services/campaignBotPlaywright.js';
+import { generateVariantImages } from '../services/wpVariantImages.js';
 
 /* ── Auth ping ─────────────────────────────────────────────────────────────── */
 export const verifyPin = (req, res) => {
@@ -271,6 +272,9 @@ function normaliseVariantTemplate(v, i) {
     footerText,
     buttons,
     variableExamples,
+    mediaS3Url: '',
+    imageGenStatus: 'pending',
+    imageGenError: '',
     status: 'active',
     waPublishStatus: 'queued',
   };
@@ -326,7 +330,7 @@ STRICT RULES:
 - Do not use more than 2 body variables
 - footerType: BUTTONS with exactly one URL button whose text is the CTA
 - Each variant uses a genuinely different psychological/creative angle
-- Return ONLY valid JSON with no markdown fences, no text outside the JSON object
+- imageConceptDescription: describe a SQUARE Instagram sticker-style illustration (vector stickers only, no real photos, no photoreal food). One short sentence.
 
 JSON schema to return:
 {
@@ -347,7 +351,7 @@ JSON schema to return:
       "tone": "Urgent and Direct",
       "offer": "specific offer text shown in this variant",
       "cta": "Order Now",
-      "imageConceptDescription": "visual for this variant",
+      "imageConceptDescription": "square sticker-pack illustration idea (no real photos)",
       "templateName": "picoso_order_update_01",
       "category": "UTILITY",
       "language": "en_US",
@@ -444,6 +448,17 @@ Generate all 10 variants now. Make each genuinely distinct.`;
     await WpCampaignDraft.findByIdAndUpdate(campaign._id, { status: 'strategy_ready', updatedAt: new Date() });
 
     const experimentId = experiment._id.toString();
+    const businessName = req.wpClient.workspace?.businessName || req.wpClient.name || 'Picoso';
+
+    setImmediate(async () => {
+      try {
+        const imgs = await generateVariantImages(experimentId, { businessName });
+        console.log(`[WP Images] auto-gen — ready:${imgs.generated} failed:${imgs.failed}`);
+      } catch (err) {
+        console.error('[WP Images] auto-gen:', err.message);
+      }
+    });
+
     setImmediate(async () => {
       try {
         const result = await publishVariantsToCampaignBot(experimentId);
@@ -456,6 +471,38 @@ Generate all 10 variants now. Make each genuinely distinct.`;
     res.json({ success: true, experiment });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Plan generation failed' });
+  }
+};
+
+export const regenerateVariantImages = async (req, res) => {
+  try {
+    const experiment = await WpExperiment.findOne({
+      _id: req.params.id,
+      clientId: req.wpClient._id,
+    });
+    if (!experiment) return res.status(404).json({ error: 'Experiment not found' });
+
+    const businessName = req.wpClient.workspace?.businessName || req.wpClient.name || 'Picoso';
+    const force = Boolean(req.body?.force);
+    const variantNumbers = Array.isArray(req.body?.variantNumbers) ? req.body.variantNumbers : null;
+
+    // Kick off async so the UI can poll the plan for mediaS3Url
+    setImmediate(async () => {
+      try {
+        const result = await generateVariantImages(experiment._id.toString(), {
+          businessName,
+          force,
+          variantNumbers,
+        });
+        console.log(`[WP Images] regenerate — ready:${result.generated} failed:${result.failed}`);
+      } catch (err) {
+        console.error('[WP Images] regenerate:', err.message);
+      }
+    });
+
+    res.json({ success: true, message: 'Image generation started' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 

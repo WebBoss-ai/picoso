@@ -281,6 +281,7 @@ export const wpMarketing = {
   generatePlan:      (id)      => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/generate-plan`),
   getPlan:           (id)      => wpMarketingApi.get(`/wp-marketing/campaigns/${id}/plan`),
   approvePlan:       (id)      => wpMarketingApi.post(`/wp-marketing/campaigns/${id}/approve-plan`),
+  generateImages:    (expId, data = {}) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/generate-images`, data),
   getExperiment:     (campaignId) => wpMarketingApi.get(`/wp-marketing/campaigns/${campaignId}/experiment`),
   // Phase 3 — WhatsApp
   getWaStatus:       ()        => wpMarketingApi.get('/wp-marketing/wa/status'),
