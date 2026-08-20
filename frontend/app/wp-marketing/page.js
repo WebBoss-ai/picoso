@@ -19,7 +19,7 @@ import {
   AlignLeft, ExternalLink, Paperclip, MessageSquarePlus,
   ToggleLeft, ToggleRight, ClipboardList, SquareStack,
   // Scheduling & calendar
-  CalendarDays, BellRing, Pencil, Ban, Edit2, Italic, HelpCircle,
+  CalendarDays, BellRing, Pencil, Ban, Italic, HelpCircle,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
 
@@ -2132,47 +2132,53 @@ function ContactsSection() {
    CAMPAIGN EXECUTION DASHBOARD
 ══════════════════════════════════════════════════════════════════════════════ */
 
-function MetricCard({ label, value, sub, color = 'blue' }) {
-  const colors = {
-    blue:   'bg-blue-50 text-blue-700',
-    green:  'bg-green-50 text-green-700',
-    violet: 'bg-violet-50 text-violet-700',
-    amber:  'bg-amber-50 text-amber-700',
-    rose:   'bg-rose-50 text-rose-700',
-    teal:   'bg-teal-50 text-teal-700',
-  };
+function MetricCard({ label, value, sub }) {
   return (
-    <div className={`rounded-2xl p-4 ${colors[color]}`}>
-      <p className="text-[11.5px] font-semibold uppercase tracking-wider opacity-70">{label}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
-      {sub && <p className="text-[12px] opacity-70 mt-0.5">{sub}</p>}
+    <div className="group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-b from-white to-slate-50/90 p-4 shadow-[0_1px_0_rgba(15,23,42,0.03),0_8px_24px_-12px_rgba(15,23,42,0.12)] transition-all duration-300 hover:border-slate-300/80 hover:shadow-[0_1px_0_rgba(15,23,42,0.04),0_16px_32px_-16px_rgba(15,23,42,0.18)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent opacity-70" />
+      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-cyan-400/[0.06] blur-2xl transition-opacity group-hover:opacity-100" />
+      <p className="text-[10.5px] font-medium uppercase tracking-[0.16em] text-slate-400">{label}</p>
+      <p className="mt-2 font-mono text-[22px] font-semibold tracking-tight text-slate-900 tabular-nums">{value}</p>
+      {sub && <p className="mt-1.5 text-[11.5px] text-slate-400">{sub}</p>}
     </div>
   );
 }
 
 function VariantRow({ v, rank, onEdit }) {
-  const statusColors = { active: 'text-blue-600', top5: 'text-amber-600', top3: 'text-violet-600', winner: 'text-green-600', eliminated: 'text-gray-400' };
+  const statusColors = {
+    active:     'text-cyan-700 bg-cyan-50 border-cyan-100',
+    top5:       'text-slate-700 bg-slate-100 border-slate-200',
+    top3:       'text-slate-800 bg-slate-200/70 border-slate-300',
+    winner:     'text-emerald-700 bg-emerald-50 border-emerald-100',
+    eliminated: 'text-slate-400 bg-slate-50 border-slate-100',
+  };
   return (
-    <tr className="border-b border-gray-50 last:border-0 hover:bg-gray-50/40 transition-colors">
-      <td className="px-4 py-3 text-[13px] text-gray-400 font-mono">#{rank}</td>
-      <td className="px-4 py-3">
-        <p className="text-[13px] font-semibold text-gray-900">{v.label}</p>
-        <p className="text-[11.5px] text-gray-400">{v.copyAngle}</p>
+    <tr className="border-b border-slate-100/80 last:border-0 hover:bg-slate-50/70 transition-colors">
+      <td className="px-4 py-3.5 text-[12px] text-slate-400 font-mono tabular-nums">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+          {rank}
+        </span>
       </td>
-      <td className="px-4 py-3 text-center">
-        <span className={`text-[11.5px] font-semibold capitalize ${statusColors[v.status] || 'text-gray-500'}`}>{v.status}</span>
+      <td className="px-4 py-3.5">
+        <p className="text-[13px] font-semibold text-slate-900">{v.label}</p>
+        <p className="text-[11.5px] text-slate-400 mt-0.5">{v.copyAngle}</p>
       </td>
-      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.sent}</td>
-      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.deliveryRate}%</td>
-      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.readRate}%</td>
-      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.clickRate}%</td>
-      <td className="px-4 py-3 text-center text-[13px] text-gray-700">{v.conversionRate}%</td>
-      <td className="px-4 py-3 text-center text-[13px] font-semibold text-gray-800">
+      <td className="px-4 py-3.5 text-center">
+        <span className={`inline-flex text-[10.5px] font-semibold capitalize px-2 py-0.5 rounded-md border ${statusColors[v.status] || 'text-slate-500 bg-slate-50 border-slate-100'}`}>
+          {v.status}
+        </span>
+      </td>
+      <td className="px-4 py-3.5 text-center text-[13px] font-mono tabular-nums text-slate-700">{v.sent}</td>
+      <td className="px-4 py-3.5 text-center text-[13px] font-mono tabular-nums text-slate-700">{v.deliveryRate}%</td>
+      <td className="px-4 py-3.5 text-center text-[13px] font-mono tabular-nums text-slate-700">{v.readRate}%</td>
+      <td className="px-4 py-3.5 text-center text-[13px] font-mono tabular-nums text-slate-700">{v.clickRate}%</td>
+      <td className="px-4 py-3.5 text-center text-[13px] font-mono tabular-nums text-slate-700">{v.conversionRate}%</td>
+      <td className="px-4 py-3.5 text-center text-[13px] font-mono font-semibold tabular-nums text-slate-900">
         {v.revenue > 0 ? `₹${v.revenue.toLocaleString('en-IN')}` : '—'}
       </td>
-      <td className="px-4 py-3 text-center">
+      <td className="px-4 py-3.5 text-center">
         {onEdit && (
-          <button onClick={() => onEdit(v)} className="text-[12px] text-blue-600 hover:text-blue-800 font-medium">
+          <button onClick={() => onEdit(v)} className="text-[12px] text-slate-500 hover:text-cyan-700 font-medium transition-colors">
             Edit
           </button>
         )}
@@ -2230,7 +2236,7 @@ function VariantEditModal({ variant, experimentId, onClose, onSaved }) {
   );
 }
 
-const PHASE_COLORS = ['#3b82f6', '#f59e0b', '#8b5cf6', '#10b981'];
+const PHASE_ACCENTS = ['#0891b2', '#0e7490', '#155e75', '#164e63'];
 
 function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, experimentStatus, templateConfig, onRefresh }) {
   const [analyzing,   setAnalyzing]   = useState(false);
@@ -2381,29 +2387,43 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
   };
 
   // Badge helpers
-  const statusBadge = { pending: 'bg-gray-100 text-gray-500', running: 'bg-amber-100 text-amber-700', completed: 'bg-green-100 text-green-700' };
-  const jobBadge    = { pending: 'bg-zinc-100 text-zinc-500', running: 'bg-blue-100 text-blue-700', completed: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-600', cancelled: 'bg-gray-100 text-gray-400' };
-  const phaseColor  = PHASE_COLORS[phaseIndex % PHASE_COLORS.length];
+  const statusBadge = {
+    pending:   'bg-slate-100 text-slate-500 border-slate-200',
+    running:   'bg-cyan-50 text-cyan-700 border-cyan-200',
+    completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  };
+  const jobBadge = {
+    pending:   'bg-slate-100 text-slate-500 border-slate-200',
+    running:   'bg-cyan-50 text-cyan-700 border-cyan-200',
+    completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    failed:    'bg-red-50 text-red-600 border-red-100',
+    cancelled: 'bg-slate-50 text-slate-400 border-slate-100',
+  };
+  const phaseAccent = PHASE_ACCENTS[phaseIndex % PHASE_ACCENTS.length];
 
   return (
-    <div className={`bg-white rounded-2xl border overflow-hidden ${isRunning ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'}`}>
-      {/* Colour bar */}
-      <div className="h-1 w-full" style={{ backgroundColor: phaseColor, opacity: isCompleted ? 0.35 : 1 }} />
+    <div className={`relative overflow-hidden rounded-2xl border bg-white shadow-[0_1px_0_rgba(15,23,42,0.03),0_12px_32px_-18px_rgba(15,23,42,0.14)] transition-all ${
+      isRunning
+        ? 'border-cyan-200/80 ring-1 ring-cyan-100/80'
+        : 'border-slate-200/80'
+    }`}>
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+      <div className="h-0.5 w-full" style={{ background: `linear-gradient(90deg, ${phaseAccent}, transparent)`, opacity: isCompleted ? 0.35 : 0.85 }} />
 
       {/* Phase header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100/80 bg-gradient-to-r from-slate-50/80 to-white">
         <div>
-          <p className="text-[14px] font-semibold text-gray-900">{phase.label}</p>
-          <p className="text-[12px] text-gray-400 mt-0.5">
-            {phase.variantCount} variant template{phase.variantCount !== 1 ? 's' : ''} ·
-            {' '}{phase.contactsPerVariant} contacts/variant · {phase.rounds} run{phase.rounds > 1 ? 's' : ''}
+          <p className="text-[14px] font-semibold tracking-tight text-slate-900">{phase.label}</p>
+          <p className="text-[12px] text-slate-400 mt-0.5 font-mono">
+            {phase.variantCount} variant{phase.variantCount !== 1 ? 's' : ''} ·
+            {' '}{phase.contactsPerVariant}/variant · {phase.rounds} run{phase.rounds > 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
+          <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg border bg-slate-50 text-slate-600 border-slate-200 font-mono tabular-nums">
             {completedRuns.length}/{phase.rounds} runs
           </span>
-          <span className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full ${statusBadge[phase.status] || 'bg-gray-100 text-gray-500'}`}>
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border capitalize ${statusBadge[phase.status] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
             {phase.status}
           </span>
         </div>
@@ -2421,22 +2441,22 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
               const fmtTime = jobDt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
               const isEditing = editingJobId === job._id;
               return (
-                <div key={job._id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                <div key={job._id} className="flex items-start gap-3 p-3.5 rounded-xl border border-slate-100 bg-slate-50/60">
                   <div className="mt-0.5 flex-shrink-0">
                     {job.status === 'completed' ? (
-                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     ) : job.status === 'failed' ? (
                       <AlertCircle className="w-4 h-4 text-red-400" />
                     ) : job.status === 'running' ? (
-                      <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                      <Loader2 className="w-4 h-4 text-cyan-600 animate-spin" />
                     ) : (
-                      <Clock className="w-4 h-4 text-zinc-400" />
+                      <Clock className="w-4 h-4 text-slate-400" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-[13px] font-semibold text-gray-800">Run {job.runNumber}</p>
-                      <span className={`text-[10.5px] font-medium px-1.5 py-0.5 rounded-full ${jobBadge[job.status]}`}>{job.status}</span>
+                      <p className="text-[13px] font-semibold text-slate-800">Run {job.runNumber}</p>
+                      <span className={`text-[10.5px] font-medium px-1.5 py-0.5 rounded-md border ${jobBadge[job.status]}`}>{job.status}</span>
                     </div>
                     {isEditing ? (
                       <div className="flex items-center gap-2 mt-1.5">
@@ -2444,13 +2464,13 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
                           type="datetime-local"
                           defaultValue={jobDt.toISOString().slice(0, 16)}
                           onChange={(e) => setEditTime(e.target.value.replace('T', 'T').replace(/:\d{2}$/, ''))}
-                          className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="border border-slate-200 rounded-lg px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                         />
-                        <button onClick={() => handleSaveJobTime(job._id)} className="text-[12px] text-blue-600 font-medium hover:text-blue-800">Save</button>
-                        <button onClick={() => setEditingJobId(null)} className="text-[12px] text-gray-400 hover:text-gray-600">Cancel</button>
+                        <button onClick={() => handleSaveJobTime(job._id)} className="text-[12px] text-cyan-700 font-medium hover:text-cyan-900">Save</button>
+                        <button onClick={() => setEditingJobId(null)} className="text-[12px] text-slate-400 hover:text-slate-600">Cancel</button>
                       </div>
                     ) : (
-                      <p className="text-[12px] text-gray-500 mt-0.5">
+                      <p className="text-[12px] text-slate-500 mt-0.5 font-mono">
                         {fmtDate} · {fmtTime}
                         {run?.metrics?.sent > 0 && ` · ${run.metrics.sent} sent`}
                       </p>
@@ -2459,9 +2479,9 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
                       <p className="text-[11.5px] text-red-500 mt-1">{job.error}</p>
                     )}
                     {run?.aiAnalysis?.summary && (
-                      <div className="mt-2 p-2.5 bg-blue-50 rounded-lg">
-                        <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-1">AI Analysis</p>
-                        <p className="text-[12px] text-gray-700 leading-relaxed">{run.aiAnalysis.summary}</p>
+                      <div className="mt-2 p-2.5 rounded-lg border border-cyan-100 bg-cyan-50/50">
+                        <p className="text-[10.5px] font-semibold text-cyan-700 uppercase tracking-[0.12em] mb-1">AI Analysis</p>
+                        <p className="text-[12px] text-slate-700 leading-relaxed">{run.aiAnalysis.summary}</p>
                       </div>
                     )}
                   </div>
@@ -2469,14 +2489,14 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
                     <div className="flex gap-1 flex-shrink-0">
                       <button
                         onClick={() => { setEditingJobId(job._id); setEditTime(jobDt.toISOString().slice(0, 16)); }}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-cyan-700 rounded-lg hover:bg-cyan-50 transition-colors"
                         title="Reschedule"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleCancelJob(job._id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
                         title="Cancel run"
                       >
                         <Ban className="w-3.5 h-3.5" />
@@ -2491,17 +2511,17 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
 
         {/* ─── Run metrics (completed runs without scheduled jobs) ── */}
         {phaseRuns.filter((r) => !phaseJobs.find((j) => j.runNumber === r.runNumber)).map((run) => (
-          <div key={run._id} className="p-4 bg-gray-50 rounded-xl">
+          <div key={run._id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[13px] font-semibold text-gray-800">Run {run.runNumber}</p>
-              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${run.status === 'analyzed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{run.status}</span>
+              <p className="text-[13px] font-semibold text-slate-800">Run {run.runNumber}</p>
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-md border ${run.status === 'analyzed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{run.status}</span>
             </div>
             {run.metrics?.sent > 0 && (
               <div className="grid grid-cols-4 gap-2 text-center mt-3">
                 {[['Sent', run.metrics.sent], ['Delivered', run.metrics.delivered], ['Read', run.metrics.read], ['Conversions', run.metrics.conversions]].map(([l, v]) => (
-                  <div key={l} className="bg-white rounded-lg px-2 py-1.5">
-                    <p className="text-[10px] text-gray-400">{l}</p>
-                    <p className="text-[14px] font-bold text-gray-800">{v || 0}</p>
+                  <div key={l} className="bg-white rounded-lg border border-slate-100 px-2 py-1.5">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">{l}</p>
+                    <p className="text-[14px] font-semibold font-mono tabular-nums text-slate-800">{v || 0}</p>
                   </div>
                 ))}
               </div>
@@ -2511,36 +2531,35 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
 
         {/* ─── One-click start form ─────────────────────────────────── */}
         {canStart && showStartForm && (
-          <div className="p-4 border border-blue-200 rounded-xl bg-blue-50/40 space-y-4">
-            <p className="text-[13px] font-semibold text-gray-900 flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 text-blue-500" />
+          <div className="p-4 border border-cyan-200/70 rounded-xl bg-gradient-to-br from-cyan-50/60 to-slate-50/40 space-y-4">
+            <p className="text-[13px] font-semibold text-slate-900 flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-cyan-600" />
               Schedule all {phase.rounds} runs at once
             </p>
 
-            <p className="text-[11.5px] text-zinc-500">
+            <p className="text-[11.5px] text-slate-500">
               Contacts are split across this phase&apos;s variant templates. Each group receives only that variant&apos;s template — no extra template name needed.
             </p>
 
             {/* Run schedule inputs */}
             <div className="space-y-2">
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Run Schedule</p>
+              <p className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-[0.14em]">Run Schedule</p>
               {runSchedules.map((s, i) => (
-                <div key={s.runNumber} className="flex items-center gap-2 p-2.5 bg-white rounded-lg border border-gray-200">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: phaseColor }}>
+                <div key={s.runNumber} className="flex items-center gap-2 p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 bg-slate-800">
                     {s.runNumber}
                   </div>
-                  <span className="text-[12.5px] font-medium text-gray-600 w-10 flex-shrink-0">Run {s.runNumber}</span>
+                  <span className="text-[12.5px] font-medium text-slate-600 w-10 flex-shrink-0">Run {s.runNumber}</span>
                   <input type="date" value={s.date}
                     onChange={(e) => setRunSchedules((prev) => prev.map((r, ri) => ri === i ? { ...r, date: e.target.value } : r))}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] flex-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-[12px] flex-1 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                   />
                   <input type="time" value={s.time}
                     onChange={(e) => setRunSchedules((prev) => prev.map((r, ri) => ri === i ? { ...r, time: e.target.value } : r))}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-[12px] w-24 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                   />
                   {s.runNumber === 1 && (
-                    <label className="flex items-center gap-1.5 text-[12px] text-blue-600 cursor-pointer flex-shrink-0">
+                    <label className="flex items-center gap-1.5 text-[12px] text-cyan-700 cursor-pointer flex-shrink-0">
                       <input type="checkbox" checked={s.sendNow}
                         onChange={(e) => setRunSchedules((prev) => prev.map((r, ri) => ri === i ? { ...r, sendNow: e.target.checked } : r))}
                         className="rounded"
@@ -2557,13 +2576,12 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
             <div className="flex gap-2">
               <button
                 onClick={handleStart} disabled={starting}
-                className="flex items-center gap-2 px-4 py-2 text-white text-[13px] font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60"
-                style={{ backgroundColor: phaseColor }}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-[13px] font-semibold rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60 shadow-[0_8px_20px_-8px_rgba(15,23,42,0.45)]"
               >
                 {starting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                 {starting ? 'Scheduling…' : `Start Phase ${phase.phaseNumber} — ${phase.rounds} run${phase.rounds !== 1 ? 's' : ''} scheduled`}
               </button>
-              <button onClick={() => { setShowStartForm(false); setExecError(''); }} className="px-4 py-2 text-[13px] text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={() => { setShowStartForm(false); setExecError(''); }} className="px-4 py-2 text-[13px] text-slate-500 hover:text-slate-700">Cancel</button>
             </div>
           </div>
         )}
@@ -2572,35 +2590,34 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
         <div className="flex flex-wrap gap-2 pt-1">
           {canApprove && (
             <button onClick={handleApprove} disabled={approving}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60">
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-[13px] font-semibold rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60 shadow-[0_8px_20px_-8px_rgba(15,23,42,0.4)]">
               {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
               {approving ? 'Approving…' : `Approve Phase ${phase.phaseNumber}`}
             </button>
           )}
           {canStart && !showStartForm && (
             <button onClick={() => { setShowStartForm(true); setExecError(''); }}
-              className="flex items-center gap-2 px-4 py-2 text-white text-[13px] font-semibold rounded-xl hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: phaseColor }}>
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-700 text-white text-[13px] font-semibold rounded-xl hover:bg-cyan-800 transition-colors shadow-[0_8px_20px_-8px_rgba(14,116,144,0.45)]">
               <BellRing className="w-3.5 h-3.5" />
               Start Phase {phase.phaseNumber} — Schedule all {phase.rounds} runs
             </button>
           )}
           {canAnalyze && (
             <button onClick={handleAnalyze} disabled={analyzing}
-              className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white text-[13px] font-semibold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-60">
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-[13px] font-semibold rounded-xl hover:bg-slate-700 transition-colors disabled:opacity-60">
               {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
               {analyzing ? 'Analysing…' : 'Analyse Results'}
             </button>
           )}
           {canAdvance && (
             <button onClick={handleAdvance} disabled={advancing}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-[13px] font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-60">
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white text-[13px] font-semibold rounded-xl hover:bg-emerald-800 transition-colors disabled:opacity-60">
               {advancing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
               {advancing ? 'Advancing…' : 'Advance to Next Phase'}
             </button>
           )}
           {isCompleted && (
-            <span className="flex items-center gap-1.5 text-[13px] text-green-600 font-medium px-3 py-2">
+            <span className="flex items-center gap-1.5 text-[13px] text-emerald-700 font-medium px-3 py-2">
               <CheckCircle2 className="w-4 h-4" /> Phase completed
             </span>
           )}
@@ -2612,88 +2629,6 @@ function PhasePanel({ phase, phaseIndex, runs, scheduledJobs, experimentId, expe
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/* ─── Variant Template Card ────────────────────────────────────────────── */
-function VariantTemplateCard({ variant, onEdit }) {
-  const statusColor = {
-    active:     'bg-blue-50 text-blue-600',
-    top5:       'bg-amber-50 text-amber-700',
-    top3:       'bg-violet-50 text-violet-700',
-    winner:     'bg-green-50 text-green-700',
-    eliminated: 'bg-gray-100 text-gray-400',
-  };
-  const tpl = variantToTpl(variant);
-  const preview = (tpl.body || '').replace(/\{\{1\}\}/g, '{{name}}').replace(/\{\{2\}\}/g, '…');
-  return (
-    <div className={`bg-white rounded-2xl border overflow-hidden transition-all ${variant.status === 'eliminated' ? 'border-gray-100 opacity-50' : 'border-zinc-200 hover:border-zinc-300'}`}>
-      <div className="relative aspect-square bg-zinc-50 border-b border-zinc-100">
-        {tpl.mediaS3Url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={tpl.mediaS3Url} alt={variant.label} className="w-full h-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400">
-            {tpl.imageGenStatus === 'generating' || tpl.imageGenStatus === 'pending' ? (
-              <>
-                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                <p className="text-[11px] font-medium">Creating poster…</p>
-              </>
-            ) : tpl.imageGenStatus === 'failed' ? (
-              <p className="text-[11px] text-slate-500 px-4 text-center">Image failed</p>
-            ) : (
-              <p className="text-[11px]">No sticker yet</p>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13px] font-bold text-zinc-900">{variant.label}</span>
-          <span className={`text-[10.5px] font-medium px-2 py-0.5 rounded-full ${statusColor[variant.status] || 'bg-gray-100 text-gray-500'}`}>{variant.status}</span>
-        </div>
-        <button onClick={() => onEdit(variant)} className="flex items-center gap-1 text-[11.5px] text-zinc-400 hover:text-zinc-800 transition-colors">
-          <Edit2 className="w-3 h-3" /> Edit
-        </button>
-      </div>
-      <div className="px-4 pt-3">
-        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{tpl.templateName || 'untitled_template'}</p>
-        <p className="text-[11px] text-zinc-500 mt-0.5">{tpl.category} · {tpl.language} · sticker</p>
-      </div>
-      {variant.copyAngle && (
-        <div className="px-4 pt-2">
-          <p className="text-[12.5px] text-zinc-700 font-medium">{variant.copyAngle}</p>
-        </div>
-      )}
-      <div className="px-4 py-3">
-        <div className="bg-[#dcf8c6] rounded-2xl rounded-tl-sm px-3 py-2.5">
-          {tpl.mediaS3Url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={tpl.mediaS3Url} alt="" className="w-full rounded-lg mb-2 aspect-square object-cover" />
-          )}
-          {tpl.headerType === 'TEXT' && tpl.headerText && !tpl.mediaS3Url && (
-            <p className="text-[12px] font-bold text-[#111b21] mb-1">{tpl.headerText}</p>
-          )}
-          <p className="text-[12px] text-[#111b21] whitespace-pre-line leading-relaxed">{preview || 'No body yet'}</p>
-          {tpl.buttons?.[0]?.text && (
-            <div className="mt-2 pt-2 border-t border-[#b5e8a0]">
-              <p className="text-[12px] font-semibold text-[#00a5f4] text-center">{tpl.buttons[0].text}</p>
-            </div>
-          )}
-          <p className="text-[10px] text-[#667781] text-right mt-1">10:00 AM ✓✓</p>
-        </div>
-      </div>
-      {(variant.sent > 0 || variant.delivered > 0) && (
-        <div className="grid grid-cols-4 gap-0 border-t border-zinc-100">
-          {[['Sent', variant.sent], ['Read', variant.read], ['Clicks', variant.uniqueClicks], ['Conv.', variant.conversions]].map(([l, val]) => (
-            <div key={l} className="py-2 text-center">
-              <p className="text-[10px] text-zinc-400">{l}</p>
-              <p className="text-[13px] font-bold text-zinc-800">{val || 0}</p>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -2751,50 +2686,56 @@ function CampaignCalendar({ scheduledJobs = [], runs = [], phases = [] }) {
   const monthName = viewDate.toLocaleString('default', { month: 'long' });
 
   const jobBadgeCls = {
-    pending:   'bg-zinc-700 text-zinc-300',
-    running:   'bg-blue-900 text-blue-300',
-    completed: 'bg-green-900 text-green-300',
-    failed:    'bg-red-900 text-red-300',
-    cancelled: 'bg-zinc-800 text-zinc-500',
+    pending:   'bg-slate-800 text-slate-300 border border-slate-700',
+    running:   'bg-cyan-950 text-cyan-300 border border-cyan-800',
+    completed: 'bg-emerald-950 text-emerald-300 border border-emerald-800',
+    failed:    'bg-red-950 text-red-300 border border-red-800',
+    cancelled: 'bg-slate-900 text-slate-500 border border-slate-800',
   };
 
   return (
-    <div className="bg-zinc-950 rounded-3xl border border-zinc-800 p-6 mt-8">
+    <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6 mt-8 shadow-[0_24px_48px_-24px_rgba(15,23,42,0.55)]">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.35]" style={{
+        backgroundImage: 'linear-gradient(rgba(148,163,184,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.06) 1px, transparent 1px)',
+        backgroundSize: '28px 28px',
+      }} />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="relative flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-zinc-800 flex items-center justify-center">
-            <CalendarDays className="w-4.5 h-4.5 text-zinc-300" />
+          <div className="w-9 h-9 rounded-xl border border-slate-700 bg-slate-800/80 flex items-center justify-center">
+            <CalendarDays className="w-4 h-4 text-cyan-300" />
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-white">Campaign Schedule</h3>
-            <p className="text-[12px] text-zinc-500">All scheduled & completed sends</p>
+            <h3 className="text-[15px] font-semibold tracking-tight text-white">Campaign Schedule</h3>
+            <p className="text-[12px] text-slate-500">Scheduled & completed sends</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={() => setViewDate(new Date(year, month - 1, 1))}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors text-lg font-light">
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-lg font-light">
             ‹
           </button>
-          <span className="text-[13.5px] font-medium text-white min-w-[130px] text-center px-2">
+          <span className="text-[13.5px] font-medium text-white min-w-[130px] text-center px-2 font-mono tabular-nums">
             {monthName} {year}
           </span>
           <button onClick={() => setViewDate(new Date(year, month + 1, 1))}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors text-lg font-light">
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-lg font-light">
             ›
           </button>
         </div>
       </div>
 
       {/* Day headers */}
-      <div className="grid grid-cols-7 gap-1 mb-1">
+      <div className="relative grid grid-cols-7 gap-1.5 mb-1.5">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-          <p key={d} className="text-center text-[11px] font-medium text-zinc-600 py-1">{d}</p>
+          <p key={d} className="text-center text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-600 py-1">{d}</p>
         ))}
       </div>
 
       {/* Day grid */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="relative grid grid-cols-7 gap-1.5">
         {cells.map((day, idx) => {
           if (!day) return <div key={`e-${idx}`} />;
           const k = `${year}-${month}-${day}`;
@@ -2808,19 +2749,21 @@ function CampaignCalendar({ scheduledJobs = [], runs = [], phases = [] }) {
               key={k}
               onClick={() => setSelectedDay(hasEvents ? { day, events: dayEvents } : null)}
               disabled={!hasEvents}
-              className={`relative h-[52px] rounded-xl flex flex-col items-center justify-start pt-1.5 gap-0.5 transition-all
-                ${hasEvents ? 'bg-zinc-800 hover:bg-zinc-700 cursor-pointer' : 'hover:bg-zinc-900/50 cursor-default'}
-                ${isToday ? 'ring-1 ring-blue-500/60' : ''}
+              className={`relative h-[52px] rounded-xl flex flex-col items-center justify-start pt-1.5 gap-0.5 transition-all border
+                ${hasEvents
+                  ? 'bg-slate-800/80 border-slate-700 hover:bg-slate-700/80 hover:border-slate-600 cursor-pointer'
+                  : 'border-transparent hover:bg-slate-900/60 cursor-default'}
+                ${isToday ? 'ring-1 ring-cyan-400/50 border-cyan-700/40' : ''}
               `}
             >
-              <span className={`text-[12px] font-medium ${isToday ? 'text-blue-400' : hasEvents ? 'text-white' : 'text-zinc-600'}`}>
+              <span className={`text-[12px] font-medium font-mono tabular-nums ${isToday ? 'text-cyan-300' : hasEvents ? 'text-slate-100' : 'text-slate-600'}`}>
                 {day}
               </span>
               {hasEvents && (
                 <div className="flex gap-0.5 flex-wrap justify-center">
                   {uniquePhases.slice(0, 3).map((pNum) => (
                     <div key={pNum} className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: PHASE_COLORS[(pNum - 1) % PHASE_COLORS.length] }} />
+                      style={{ backgroundColor: PHASE_ACCENTS[(pNum - 1) % PHASE_ACCENTS.length] }} />
                   ))}
                 </div>
               )}
@@ -2830,39 +2773,39 @@ function CampaignCalendar({ scheduledJobs = [], runs = [], phases = [] }) {
       </div>
 
       {/* Legend */}
-      <div className="flex gap-5 mt-5 flex-wrap">
+      <div className="relative flex gap-5 mt-5 flex-wrap">
         {phases.map((p, i) => (
           <div key={i} className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PHASE_COLORS[i % PHASE_COLORS.length] }} />
-            <span className="text-[11.5px] text-zinc-500">{p.label || `Phase ${i + 1}`}</span>
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PHASE_ACCENTS[i % PHASE_ACCENTS.length] }} />
+            <span className="text-[11.5px] text-slate-500">{p.label || `Phase ${i + 1}`}</span>
           </div>
         ))}
       </div>
 
       {/* Selected day popup */}
       {selectedDay && (
-        <div className="mt-4 p-4 bg-zinc-900 rounded-xl border border-zinc-700">
+        <div className="relative mt-4 p-4 bg-slate-900/90 rounded-xl border border-slate-700/80 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[13px] font-semibold text-white">
               {new Date(year, month, selectedDay.day).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
-            <button onClick={() => setSelectedDay(null)} className="text-zinc-500 hover:text-white transition-colors">
+            <button onClick={() => setSelectedDay(null)} className="text-slate-500 hover:text-white transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="space-y-2">
             {selectedDay.events.map((ev, i) => (
-              <div key={i} className="flex items-center gap-3 p-2.5 bg-zinc-800 rounded-lg">
+              <div key={i} className="flex items-center gap-3 p-2.5 bg-slate-800/80 rounded-lg border border-slate-700/60">
                 <div className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: PHASE_COLORS[(ev.phaseNumber - 1) % PHASE_COLORS.length] }} />
+                  style={{ backgroundColor: PHASE_ACCENTS[(ev.phaseNumber - 1) % PHASE_ACCENTS.length] }} />
                 <div className="flex-1">
                   <p className="text-[12.5px] font-medium text-white">{ev.label}</p>
-                  <p className="text-[11px] text-zinc-500">
+                  <p className="text-[11px] text-slate-500 font-mono">
                     {ev.time && <span>{ev.time}</span>}
                     {ev.sent != null && ev.sent > 0 && <span> · {ev.sent} messages sent</span>}
                   </p>
                 </div>
-                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${jobBadgeCls[ev.status] || 'bg-zinc-700 text-zinc-400'}`}>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${jobBadgeCls[ev.status] || 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                   {ev.status}
                 </span>
               </div>
@@ -2909,15 +2852,17 @@ function CampaignDashboard({ campaignId, onBack }) {
   }, [polling, expId, data?.experiment?.status, load]);
 
   if (loading) return (
-    <div className="p-8 flex justify-center py-24"><Loader2 className="w-5 h-5 text-blue-500 animate-spin" /></div>
+    <div className="p-8 flex justify-center py-24">
+      <Loader2 className="w-5 h-5 text-cyan-600 animate-spin" />
+    </div>
   );
 
   if (error) return (
     <div className="p-8">
-      <button onClick={onBack} className="flex items-center gap-2 text-[13px] text-gray-500 hover:text-gray-700 mb-6">
+      <button onClick={onBack} className="flex items-center gap-2 text-[13px] text-slate-500 hover:text-slate-800 mb-6 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to Campaigns
       </button>
-      <div className="bg-red-50 rounded-2xl border border-red-100 p-6 text-center">
+      <div className="rounded-2xl border border-red-100 bg-red-50/80 p-6 text-center">
         <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
         <p className="text-[14px] font-semibold text-red-700">{error}</p>
         <p className="text-[13px] text-red-500 mt-1">The experiment plan may not be approved yet.</p>
@@ -2926,97 +2871,120 @@ function CampaignDashboard({ campaignId, onBack }) {
   );
 
   const { experiment, overall, variants = [], runs = [], scheduledJobs = [] } = data || {};
-  const statusColors = { approved: 'bg-amber-100 text-amber-700', running: 'bg-green-100 text-green-700', completed: 'bg-violet-100 text-violet-700' };
+  const statusColors = {
+    approved:  'bg-slate-100 text-slate-700 border-slate-200',
+    running:   'bg-cyan-50 text-cyan-700 border-cyan-200',
+    completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  };
+
+  const runningPhaseIdx = experiment?.phases?.findIndex((p) => p.status === 'running');
+  const stageLabel = runningPhaseIdx >= 0
+    ? `Phase ${runningPhaseIdx + 1}`
+    : (experiment?.status === 'completed' ? 'Complete' : '—');
 
   // Sort variants by conversionRate + clickRate for display
   const sorted = [...variants].sort((a, b) => (b.conversionRate + b.clickRate) - (a.conversionRate + a.clickRate));
 
   return (
-    <div className="w-full px-6 py-6 xl:px-10 xl:py-8">
+    <div className="relative w-full px-6 py-6 xl:px-10 xl:py-8">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 opacity-60"
+        style={{
+          backgroundImage:
+            'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(6,182,212,0.08), transparent),' +
+            'linear-gradient(rgba(148,163,184,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px)',
+          backgroundSize: 'auto, 32px 32px, 32px 32px',
+        }}
+      />
+
       {/* Header */}
-      <div className="flex items-center gap-4 mb-7">
-        <button onClick={onBack} className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300 transition-all">
+      <div className="flex items-center gap-4 mb-8">
+        <button
+          onClick={onBack}
+          className="p-2.5 rounded-xl border border-slate-200/80 bg-white/80 text-slate-500 hover:text-slate-900 hover:border-slate-300 shadow-sm backdrop-blur-sm transition-all"
+        >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold text-gray-900">{experiment?.title || 'Campaign Dashboard'}</h2>
-            <span className={`text-[11.5px] font-medium px-2.5 py-1 rounded-full capitalize ${statusColors[experiment?.status] || 'bg-gray-100 text-gray-500'}`}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-xl font-semibold tracking-tight text-slate-900 truncate">
+              {experiment?.title || 'Campaign Dashboard'}
+            </h2>
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border capitalize ${statusColors[experiment?.status] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
               {experiment?.status}
             </span>
           </div>
-          <p className="text-[13px] text-gray-400 mt-0.5">{experiment?.objective}</p>
+          <p className="text-[13px] text-slate-400 mt-0.5 truncate">{experiment?.objective}</p>
         </div>
-        <button onClick={() => load()} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 transition-all">
+        <button
+          onClick={() => load()}
+          className="p-2.5 rounded-xl border border-slate-200/80 bg-white/80 text-slate-400 hover:text-slate-700 shadow-sm backdrop-blur-sm transition-all"
+          title="Refresh"
+        >
           <RefreshCw className="w-4 h-4" />
         </button>
         <button
           onClick={() => setPolling((p) => !p)}
-          className={`px-3 py-2 rounded-xl border text-[12px] font-medium transition-all ${polling ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500'}`}
+          className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl border text-[12px] font-semibold transition-all backdrop-blur-sm ${
+            polling
+              ? 'border-cyan-200 bg-cyan-50/90 text-cyan-800 shadow-[0_0_0_1px_rgba(6,182,212,0.08)]'
+              : 'border-slate-200/80 bg-white/80 text-slate-500'
+          }`}
         >
-          {polling ? 'Live ●' : 'Live off'}
+          <span className={`h-1.5 w-1.5 rounded-full ${polling ? 'bg-cyan-500 animate-pulse' : 'bg-slate-300'}`} />
+          {polling ? 'Live' : 'Live off'}
         </button>
       </div>
 
       {/* Overall metrics */}
-      <div className="grid grid-cols-3 gap-3 mb-7">
-        <MetricCard label="Messages Sent"   value={overall?.totalMessages?.toLocaleString('en-IN') || 0}  color="blue"   sub={`${overall?.deliveryRate || 0}% delivered`} />
-        <MetricCard label="Read"            value={overall?.read?.toLocaleString('en-IN') || 0}            color="teal"   sub={`${overall?.readRate || 0}% read rate`} />
-        <MetricCard label="Unique Clicks"   value={overall?.uniqueClicks?.toLocaleString('en-IN') || 0}   color="amber"  sub={`${overall?.clickRate || 0}% click rate`} />
-        <MetricCard label="Conversions"     value={overall?.conversions?.toLocaleString('en-IN') || 0}    color="green"  sub={`${overall?.conversionRate || 0}% conversion rate`} />
-        <MetricCard label="Revenue"         value={overall?.revenue > 0 ? `₹${overall.revenue.toLocaleString('en-IN')}` : '₹0'}  color="violet" />
-        <MetricCard label="Experiment Stage" value={`Phase ${experiment?.phases?.findIndex((p) => p.status === 'running') + 1 || (experiment?.status === 'completed' ? 'Complete' : '—')}`} color="rose" />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
+        <MetricCard label="Messages Sent" value={overall?.totalMessages?.toLocaleString('en-IN') || 0} sub={`${overall?.deliveryRate || 0}% delivered`} />
+        <MetricCard label="Read" value={overall?.read?.toLocaleString('en-IN') || 0} sub={`${overall?.readRate || 0}% read rate`} />
+        <MetricCard label="Unique Clicks" value={overall?.uniqueClicks?.toLocaleString('en-IN') || 0} sub={`${overall?.clickRate || 0}% click rate`} />
+        <MetricCard label="Conversions" value={overall?.conversions?.toLocaleString('en-IN') || 0} sub={`${overall?.conversionRate || 0}% conversion rate`} />
+        <MetricCard label="Revenue" value={overall?.revenue > 0 ? `₹${overall.revenue.toLocaleString('en-IN')}` : '₹0'} />
+        <MetricCard label="Experiment Stage" value={stageLabel} />
       </div>
 
       {/* Variant performance table */}
       {sorted.length > 0 && (
-        <div className="mb-7">
-          <div className="flex items-center gap-2 mb-3">
-            <Table2 className="w-4 h-4 text-gray-400" />
-            <p className="text-[14px] font-semibold text-gray-900">Variant Rankings</p>
-            <span className="text-[12px] text-gray-400">(sorted by conversion + click rate)</span>
+        <div className="mb-8">
+          <div className="flex items-center gap-2.5 mb-3.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500">
+              <Table2 className="w-3.5 h-3.5" />
+            </div>
+            <p className="text-[14px] font-semibold tracking-tight text-slate-900">Variant Rankings</p>
+            <span className="text-[11.5px] text-slate-400 font-mono">by conversion + click rate</span>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  {['#', 'Variant', 'Stage', 'Sent', 'Delivery', 'Read', 'Click', 'Conv.', 'Revenue', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
+          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_0_rgba(15,23,42,0.03),0_16px_40px_-24px_rgba(15,23,42,0.18)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[720px]">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/80">
+                    {['#', 'Variant', 'Stage', 'Sent', 'Delivery', 'Read', 'Click', 'Conv.', 'Revenue', ''].map((h) => (
+                      <th key={h} className="px-4 py-3 text-[10.5px] font-semibold text-slate-400 uppercase tracking-[0.14em]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((v, i) => (
+                    <VariantRow key={v.variantNumber} v={v} rank={i + 1} onEdit={setEditVariant} />
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((v, i) => (
-                  <VariantRow key={v.variantNumber} v={v} rank={i + 1} onEdit={setEditVariant} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Variant Templates — WhatsApp message preview for each variant */}
-      {variants.length > 0 && (
-        <div className="mb-7">
-          <div className="flex items-center gap-2 mb-3">
-            <MessageSquare className="w-4 h-4 text-gray-400" />
-            <p className="text-[14px] font-semibold text-gray-900">Variant Templates</p>
-            <span className="text-[12px] text-gray-400">each variant is its own WhatsApp template</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {variants.map((v) => (
-              <VariantTemplateCard key={v.variantNumber} variant={v} onEdit={setEditVariant} />
-            ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {/* Phase breakdown */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Layers className="w-4 h-4 text-gray-400" />
-          <p className="text-[14px] font-semibold text-gray-900">Phase Execution</p>
-          <span className="text-[12px] text-gray-400">click once per phase to schedule all runs automatically</span>
+        <div className="flex items-center gap-2.5 mb-3.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500">
+            <Layers className="w-3.5 h-3.5" />
+          </div>
+          <p className="text-[14px] font-semibold tracking-tight text-slate-900">Phase Execution</p>
+          <span className="text-[11.5px] text-slate-400">schedule all runs per phase in one click</span>
         </div>
         <div className="space-y-4">
           {(experiment?.phases || []).map((phase, pi) => (
