@@ -153,17 +153,6 @@ mongoose.connect(process.env.MONGO_URI)
     await seedWpClients();
     await ensureDefaultBrain();
     startScheduler();
-    // Auto-register inbound webhook with CampaignBot (no dashboard paste)
-    setTimeout(async () => {
-      try {
-        const url = bot.getPublicWebhookUrl();
-        const result = await bot.registerWebhook(url);
-        console.log(`📡 CampaignBot webhook registered → ${url}`, result?.path || result?.ok);
-      } catch (err) {
-        console.warn(`⚠️ CampaignBot webhook auto-register: ${err.message}`);
-        console.warn(`   Ensure CAMPAIGNBOT_API_KEY is valid. Receiving URL: ${bot.getPublicWebhookUrl()}`);
-      }
-    }, 4000);
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 
@@ -181,5 +170,5 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 CampaignBot webhook: POST /api/webhooks/campaignbot`);
+  console.log(`📡 CampaignBot webhook receiver: POST ${bot.getPublicWebhookUrl()}`);
 });

@@ -162,6 +162,7 @@ export const getWebhookStatus = async (req, res) => {
       lastInboundAt: lastInbound?.createdAt || null,
       lastEvent: lastAny?.event || null,
       receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
+      note: 'CampaignBot has no webhook-register API. They POST incoming_message events to this URL when your account callback is set to it.',
       recent: recent.map((e) => ({
         id: e._id,
         event: e.event,
@@ -174,21 +175,6 @@ export const getWebhookStatus = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
-};
-
-/** POST /wp-marketing/chatbot/connect-webhook — register URL with CampaignBot API */
-export const connectWebhook = async (req, res) => {
-  try {
-    const webhookUrl = bot.getPublicWebhookUrl();
-    const result = await bot.registerWebhook(webhookUrl);
-    res.json({ success: true, webhookUrl, result });
-  } catch (err) {
-    res.status(502).json({
-      error: err.message,
-      webhookUrl: bot.getPublicWebhookUrl(),
-      hint: 'CampaignBot must accept our callback URL via API. Check CAMPAIGNBOT_API_KEY on the server.',
-    });
   }
 };
 
