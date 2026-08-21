@@ -282,6 +282,7 @@ router.get('/wp-marketing/chatbot/stats',                  requireWpPin, wpChatb
 router.get('/wp-marketing/chatbot/conversations',          requireWpPin, wpChatbot.listConversations);
 router.get('/wp-marketing/chatbot/conversations/:id',      requireWpPin, wpChatbot.getConversation);
 router.post('/wp-marketing/chatbot/conversations/:id/reply', requireWpPin, wpChatbot.replyConversation);
+router.post('/wp-marketing/chatbot/simulate',              requireWpPin, wpChatbot.simulateInbound);
 
 // ── CampaignBot Webhooks — public, HMAC-secured ───────────────────────────
 router.post('/webhooks/campaignbot',                       wpWebhook.handleWebhook);

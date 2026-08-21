@@ -7,6 +7,7 @@ import routes from './routes/routes.js';
 import { DeliveryPartner, User, Campaign } from './models/Model.js';
 import { WpClient } from './models/wpMarketingModels.js';
 import { startScheduler } from './services/wpScheduler.js';
+import { ensureDefaultBrain } from './services/wpChatbot.js';
 
 dotenv.config();
 
@@ -33,22 +34,34 @@ app.use((req, res, next) => {
   next();
 });
 
-// Capture raw body for HMAC webhook verification before JSON parsing
+// Capture raw body for HMAC webhook verification BEFORE JSON parsing.
+// Do not run express.json on webhook routes — it would overwrite req.body with {}.
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/webhooks/')) {
-    let raw = '';
-    req.on('data', (chunk) => { raw += chunk; });
-    req.on('end', () => {
-      req.rawBody = raw;
-      try { req.body = JSON.parse(raw || '{}'); } catch { req.body = {}; }
-      next();
-    });
-  } else {
+  if (!req.path.startsWith('/api/webhooks/')) return next();
+
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', () => {
+    const raw = Buffer.concat(chunks);
+    req.rawBody = raw.toString('utf8');
+    try {
+      req.body = JSON.parse(req.rawBody || '{}');
+    } catch {
+      req.body = {};
+    }
+    console.log(`[WP Webhook] received ${req.method} ${req.path} event=${req.body?.event || 'none'} bytes=${raw.length}`);
     next();
-  }
+  });
+  req.on('error', (err) => {
+    console.error('[WP Webhook] body read error:', err.message);
+    next(err);
+  });
 });
 
-app.use(express.json({ limit: '2mb' }));
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/webhooks/')) return next();
+  return express.json({ limit: '2mb' })(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 
 // ── Seed delivery partners ─────────────────────────────────────────────────
@@ -131,6 +144,7 @@ mongoose.connect(process.env.MONGO_URI)
     await ensureTestUserAddress();
     await seedCampaign1();
     await seedWpClients();
+    await ensureDefaultBrain();
     startScheduler();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));

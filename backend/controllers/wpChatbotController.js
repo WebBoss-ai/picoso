@@ -7,7 +7,7 @@ import {
   WpChatConversation,
   WpChatMessage,
 } from '../models/wpMarketingModels.js';
-import { getOrCreateBrain } from '../services/wpChatbot.js';
+import { getOrCreateBrain, handleInboundChat } from '../services/wpChatbot.js';
 import * as bot from '../services/campaignBot.js';
 
 function clientId(req) {
@@ -143,6 +143,22 @@ export const getConversation = async (req, res) => {
   }
 };
 
+/** POST /wp-marketing/chatbot/simulate — fire a fake inbound for testing */
+export const simulateInbound = async (req, res) => {
+  try {
+    const phone = String(req.body?.phone || '').trim();
+    const text = String(req.body?.text || 'hi').trim();
+    const name = String(req.body?.name || 'Test User').trim();
+    if (!phone) return res.status(400).json({ error: 'phone is required e.g. +918167080111' });
+
+    const result = await handleInboundChat({ from: phone, text, name });
+    res.json({ success: true, result });
+  } catch (err) {
+    console.error('[WP Chatbot] simulate failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 /** POST /wp-marketing/chatbot/conversations/:id/reply — manual agent reply */
 export const replyConversation = async (req, res) => {
   try {
@@ -155,7 +171,8 @@ export const replyConversation = async (req, res) => {
     });
     if (!convo) return res.status(404).json({ error: 'Conversation not found' });
 
-    const phone = convo.contactPhone.startsWith('+') ? convo.contactPhone : `+${convo.contactPhone}`;
+    const digits = String(convo.contactPhone).replace(/\D/g, '');
+    const phone = digits.length === 10 ? `+91${digits}` : (digits.startsWith('+') ? digits : `+${digits}`);
     let wamid = null;
     try {
       const result = await bot.sendText({

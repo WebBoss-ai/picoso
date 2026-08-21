@@ -323,6 +323,7 @@ export const wpMarketing = {
   getChatbotConversations: (params) => wpMarketingApi.get('/wp-marketing/chatbot/conversations', { params }),
   getChatbotConversation:  (id)     => wpMarketingApi.get(`/wp-marketing/chatbot/conversations/${id}`),
   replyChatbotConversation:(id, data) => wpMarketingApi.post(`/wp-marketing/chatbot/conversations/${id}/reply`, data),
+  simulateChatbotInbound:  (data)  => wpMarketingApi.post('/wp-marketing/chatbot/simulate', data),
 };
 
 export default api;

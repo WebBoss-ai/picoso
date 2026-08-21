@@ -501,6 +501,10 @@ export default function ChatbotSection() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [testPhone, setTestPhone] = useState('+91');
+  const [testText, setTestText] = useState('hi');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -542,6 +546,24 @@ export default function ChatbotSection() {
       setError(e?.response?.data?.error || 'Save failed');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runTest = async () => {
+    setTesting(true); setTestResult(null); setError('');
+    try {
+      const r = await wpMarketing.simulateChatbotInbound({
+        phone: testPhone.trim(),
+        text: testText.trim() || 'hi',
+        name: 'Test',
+      });
+      setTestResult(r.data.result);
+      await load();
+      setTab('inbox');
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Test send failed');
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -598,6 +620,48 @@ export default function ChatbotSection() {
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
         </div>
       )}
+
+      {/* Live test — sends a real WhatsApp reply via CampaignBot */}
+      <div className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="w-3.5 h-3.5 text-zinc-500" />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Live test</p>
+        </div>
+        <p className="text-[11.5px] text-zinc-400 mb-3">
+          Simulates an inbound WhatsApp message and sends a real reply to that number (uses LLM + brain).
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            className="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-[12.5px] font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            value={testPhone}
+            onChange={(e) => setTestPhone(e.target.value)}
+            placeholder="+918167080111"
+          />
+          <input
+            className="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-[12.5px] focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            value={testText}
+            onChange={(e) => setTestText(e.target.value)}
+            placeholder="hi"
+          />
+          <button
+            type="button"
+            onClick={runTest}
+            disabled={testing || !testPhone.trim()}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
+          >
+            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            {testing ? 'Sending…' : 'Test reply'}
+          </button>
+        </div>
+        {testResult && (
+          <div className="mt-3 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-[12px] text-zinc-700">
+            <p className="font-medium text-zinc-900">
+              {testResult.sendError ? `Send error: ${testResult.sendError}` : `Sent via ${testResult.matchedAction} → ${testResult.toPhone}`}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-zinc-600">{testResult.reply}</p>
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
         <StatPill label="Contacts" value={stats?.contactsContacted} />
