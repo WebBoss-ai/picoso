@@ -320,6 +320,7 @@ export const wpMarketing = {
   getChatbotBrain:   ()        => wpMarketingApi.get('/wp-marketing/chatbot/brain'),
   updateChatbotBrain:(data)    => wpMarketingApi.put('/wp-marketing/chatbot/brain', data),
   getChatbotStats:   ()        => wpMarketingApi.get('/wp-marketing/chatbot/stats'),
+  getChatbotWebhookStatus: ()  => wpMarketingApi.get('/wp-marketing/chatbot/webhook-status'),
   getChatbotConversations: (params) => wpMarketingApi.get('/wp-marketing/chatbot/conversations', { params }),
   getChatbotConversation:  (id)     => wpMarketingApi.get(`/wp-marketing/chatbot/conversations/${id}`),
   replyChatbotConversation:(id, data) => wpMarketingApi.post(`/wp-marketing/chatbot/conversations/${id}/reply`, data),

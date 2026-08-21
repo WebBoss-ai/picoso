@@ -11,6 +11,24 @@ import {
   WpChatMessage,
   WpClient,
 } from '../models/wpMarketingModels.js';
+import { emitChatbotEvent } from './wpChatbotBus.js';
+
+/** Strip emojis + em/en dashes from bot replies (WhatsApp-safe plain text). */
+export function sanitizeBotText(input = '') {
+  return String(input)
+    .replace(/[\u2014\u2013\u2015]/g, '-') // em dash, en dash, horizontal bar
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
+    .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
+    .replace(/[\uFE0F\u200D]/g, '')
+    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '')
+    .replace(/[🌿🔥✅❌🎉💬🤖⭐️⭐]/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
 
 function norm(s = '') {
   return String(s).toLowerCase().replace(/[^a-z0-9\u0900-\u097f\s]/gi, ' ').replace(/\s+/g, ' ').trim();
@@ -65,7 +83,7 @@ export async function getOrCreateBrain(clientId) {
       phone: '+91 81670 80111',
     },
     welcomeMessage:
-      'Hi! Welcome to *Picoso* 🌿\nHealthy meals, snacks & more — delivered fast.\n\nReply *menu* to see options, or just ask me anything!',
+      'Hi! Welcome to *Picoso*.\nHealthy meals, snacks and more - delivered fast.\n\nReply *menu* to see options, or just ask me anything!',
     fallbackMessage:
       "Hmm, I'm not sure about that. Reply *menu* for our dishes, *hours* for timings, or ask another way!",
   });
@@ -173,7 +191,7 @@ export function resolveFastReply(brain, inboundText) {
     }
   }
   if (bestAction && bestScore >= 70) {
-    return { text: buildActionResponse(brain, bestAction), matchedAction: bestAction.label };
+    return { text: sanitizeBotText(buildActionResponse(brain, bestAction)), matchedAction: bestAction.label };
   }
 
   let bestProduct = null;
@@ -190,7 +208,7 @@ export function resolveFastReply(brain, inboundText) {
     const price = bestProduct.price ? `\nPrice: ${bestProduct.price}` : '';
     const desc = bestProduct.description ? `\n${bestProduct.description}` : '';
     return {
-      text: `*${bestProduct.name}*${price}${desc}\n\nReply *menu* to see more.`,
+      text: sanitizeBotText(`*${bestProduct.name}*${price}${desc}\n\nReply *menu* to see more.`),
       matchedAction: `product:${bestProduct.name}`,
     };
   }
@@ -206,7 +224,7 @@ export function resolveFastReply(brain, inboundText) {
     }
   }
   if (bestFaq && faqScore >= 65) {
-    return { text: bestFaq.answer, matchedAction: `faq:${bestFaq.question.slice(0, 40)}` };
+    return { text: sanitizeBotText(bestFaq.answer), matchedAction: `faq:${bestFaq.question.slice(0, 40)}` };
   }
 
   return null;
@@ -253,8 +271,12 @@ async function llmReply(brain, inboundText, recentMessages = []) {
   })).filter((m) => m.content);
 
   const system = `You are the official WhatsApp chatbot for ${brain.business?.name || 'Picoso'}.
-Reply in short WhatsApp style (1–4 short lines). Use *bold* sparingly. No markdown tables.
+Reply in short WhatsApp style (1 to 4 short lines). Use *bold* sparingly. No markdown tables.
 Be ${brain.business?.tone || 'friendly and concise'}.
+STRICT RULES:
+- Never use emojis or emoticons.
+- Never use em dashes or en dashes. Use a plain hyphen (-) if needed.
+- Keep language simple and clear.
 If asked for menu and products exist in context, list them briefly.
 If you don't know something, say so briefly and offer menu / hours / website.
 Never invent prices that contradict the brain context.
@@ -269,8 +291,8 @@ ${buildBrainContext(brain)}`;
     { role: 'user', content: inboundText || 'hi' },
   ];
 
-  const result = await llm.chat({ messages, temperature: 0.4 });
-  const text = String(result?.text || '').trim();
+  const result = await llm.chat({ messages, temperature: 0.35 });
+  const text = sanitizeBotText(result?.text || '');
   if (!text) return null;
   return text.slice(0, 1500);
 }
@@ -359,6 +381,8 @@ export async function handleInboundChat({ from, text, name, messageId }) {
     };
   }
 
+  reply = { ...reply, text: sanitizeBotText(reply.text) };
+
   let wamid = null;
   let sendError = null;
   try {
@@ -398,6 +422,16 @@ export async function handleInboundChat({ from, text, name, messageId }) {
       $set: { 'stats.contactsContacted': contactCount, updatedAt: new Date() },
     },
   );
+
+  emitChatbotEvent({
+    type: 'outbound',
+    from: toPhone,
+    text: reply.text,
+    matchedAction: reply.matchedAction,
+    conversationId: String(convo._id),
+    sendError,
+    at: new Date().toISOString(),
+  });
 
   return {
     reply: reply.text,

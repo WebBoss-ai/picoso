@@ -449,3 +449,17 @@ wpChatConversationSchema.index({ clientId: 1, contactPhone: 1 }, { unique: true 
 export const WpChatbotBrain      = mongoose.models.WpChatbotBrain      || mongoose.model('WpChatbotBrain',      wpChatbotBrainSchema);
 export const WpChatConversation  = mongoose.models.WpChatConversation  || mongoose.model('WpChatConversation',  wpChatConversationSchema);
 export const WpChatMessage       = mongoose.models.WpChatMessage       || mongoose.model('WpChatMessage',       wpChatMessageSchema);
+
+/* ── WpWebhookEvent — debug log of every CampaignBot webhook hit ─────────── */
+const wpWebhookEventSchema = new mongoose.Schema({
+  event:       { type: String, default: '' },
+  from:        { type: String, default: '' },
+  text:        { type: String, default: '' },
+  ok:          { type: Boolean, default: true },
+  note:        { type: String, default: '' },
+  payloadPreview: { type: String, default: '' },
+  headers:     { type: mongoose.Schema.Types.Mixed, default: {} },
+  createdAt:   { type: Date, default: Date.now, index: true },
+});
+
+export const WpWebhookEvent = mongoose.models.WpWebhookEvent || mongoose.model('WpWebhookEvent', wpWebhookEventSchema);

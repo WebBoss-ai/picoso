@@ -6,8 +6,10 @@ import {
   WpChatbotBrain,
   WpChatConversation,
   WpChatMessage,
+  WpWebhookEvent,
 } from '../models/wpMarketingModels.js';
 import { getOrCreateBrain, handleInboundChat } from '../services/wpChatbot.js';
+import { chatbotBus } from '../services/wpChatbotBus.js';
 import * as bot from '../services/campaignBot.js';
 
 function clientId(req) {
@@ -141,6 +143,67 @@ export const getConversation = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+/** GET /wp-marketing/chatbot/webhook-status */
+export const getWebhookStatus = async (req, res) => {
+  try {
+    const [lastAny, lastInbound, recent] = await Promise.all([
+      WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.find().sort({ createdAt: -1 }).limit(15).lean(),
+    ]);
+    const publicBase = process.env.PUBLIC_API_URL
+      || process.env.NEXT_PUBLIC_API_URL
+      || 'https://picoso.in/api';
+    const webhookUrl = `${String(publicBase).replace(/\/$/, '')}/webhooks/campaignbot`;
+
+    res.json({
+      success: true,
+      webhookUrl,
+      lastWebhookAt: lastAny?.createdAt || null,
+      lastInboundAt: lastInbound?.createdAt || null,
+      lastEvent: lastAny?.event || null,
+      receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
+      recent: recent.map((e) => ({
+        id: e._id,
+        event: e.event,
+        from: e.from,
+        text: e.text,
+        ok: e.ok,
+        note: e.note,
+        at: e.createdAt,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/** GET /wp-marketing/chatbot/events — SSE live stream (pass ?pin=) */
+export const streamEvents = async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const send = (payload) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  send({ type: 'connected', at: new Date().toISOString() });
+
+  const onChat = (payload) => send(payload);
+  chatbotBus.on('chat', onChat);
+
+  const heartbeat = setInterval(() => {
+    res.write(`: ping ${Date.now()}\n\n`);
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    chatbotBus.off('chat', onChat);
+  });
 };
 
 /** POST /wp-marketing/chatbot/simulate — fire a fake inbound for testing */

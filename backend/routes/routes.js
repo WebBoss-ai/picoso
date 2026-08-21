@@ -279,12 +279,15 @@ router.put('/wp-marketing/scheduled-jobs/:jobId',          requireWpPin, wpExecu
 router.get('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatbot.getBrain);
 router.put('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatbot.updateBrain);
 router.get('/wp-marketing/chatbot/stats',                  requireWpPin, wpChatbot.getStats);
+router.get('/wp-marketing/chatbot/webhook-status',         requireWpPin, wpChatbot.getWebhookStatus);
+router.get('/wp-marketing/chatbot/events',                 requireWpPin, wpChatbot.streamEvents);
 router.get('/wp-marketing/chatbot/conversations',          requireWpPin, wpChatbot.listConversations);
 router.get('/wp-marketing/chatbot/conversations/:id',      requireWpPin, wpChatbot.getConversation);
 router.post('/wp-marketing/chatbot/conversations/:id/reply', requireWpPin, wpChatbot.replyConversation);
 router.post('/wp-marketing/chatbot/simulate',              requireWpPin, wpChatbot.simulateInbound);
 
 // ── CampaignBot Webhooks — public, HMAC-secured ───────────────────────────
+router.get('/webhooks/campaignbot',                        wpWebhook.webhookHealth);
 router.post('/webhooks/campaignbot',                       wpWebhook.handleWebhook);
 
 // ── Picoso Intelligence (/llm console) — self-contained module ───────────────

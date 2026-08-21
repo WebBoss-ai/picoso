@@ -301,7 +301,7 @@ function BrainPanel({ brain, onChange, onSave, saving, saved }) {
 }
 
 /* ── Inbox ────────────────────────────────────────────────────────────────── */
-function InboxPanel() {
+function InboxPanel({ liveTick }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -311,49 +311,58 @@ function InboxPanel() {
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState('');
+  const [live] = useState(true);
   const bottomRef = useRef(null);
+  const activeIdRef = useRef(null);
+  activeIdRef.current = activeId;
 
-  const loadList = useCallback(async () => {
+  const loadList = useCallback(async (silent = true) => {
     try {
       const r = await wpMarketing.getChatbotConversations({ q: q || undefined, limit: 50 });
       setList(r.data.conversations || []);
     } catch {
       /* ignore */
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      else setLoading(false);
     }
   }, [q]);
 
-  useEffect(() => {
-    setLoading(true);
-    const t = setTimeout(loadList, 200);
-    return () => clearTimeout(t);
-  }, [loadList]);
-
-  useEffect(() => {
-    const iv = setInterval(loadList, 8000);
-    return () => clearInterval(iv);
-  }, [loadList]);
-
-  const openConvo = async (id) => {
-    setActiveId(id);
+  const openConvo = useCallback(async (id, soft = false) => {
+    if (!id) return;
+    if (!soft) setActiveId(id);
     setErr('');
     try {
       const r = await wpMarketing.getChatbotConversation(id);
       setThread(r.data.conversation);
       setMessages(r.data.messages || []);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: soft ? 'auto' : 'smooth' }), 40);
     } catch (e) {
-      setErr(e?.response?.data?.error || 'Could not load chat');
+      if (!soft) setErr(e?.response?.data?.error || 'Could not load chat');
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (!activeId) return;
-    const iv = setInterval(() => openConvo(activeId), 6000);
+    setLoading(true);
+    const t = setTimeout(() => loadList(false), 120);
+    return () => clearTimeout(t);
+  }, [loadList]);
+
+  // Fast auto-refresh — no manual reload needed
+  useEffect(() => {
+    const iv = setInterval(() => {
+      loadList(true);
+      if (activeIdRef.current) openConvo(activeIdRef.current, true);
+    }, 2500);
     return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId]);
+  }, [loadList, openConvo]);
+
+  // Instant refresh when parent SSE/liveTick fires
+  useEffect(() => {
+    if (!liveTick) return;
+    loadList(true);
+    if (activeIdRef.current) openConvo(activeIdRef.current, true);
+  }, [liveTick, loadList, openConvo]);
 
   const sendReply = async () => {
     if (!reply.trim() || !activeId) return;
@@ -362,7 +371,7 @@ function InboxPanel() {
       await wpMarketing.replyChatbotConversation(activeId, { text: reply.trim() });
       setReply('');
       await openConvo(activeId);
-      await loadList();
+      await loadList(true);
     } catch (e) {
       setErr(e?.response?.data?.error || 'Send failed');
     } finally {
@@ -372,7 +381,6 @@ function InboxPanel() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 min-h-[560px]">
-      {/* Conversation list */}
       <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white flex flex-col overflow-hidden">
         <div className="p-3 border-b border-zinc-100 flex items-center gap-2">
           <div className="relative flex-1">
@@ -380,13 +388,14 @@ function InboxPanel() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search contacts…"
+              placeholder="Search contacts"
               className={`${inputCls} pl-8 py-1.5 text-[12px]`}
             />
           </div>
-          <button type="button" onClick={loadList} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-50">
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
+          <span className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md border ${live ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-zinc-200 text-zinc-400'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`} />
+            Live
+          </span>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loading ? (
@@ -395,7 +404,7 @@ function InboxPanel() {
             <div className="px-4 py-12 text-center">
               <MessageSquare className="w-6 h-6 text-zinc-300 mx-auto mb-2" />
               <p className="text-[12.5px] font-medium text-zinc-500">No chats yet</p>
-              <p className="text-[11px] text-zinc-400 mt-1">Inbound WhatsApp messages appear here</p>
+              <p className="text-[11px] text-zinc-400 mt-1">When CampaignBot delivers webhooks, chats appear here instantly</p>
             </div>
           ) : (
             list.map((c) => (
@@ -410,13 +419,12 @@ function InboxPanel() {
                     <p className="text-[12.5px] font-semibold text-zinc-900 truncate">
                       {c.contactName || c.contactPhone}
                     </p>
-                    {!c.contactName && <p className="text-[10.5px] font-mono text-zinc-400">{c.contactPhone}</p>}
-                    {c.contactName && <p className="text-[10.5px] font-mono text-zinc-400">{c.contactPhone}</p>}
+                    <p className="text-[10.5px] font-mono text-zinc-400">{c.contactPhone}</p>
                   </div>
                   <span className="text-[10px] text-zinc-400 shrink-0">{fmtTime(c.lastMessageAt)}</span>
                 </div>
                 <p className="mt-1 text-[11.5px] text-zinc-500 truncate">
-                  {c.lastDirection === 'outbound' ? 'Bot: ' : ''}{c.lastMessage || '—'}
+                  {c.lastDirection === 'outbound' ? 'Bot: ' : ''}{c.lastMessage || '-'}
                 </p>
               </button>
             ))
@@ -424,13 +432,12 @@ function InboxPanel() {
         </div>
       </div>
 
-      {/* Thread */}
       <div className="lg:col-span-3 rounded-2xl border border-zinc-200 bg-white flex flex-col overflow-hidden min-h-[420px]">
         {!activeId ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
             <Inbox className="w-7 h-7 text-zinc-300 mb-2" />
             <p className="text-[13px] font-medium text-zinc-500">Select a conversation</p>
-            <p className="text-[11.5px] text-zinc-400 mt-1">View bot replies and send a manual message</p>
+            <p className="text-[11.5px] text-zinc-400 mt-1">Inbox auto-updates every few seconds</p>
           </div>
         ) : (
           <>
@@ -450,7 +457,7 @@ function InboxPanel() {
                       : 'bg-white border border-zinc-200 text-zinc-800 rounded-bl-md'
                   }`}>
                     <p className="text-[12.5px] whitespace-pre-wrap leading-relaxed">{m.text}</p>
-                    <div className={`mt-1 flex items-center gap-2 text-[9.5px] ${m.direction === 'outbound' ? 'text-zinc-400' : 'text-zinc-400'}`}>
+                    <div className="mt-1 flex items-center gap-2 text-[9.5px] text-zinc-400">
                       <span>{fmtTime(m.createdAt)}</span>
                       {m.matchedAction && m.matchedAction !== 'manual' && (
                         <span className="opacity-80">· {m.matchedAction}</span>
@@ -472,7 +479,7 @@ function InboxPanel() {
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
-                placeholder="Manual reply…"
+                placeholder="Manual reply"
                 className={`${inputCls} flex-1`}
               />
               <button
@@ -505,16 +512,21 @@ export default function ChatbotSection() {
   const [testText, setTestText] = useState('hi');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [webhook, setWebhook] = useState(null);
+  const [liveTick, setLiveTick] = useState(0);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
     try {
-      const [b, s] = await Promise.all([
+      const [b, s, w] = await Promise.all([
         wpMarketing.getChatbotBrain(),
         wpMarketing.getChatbotStats(),
+        wpMarketing.getChatbotWebhookStatus().catch(() => ({ data: null })),
       ]);
       setBrain(b.data.brain);
       setStats(s.data.stats);
+      if (w?.data) setWebhook(w.data);
     } catch (e) {
       setError(e?.response?.data?.error || 'Could not load chatbot');
     } finally {
@@ -523,6 +535,46 @@ export default function ChatbotSection() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Live SSE + webhook status poll
+  useEffect(() => {
+    const pin = typeof window !== 'undefined' ? sessionStorage.getItem('picoso_wp_pin') : '';
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
+    let es;
+    if (pin) {
+      try {
+        es = new EventSource(`${apiBase}/wp-marketing/chatbot/events?pin=${encodeURIComponent(pin)}`);
+        es.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data?.type && data.type !== 'connected') {
+              setLiveTick((n) => n + 1);
+              setTab('inbox');
+              load();
+            }
+          } catch { /* ignore */ }
+        };
+      } catch { /* EventSource unavailable */ }
+    }
+    const iv = setInterval(() => {
+      wpMarketing.getChatbotWebhookStatus()
+        .then((r) => setWebhook(r.data))
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      es?.close();
+      clearInterval(iv);
+    };
+  }, [load]);
+
+  const copyWebhook = async () => {
+    if (!webhook?.webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhook.webhookUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  };
 
   const save = async () => {
     if (!brain) return;
@@ -621,6 +673,54 @@ export default function ChatbotSection() {
         </div>
       )}
 
+      {/* Webhook connectivity — critical for inbound */}
+      <div className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">CampaignBot webhook</p>
+            <p className="text-[12px] text-zinc-500 mt-0.5">
+              Incoming WhatsApp messages only arrive if this URL is set in CampaignBot.
+            </p>
+          </div>
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
+            webhook?.lastInboundAt
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-amber-200 bg-amber-50 text-amber-700'
+          }`}>
+            {webhook?.lastInboundAt ? 'Receiving' : 'Waiting for first inbound'}
+          </span>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <code className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
+            {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
+          </code>
+          <button
+            type="button"
+            onClick={copyWebhook}
+            className="rounded-xl border border-zinc-200 px-3 py-2 text-[12px] font-medium text-zinc-700 hover:bg-zinc-50"
+          >
+            {copied ? 'Copied' : 'Copy URL'}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
+          <p>Last webhook: <span className="font-mono text-zinc-800">{webhook?.lastWebhookAt ? fmtTime(webhook.lastWebhookAt) : 'never'}</span></p>
+          <p>Last inbound: <span className="font-mono text-zinc-800">{webhook?.lastInboundAt ? fmtTime(webhook.lastInboundAt) : 'never'}</span></p>
+          <p>Last event: <span className="font-mono text-zinc-800">{webhook?.lastEvent || '-'}</span></p>
+        </div>
+        {webhook?.recent?.length > 0 && (
+          <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-2.5 max-h-28 overflow-y-auto space-y-1">
+            {webhook.recent.slice(0, 6).map((e) => (
+              <p key={e.id} className="text-[10.5px] font-mono text-zinc-600 truncate">
+                {fmtTime(e.at)} · {e.event} · {e.from || '-'} · {e.text || e.note || ''}
+              </p>
+            ))}
+          </div>
+        )}
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
+          In CampaignBot dashboard, set Webhook URL to the address above. Then message the Picoso WhatsApp number from another phone - the hit should appear in &quot;Last inbound&quot; within seconds.
+        </p>
+      </div>
+
       {/* Live test — sends a real WhatsApp reply via CampaignBot */}
       <div className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="flex items-center gap-2 mb-2">
@@ -687,7 +787,7 @@ export default function ChatbotSection() {
       {tab === 'brain' && brain && (
         <BrainPanel brain={brain} onChange={setBrain} onSave={save} saving={saving} saved={saved} />
       )}
-      {tab === 'inbox' && <InboxPanel />}
+      {tab === 'inbox' && <InboxPanel liveTick={liveTick} />}
     </div>
   );
 }

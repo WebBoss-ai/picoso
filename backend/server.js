@@ -8,6 +8,7 @@ import { DeliveryPartner, User, Campaign } from './models/Model.js';
 import { WpClient } from './models/wpMarketingModels.js';
 import { startScheduler } from './services/wpScheduler.js';
 import { ensureDefaultBrain } from './services/wpChatbot.js';
+import * as wpWebhook from './controllers/wpWebhookController.js';
 
 dotenv.config();
 
@@ -20,24 +21,29 @@ app.use(cors());
    and /api/webhooks routes) the presence/absence of auth headers so issues
    with missing PINs are immediately visible in server output.
 ─────────────────────────────────────────────────────────────────────────── */
+function isWebhookPath(req) {
+  const u = `${req.originalUrl || ''} ${req.url || ''} ${req.path || ''}`.toLowerCase();
+  return u.includes('/webhooks/');
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const ms   = Date.now() - start;
-    const isWp = req.path.startsWith('/api/wp-marketing') || req.path.startsWith('/api/webhooks');
+    const isWp = isWebhookPath(req) || (req.path || '').startsWith('/api/wp-marketing');
     const pin  = req.headers['x-wp-pin'] ? '[pin:set]' : '[pin:MISSING]';
     const auth = req.headers.authorization ? '[auth:set]' : '';
     const tag  = isWp ? ` ${pin}${auth}` : '';
     const color = res.statusCode >= 500 ? '\x1b[31m' : res.statusCode >= 400 ? '\x1b[33m' : '\x1b[32m';
-    console.log(`${color}${req.method} ${req.path} → ${res.statusCode}\x1b[0m  ${ms}ms${tag}`);
+    console.log(`${color}${req.method} ${req.originalUrl || req.path} → ${res.statusCode}\x1b[0m  ${ms}ms${tag}`);
   });
   next();
 });
 
 // Capture raw body for HMAC webhook verification BEFORE JSON parsing.
-// Do not run express.json on webhook routes — it would overwrite req.body with {}.
 app.use((req, res, next) => {
-  if (!req.path.startsWith('/api/webhooks/')) return next();
+  if (!isWebhookPath(req)) return next();
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
 
   const chunks = [];
   req.on('data', (chunk) => chunks.push(chunk));
@@ -49,7 +55,7 @@ app.use((req, res, next) => {
     } catch {
       req.body = {};
     }
-    console.log(`[WP Webhook] received ${req.method} ${req.path} event=${req.body?.event || 'none'} bytes=${raw.length}`);
+    console.log(`[WP Webhook] raw ${req.method} ${req.originalUrl || req.path} event=${req.body?.event || 'none'} bytes=${raw.length}`);
     next();
   });
   req.on('error', (err) => {
@@ -59,7 +65,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/webhooks/')) return next();
+  if (isWebhookPath(req)) return next();
   return express.json({ limit: '2mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));
@@ -151,6 +157,11 @@ mongoose.connect(process.env.MONGO_URI)
 
 app.use('/api', routes);
 
+// Alias without /api prefix (some reverse proxies strip /api)
+app.get('/webhooks/campaignbot', wpWebhook.webhookHealth);
+app.post('/webhooks/campaignbot', wpWebhook.handleWebhook);
+app.get('/api/webhooks/campaignbot', wpWebhook.webhookHealth);
+
 app.get('/', (req, res) => {
   res.json({ message: 'Trezla Bowl Shop API Running' });
 });
@@ -158,4 +169,5 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 CampaignBot webhook: POST /api/webhooks/campaignbot`);
 });
