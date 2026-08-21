@@ -153,10 +153,7 @@ export const getWebhookStatus = async (req, res) => {
       WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.find().sort({ createdAt: -1 }).limit(15).lean(),
     ]);
-    const publicBase = process.env.PUBLIC_API_URL
-      || process.env.NEXT_PUBLIC_API_URL
-      || 'https://picoso.in/api';
-    const webhookUrl = `${String(publicBase).replace(/\/$/, '')}/webhooks/campaignbot`;
+    const webhookUrl = bot.getPublicWebhookUrl();
 
     res.json({
       success: true,
@@ -177,6 +174,21 @@ export const getWebhookStatus = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+/** POST /wp-marketing/chatbot/connect-webhook — register URL with CampaignBot API */
+export const connectWebhook = async (req, res) => {
+  try {
+    const webhookUrl = bot.getPublicWebhookUrl();
+    const result = await bot.registerWebhook(webhookUrl);
+    res.json({ success: true, webhookUrl, result });
+  } catch (err) {
+    res.status(502).json({
+      error: err.message,
+      webhookUrl: bot.getPublicWebhookUrl(),
+      hint: 'CampaignBot must accept our callback URL via API. Check CAMPAIGNBOT_API_KEY on the server.',
+    });
   }
 };
 

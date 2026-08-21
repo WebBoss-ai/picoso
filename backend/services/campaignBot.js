@@ -162,3 +162,63 @@ export async function testConnection() {
     return { connected: false, error: err.message };
   }
 }
+
+/**
+ * Register / update our inbound webhook URL with CampaignBot.
+ * Docs describe CampaignBot POSTing events to "your webhook endpoint URL".
+ * We register that URL via API so it does not need a manual dashboard paste.
+ */
+export async function registerWebhook(webhookUrl, secret) {
+  const url = String(webhookUrl || '').trim();
+  if (!url) throw new Error('webhookUrl is required');
+
+  const secretKey = secret
+    || process.env.CAMPAIGNBOT_WEBHOOK_SECRET
+    || process.env.CAMPAIGNBOT_API_KEY
+    || API_KEY;
+
+  const body = {
+    webhookUrl: url,
+    url,
+    callbackUrl: url,
+    endpoint: url,
+    secret: secretKey,
+    events: ['incoming_message', 'message_status'],
+  };
+
+  const paths = [
+    '/v1/whatsapp/webhook',
+    '/v1/whatsapp/webhooks',
+    '/v1/webhook',
+    '/v1/webhooks',
+    '/v1/business/webhook',
+    '/v1/settings/webhook',
+  ];
+
+  const attempts = [];
+  for (const path of paths) {
+    for (const method of ['POST', 'PUT']) {
+      try {
+        const data = method === 'POST'
+          ? await client.post(path, body)
+          : await client.put(path, body);
+        console.log(`[CampaignBot] webhook register OK ${method} ${path}`);
+        return { ok: true, method, path, data };
+      } catch (err) {
+        attempts.push({ method, path, error: err.message });
+      }
+    }
+  }
+
+  const summary = attempts.map((a) => `${a.method} ${a.path}: ${a.error}`).join(' | ');
+  throw new Error(`CampaignBot webhook register failed — ${summary}`);
+}
+
+export function getPublicWebhookUrl() {
+  const base = (process.env.PUBLIC_API_URL
+    || process.env.NEXT_PUBLIC_API_URL
+    || process.env.API_PUBLIC_URL
+    || 'https://picoso.in/api').replace(/\/$/, '');
+  // Prefer /api/webhooks/... when PUBLIC_API_URL already ends with /api
+  return `${base}/webhooks/campaignbot`;
+}

@@ -9,6 +9,7 @@ import { WpClient } from './models/wpMarketingModels.js';
 import { startScheduler } from './services/wpScheduler.js';
 import { ensureDefaultBrain } from './services/wpChatbot.js';
 import * as wpWebhook from './controllers/wpWebhookController.js';
+import * as bot from './services/campaignBot.js';
 
 dotenv.config();
 
@@ -152,6 +153,17 @@ mongoose.connect(process.env.MONGO_URI)
     await seedWpClients();
     await ensureDefaultBrain();
     startScheduler();
+    // Auto-register inbound webhook with CampaignBot (no dashboard paste)
+    setTimeout(async () => {
+      try {
+        const url = bot.getPublicWebhookUrl();
+        const result = await bot.registerWebhook(url);
+        console.log(`📡 CampaignBot webhook registered → ${url}`, result?.path || result?.ok);
+      } catch (err) {
+        console.warn(`⚠️ CampaignBot webhook auto-register: ${err.message}`);
+        console.warn(`   Ensure CAMPAIGNBOT_API_KEY is valid. Receiving URL: ${bot.getPublicWebhookUrl()}`);
+      }
+    }, 4000);
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 

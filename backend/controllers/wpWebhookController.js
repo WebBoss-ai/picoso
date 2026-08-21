@@ -197,8 +197,20 @@ async function handleIncomingMessage(inbound) {
   }
 }
 
-/** GET — health / verify URL is reachable */
+/** GET — health / verify URL is reachable (+ Meta hub.challenge support) */
 export const webhookHealth = async (req, res) => {
+  // Meta / BSP verification handshake (if forwarded)
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const expected = process.env.CAMPAIGNBOT_WEBHOOK_SECRET
+    || process.env.CAMPAIGNBOT_API_KEY
+    || process.env.META_VERIFY_TOKEN
+    || '';
+  if (mode === 'subscribe' && challenge && (!expected || token === expected)) {
+    return res.status(200).send(String(challenge));
+  }
+
   const last = await WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean();
   const lastInbound = await WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean();
   res.json({
@@ -208,7 +220,6 @@ export const webhookHealth = async (req, res) => {
     lastWebhookAt: last?.createdAt || null,
     lastInboundAt: lastInbound?.createdAt || null,
     lastEvent: last?.event || null,
-    hint: 'Set this URL in CampaignBot dashboard → Webhooks',
   });
 };
 

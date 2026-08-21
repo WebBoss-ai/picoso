@@ -514,7 +514,6 @@ export default function ChatbotSection() {
   const [testResult, setTestResult] = useState(null);
   const [webhook, setWebhook] = useState(null);
   const [liveTick, setLiveTick] = useState(0);
-  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -566,15 +565,6 @@ export default function ChatbotSection() {
       clearInterval(iv);
     };
   }, [load]);
-
-  const copyWebhook = async () => {
-    if (!webhook?.webhookUrl) return;
-    try {
-      await navigator.clipboard.writeText(webhook.webhookUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* ignore */ }
-  };
 
   const save = async () => {
     if (!brain) return;
@@ -673,35 +663,44 @@ export default function ChatbotSection() {
         </div>
       )}
 
-      {/* Webhook connectivity — critical for inbound */}
+      {/* Webhook connectivity — auto-registered with CampaignBot API */}
       <div className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">CampaignBot webhook</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Inbound webhook</p>
             <p className="text-[12px] text-zinc-500 mt-0.5">
-              Incoming WhatsApp messages only arrive if this URL is set in CampaignBot.
+              CampaignBot posts incoming WhatsApp messages to our live endpoint. No dashboard paste needed.
             </p>
           </div>
-          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
-            webhook?.lastInboundAt
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-amber-200 bg-amber-50 text-amber-700'
-          }`}>
-            {webhook?.lastInboundAt ? 'Receiving' : 'Waiting for first inbound'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
+              webhook?.lastInboundAt
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-amber-200 bg-amber-50 text-amber-700'
+            }`}>
+              {webhook?.lastInboundAt ? 'Receiving' : 'Waiting for inbound'}
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                setError('');
+                try {
+                  await wpMarketing.connectChatbotWebhook();
+                  const w = await wpMarketing.getChatbotWebhookStatus();
+                  setWebhook(w.data);
+                } catch (e) {
+                  setError(e?.response?.data?.error || 'Could not connect webhook via CampaignBot API');
+                }
+              }}
+              className="rounded-xl bg-zinc-900 px-3 py-1.5 text-[11.5px] font-semibold text-white hover:bg-zinc-800"
+            >
+              Connect now
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <code className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
-            {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
-          </code>
-          <button
-            type="button"
-            onClick={copyWebhook}
-            className="rounded-xl border border-zinc-200 px-3 py-2 text-[12px] font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            {copied ? 'Copied' : 'Copy URL'}
-          </button>
-        </div>
+        <code className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
+          {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
+        </code>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
           <p>Last webhook: <span className="font-mono text-zinc-800">{webhook?.lastWebhookAt ? fmtTime(webhook.lastWebhookAt) : 'never'}</span></p>
           <p>Last inbound: <span className="font-mono text-zinc-800">{webhook?.lastInboundAt ? fmtTime(webhook.lastInboundAt) : 'never'}</span></p>
@@ -716,9 +715,6 @@ export default function ChatbotSection() {
             ))}
           </div>
         )}
-        <p className="text-[11px] text-zinc-400 leading-relaxed">
-          In CampaignBot dashboard, set Webhook URL to the address above. Then message the Picoso WhatsApp number from another phone - the hit should appear in &quot;Last inbound&quot; within seconds.
-        </p>
       </div>
 
       {/* Live test — sends a real WhatsApp reply via CampaignBot */}
