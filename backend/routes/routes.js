@@ -14,6 +14,7 @@ import platformRouter from '../llm/routes/platform.js';
 import * as wpMarketing  from '../controllers/wpMarketingController.js';
 import * as wpExecution  from '../controllers/wpExecutionController.js';
 import * as wpWebhook    from '../controllers/wpWebhookController.js';
+import * as wpChatbot    from '../controllers/wpChatbotController.js';
 import { requireWpPin } from '../middleware/wpMarketingAuth.js';
 
 const router = express.Router();
@@ -273,6 +274,14 @@ router.post('/wp-marketing/experiments/:id/publish-templates', requireWpPin, wpE
 // ── WP Marketing — Scheduled job management ───────────────────────────────
 router.delete('/wp-marketing/scheduled-jobs/:jobId',       requireWpPin, wpExecution.cancelJob);
 router.put('/wp-marketing/scheduled-jobs/:jobId',          requireWpPin, wpExecution.updateJobTime);
+
+// ── WP Marketing — Chatbot ────────────────────────────────────────────────
+router.get('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatbot.getBrain);
+router.put('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatbot.updateBrain);
+router.get('/wp-marketing/chatbot/stats',                  requireWpPin, wpChatbot.getStats);
+router.get('/wp-marketing/chatbot/conversations',          requireWpPin, wpChatbot.listConversations);
+router.get('/wp-marketing/chatbot/conversations/:id',      requireWpPin, wpChatbot.getConversation);
+router.post('/wp-marketing/chatbot/conversations/:id/reply', requireWpPin, wpChatbot.replyConversation);
 
 // ── CampaignBot Webhooks — public, HMAC-secured ───────────────────────────
 router.post('/webhooks/campaignbot',                       wpWebhook.handleWebhook);

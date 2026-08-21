@@ -346,3 +346,106 @@ export const WpTrackingLink   = mongoose.models.WpTrackingLink   || mongoose.mod
 export const WpCampaignRun    = mongoose.models.WpCampaignRun    || mongoose.model('WpCampaignRun',    wpCampaignRunSchema);
 export const WpMessageLog     = mongoose.models.WpMessageLog     || mongoose.model('WpMessageLog',     wpMessageLogSchema);
 export const WpScheduledJob   = mongoose.models.WpScheduledJob   || mongoose.model('WpScheduledJob',   wpScheduledJobSchema);
+
+/* ── WpChatbotBrain ────────────────────────────────────────────────────────
+   Per-client chatbot knowledge base: business facts, menu/products, FAQs,
+   quick actions (Show Menu, Hours, etc.), and reply behaviour.
+────────────────────────────────────────────────────────────────────────── */
+const wpChatbotFaqSchema = new mongoose.Schema({
+  question: { type: String, required: true },
+  answer:   { type: String, required: true },
+  keywords: [{ type: String }],
+}, { _id: true });
+
+const wpChatbotProductSchema = new mongoose.Schema({
+  name:        { type: String, required: true },
+  description: { type: String, default: '' },
+  price:       { type: String, default: '' },
+  category:    { type: String, default: '' },
+  tags:        [{ type: String }],
+}, { _id: true });
+
+const wpChatbotActionSchema = new mongoose.Schema({
+  label:    { type: String, required: true },   // e.g. "Show Menu"
+  triggers: [{ type: String }],                 // keywords: menu, show menu
+  type: {
+    type: String,
+    enum: ['menu', 'hours', 'location', 'contact', 'custom', 'faq_list'],
+    default: 'custom',
+  },
+  response: { type: String, default: '' },      // used when type === custom
+  enabled:  { type: Boolean, default: true },
+}, { _id: true });
+
+const wpChatbotBrainSchema = new mongoose.Schema({
+  clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient', required: true, unique: true },
+  enabled:  { type: Boolean, default: true },
+  business: {
+    name:        { type: String, default: '' },
+    about:       { type: String, default: '' },
+    tone:        { type: String, default: 'friendly, concise, helpful' },
+    hours:       { type: String, default: '' },
+    location:    { type: String, default: '' },
+    phone:       { type: String, default: '' },
+    website:     { type: String, default: '' },
+    extraNotes:  { type: String, default: '' },
+  },
+  welcomeMessage: {
+    type: String,
+    default: 'Hi! Thanks for messaging us. Reply *menu* to see options, or ask anything.',
+  },
+  fallbackMessage: {
+    type: String,
+    default: "I'm not sure about that yet. Reply *menu* for options, or ask another way.",
+  },
+  products: [wpChatbotProductSchema],
+  faqs:     [wpChatbotFaqSchema],
+  actions:  {
+    type: [wpChatbotActionSchema],
+    default: () => ([
+      { label: 'Show Menu', triggers: ['menu', 'show menu', 'catalogue', 'catalog'], type: 'menu', enabled: true },
+      { label: 'Hours',     triggers: ['hours', 'timing', 'open', 'close'], type: 'hours', enabled: true },
+      { label: 'Location',  triggers: ['location', 'address', 'where'], type: 'location', enabled: true },
+      { label: 'Contact',   triggers: ['contact', 'call', 'phone', 'support'], type: 'contact', enabled: true },
+    ]),
+  },
+  stats: {
+    messagesSent:     { type: Number, default: 0 },
+    messagesReceived: { type: Number, default: 0 },
+    contactsContacted:{ type: Number, default: 0 },
+  },
+  updatedAt: { type: Date, default: Date.now },
+  createdAt: { type: Date, default: Date.now },
+});
+
+/* ── WpChatConversation / WpChatMessage ────────────────────────────────────
+   Inbox of chatbot chats. One conversation per phone per client.
+────────────────────────────────────────────────────────────────────────── */
+const wpChatMessageSchema = new mongoose.Schema({
+  clientId:       { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient', required: true, index: true },
+  conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'WpChatConversation', required: true, index: true },
+  direction:      { type: String, enum: ['inbound', 'outbound'], required: true },
+  text:           { type: String, default: '' },
+  matchedAction:  { type: String, default: '' },
+  wamid:          { type: String, default: null },
+  createdAt:      { type: Date, default: Date.now },
+});
+
+const wpChatConversationSchema = new mongoose.Schema({
+  clientId:      { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient', required: true, index: true },
+  contactPhone:  { type: String, required: true, index: true },
+  contactName:   { type: String, default: '' },
+  lastMessage:   { type: String, default: '' },
+  lastDirection: { type: String, enum: ['inbound', 'outbound'], default: null },
+  lastMessageAt: { type: Date, default: Date.now },
+  messageCount:  { type: Number, default: 0 },
+  botReplies:    { type: Number, default: 0 },
+  status:        { type: String, enum: ['open', 'closed'], default: 'open' },
+  createdAt:     { type: Date, default: Date.now },
+});
+
+wpChatConversationSchema.index({ clientId: 1, contactPhone: 1 }, { unique: true });
+
+export const WpChatbotBrain      = mongoose.models.WpChatbotBrain      || mongoose.model('WpChatbotBrain',      wpChatbotBrainSchema);
+export const WpChatConversation  = mongoose.models.WpChatConversation  || mongoose.model('WpChatConversation',  wpChatConversationSchema);
+export const WpChatMessage       = mongoose.models.WpChatMessage       || mongoose.model('WpChatMessage',       wpChatMessageSchema);

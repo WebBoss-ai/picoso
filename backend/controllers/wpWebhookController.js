@@ -11,6 +11,7 @@
 
 import crypto from 'crypto';
 import { WpMessageLog, WpExperiment } from '../models/wpMarketingModels.js';
+import { handleInboundChat } from '../services/wpChatbot.js';
 
 const WEBHOOK_SECRET = process.env.CAMPAIGNBOT_WEBHOOK_SECRET
   || process.env.CAMPAIGNBOT_API_KEY
@@ -91,12 +92,22 @@ async function handleMessageStatus(data) {
 /* ── Incoming message (reply) ────────────────────────────────────────────── */
 
 async function handleIncomingMessage(processed) {
-  const { from, text } = processed;
+  const { from, text, name, profile_name, pushName } = processed;
   if (!from) return;
 
   const phone = from.replace(/\D/g, '');
+  const contactName = name || profile_name || pushName || '';
 
-  // Find the most recent outbound log for this contact
+  // Always try chatbot auto-reply first (independent of campaign logs)
+  try {
+    await handleInboundChat({ from, text, name: contactName });
+  } catch (err) {
+    console.error('[WP Webhook] chatbot error:', err.message);
+  }
+
+  // Campaign engagement: mark latest outbound log as replied
+  if (!phone) return;
+
   const log = await WpMessageLog.findOne({
     contactPhone: { $regex: phone },
     status: { $in: ['sent', 'delivered', 'read'] },

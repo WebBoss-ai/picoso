@@ -19,9 +19,10 @@ import {
   AlignLeft, ExternalLink, Paperclip, MessageSquarePlus,
   ToggleLeft, ToggleRight, ClipboardList, SquareStack,
   // Scheduling & calendar
-  CalendarDays, BellRing, Pencil, Ban, Italic, HelpCircle,
+  CalendarDays, BellRing, Pencil, Ban, Italic, HelpCircle, Bot,
 } from 'lucide-react';
 import { wpMarketing } from '@/lib/api';
+import ChatbotSection from './ChatbotSection';
 
 const WP_PIN_KEY    = 'picoso_wp_pin';
 const WP_CLIENT_KEY = 'picoso_wp_client';
@@ -153,6 +154,7 @@ const NAV = [
   { id: 'contacts',   label: 'Contacts',   icon: Users },
   { id: 'templates',  label: 'Templates',  icon: FileText },
   { id: 'whatsapp',   label: 'WhatsApp',   icon: MessageCircle },
+  { id: 'chatbot',    label: 'Chatbot',    icon: Bot },
   { id: 'analytics',  label: 'Analytics',  icon: BarChart3 },
   { id: 'settings',   label: 'Settings',   icon: Settings },
 ];
@@ -4723,6 +4725,8 @@ function Dashboard({ client, onLogout, onClientUpdate }) {
         return <TemplatesSection />;
       case 'whatsapp':
         return <WhatsAppSection />;
+      case 'chatbot':
+        return <ChatbotSection />;
       case 'analytics':
         return (
           <PlaceholderSection

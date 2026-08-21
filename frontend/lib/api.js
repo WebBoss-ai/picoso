@@ -316,6 +316,13 @@ export const wpMarketing = {
   submitCbPhone:     (phone)   => wpMarketingApi.post('/wp-marketing/cb-auth/phone', { phone }),
   submitCbOtp:       (otp)     => wpMarketingApi.post('/wp-marketing/cb-auth/otp', { otp }),
   publishTemplates:  (expId, data) => wpMarketingApi.post(`/wp-marketing/experiments/${expId}/publish-templates`, data || {}),
+  // Chatbot
+  getChatbotBrain:   ()        => wpMarketingApi.get('/wp-marketing/chatbot/brain'),
+  updateChatbotBrain:(data)    => wpMarketingApi.put('/wp-marketing/chatbot/brain', data),
+  getChatbotStats:   ()        => wpMarketingApi.get('/wp-marketing/chatbot/stats'),
+  getChatbotConversations: (params) => wpMarketingApi.get('/wp-marketing/chatbot/conversations', { params }),
+  getChatbotConversation:  (id)     => wpMarketingApi.get(`/wp-marketing/chatbot/conversations/${id}`),
+  replyChatbotConversation:(id, data) => wpMarketingApi.post(`/wp-marketing/chatbot/conversations/${id}/reply`, data),
 };
 
 export default api;
