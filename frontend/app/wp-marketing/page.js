@@ -1250,37 +1250,151 @@ function ExperimentPlanView({ experiment, onApprove, approving, approved, onRelo
       </div>
 
       {/* ── Experiment Progression ─────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-zinc-200 p-5">
-        <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-[0.14em] mb-4">Progression</p>
-        <div className="flex items-stretch gap-2">
+      <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-6">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-50"
+          style={{
+            backgroundImage:
+              'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(24,24,27,0.04), transparent),' +
+              'linear-gradient(rgba(24,24,27,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(24,24,27,0.03) 1px, transparent 1px)',
+            backgroundSize: 'auto, 24px 24px, 24px 24px',
+          }}
+        />
+
+        <div className="relative flex items-center justify-between gap-3 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50">
+              <Layers className="w-4 h-4 text-zinc-500" />
+            </div>
+            <div>
+              <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-[0.14em]">Progression</p>
+              <p className="text-[12.5px] text-zinc-500 mt-0.5">Funnel from full test set to winner</p>
+            </div>
+          </div>
+          <p className="hidden sm:block font-mono text-[11px] tabular-nums text-zinc-400">
+            {phases.map((p) => p.variantCount).join(' → ')}
+          </p>
+        </div>
+
+        {/* Connectivity illustration */}
+        <div className="relative mb-5 hidden md:block rounded-xl border border-zinc-100 bg-zinc-50/60 px-6 py-4">
+          <svg viewBox="0 0 640 56" className="w-full h-14" fill="none" aria-hidden>
+            <path
+              d="M48 28 H176 M208 28 H336 M368 28 H496 M528 28 H592"
+              stroke="#d4d4d8"
+              strokeWidth="1.5"
+              strokeDasharray="4 4"
+            />
+            {[
+              { x: 48,  n: phases[0]?.variantCount ?? 10 },
+              { x: 208, n: phases[1]?.variantCount ?? 5 },
+              { x: 368, n: phases[2]?.variantCount ?? 3 },
+              { x: 528, n: phases[3]?.variantCount ?? 1 },
+            ].map((node, i) => (
+              <g key={i}>
+                {i < 3 && (
+                  <polygon
+                    points={`${node.x + 88},24 ${node.x + 96},28 ${node.x + 88},32`}
+                    fill="#a1a1aa"
+                  />
+                )}
+                <circle cx={node.x} cy="28" r="16" fill="white" stroke="#d4d4d8" strokeWidth="1.5" />
+                <text
+                  x={node.x}
+                  y="32"
+                  textAnchor="middle"
+                  style={{ fontSize: '11px', fontFamily: 'ui-monospace, monospace', fontWeight: 600, fill: '#27272a' }}
+                >
+                  {node.n}
+                </text>
+              </g>
+            ))}
+          </svg>
+          <div className="mt-1 grid grid-cols-4 text-center">
+            {phases.map((ph, i) => (
+              <p key={ph.phaseNumber} className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-zinc-400">
+                {i === phases.length - 1 ? 'Winner' : `Phase ${ph.phaseNumber}`}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {phases.map((ph, i) => {
             const scheduleDates = ph.scheduledDates || [];
             const isFinal = i === phases.length - 1;
+            const title = (ph.label || '')
+              .replace(/^Phase\s*\d+:\s*/i, '')
+              .replace(/^Final:\s*/i, '') || ph.label;
+
             return (
-              <div key={ph.phaseNumber} className="flex items-stretch gap-2 flex-1">
-                <div className={`flex-1 rounded-xl border ${isFinal ? 'border-blue-700 bg-blue-700' : 'border-blue-100 bg-blue-50/70'} p-3.5`}>
-                  <span className={`text-[10.5px] font-medium uppercase tracking-wider ${isFinal ? 'text-blue-200' : 'text-blue-500'}`}>{ph.label}</span>
-                  <p className={`text-[13px] font-semibold mt-1 ${isFinal ? 'text-white' : 'text-slate-900'}`}>
-                    {ph.variantCount} template{ph.variantCount > 1 ? 's' : ''}
-                  </p>
-                  <p className={`text-[12px] mt-0.5 ${isFinal ? 'text-blue-100' : 'text-slate-500'}`}>{ph.contactsPerVariant} contacts each</p>
+              <div key={ph.phaseNumber} className="relative flex flex-col">
+                <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_1px_0_rgba(24,24,27,0.03)]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-zinc-400">
+                        {isFinal ? 'Final' : `Phase ${ph.phaseNumber}`}
+                      </p>
+                      <p className="mt-1 text-[14px] font-semibold tracking-tight text-zinc-900 leading-snug">
+                        {title}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[11px] font-semibold tabular-nums text-zinc-700">
+                      {ph.variantCount}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                      <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>{ph.variantCount} template{ph.variantCount !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                      <Users className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>{ph.contactsPerVariant} contact{ph.contactsPerVariant !== 1 ? 's' : ''} each</span>
+                    </div>
+                  </div>
+
                   {scheduleDates.length > 0 && (
-                    <p className={`text-[11px] mt-2 ${isFinal ? 'text-blue-200/80' : 'text-slate-400'}`}>
-                      {scheduleDates.map(fmtDate).join(' · ')}
-                    </p>
+                    <div className="mt-3.5 flex flex-wrap gap-1.5">
+                      {scheduleDates.map((d, di) => (
+                        <span
+                          key={di}
+                          className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 font-mono text-[10.5px] tabular-nums text-zinc-600"
+                        >
+                          {fmtDate(d)}
+                        </span>
+                      ))}
+                    </div>
                   )}
-                  {isFinal && <p className="text-[11px] font-medium text-blue-100 mt-1 flex items-center gap-1"><Trophy className="w-3 h-3" /> Winner to remaining audience</p>}
+
+                  {isFinal && (
+                    <div className="mt-auto pt-3">
+                      <div className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5">
+                        <Trophy className="w-3 h-3 text-zinc-500 shrink-0" />
+                        <p className="text-[11px] font-medium text-zinc-600 leading-snug">Winner to remaining audience</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
                 {i < phases.length - 1 && (
-                  <div className="flex items-center justify-center w-6 flex-shrink-0">
-                    <ChevronRight className="w-4 h-4 text-zinc-300" />
+                  <div className="flex sm:hidden flex-col items-center py-1.5">
+                    <div className="h-3 w-px bg-zinc-200" />
+                    <ChevronRight className="w-3.5 h-3.5 rotate-90 text-zinc-300" />
                   </div>
                 )}
               </div>
             );
           })}
         </div>
-        <p className="text-[12px] text-zinc-400 mt-4 leading-relaxed">{criteria.progressionLogic}</p>
+
+        {criteria.progressionLogic && (
+          <div className="relative mt-5 rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-3.5">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-zinc-400 mb-1.5">Evaluation logic</p>
+            <p className="text-[13px] text-zinc-600 leading-relaxed">{criteria.progressionLogic}</p>
+          </div>
+        )}
       </div>
 
       {/* ── Testing Timeline ────────────────────────────────────── */}
