@@ -498,26 +498,32 @@ export const handleWebhook = async (req, res) => {
         return res.status(400).json({ statusCode: 400, message: 'Invalid incoming message payload' });
       }
 
-      await Promise.all(inbounds.map((inbound) => logWebhook({
-        ...logMeta,
-        event: 'incoming_message',
-        from: inbound.from,
-        text: inbound.text,
-        ok: true,
-        note: `${inbounds.length > 1 ? 'batch ' : ''}accepted${inbound.messageId ? `: ${inbound.messageId}` : ''}`,
-        body,
-        headers: req.headers,
-        processing: 'received',
-      })));
-
-      // Ack immediately so CampaignBot does not timeout/retry
-      res.json({
+      // Acknowledge before any database or chatbot work. CampaignBot treats
+      // this response as delivery confirmation and may retry on a slow 5xx.
+      res.status(200).json({
         statusCode: 200,
         message: inbounds.length === 1
           ? 'Incoming message received successfully'
           : `${inbounds.length} incoming messages received successfully`,
       });
-      setImmediate(() => processInboundMessages(inbounds));
+      setImmediate(async () => {
+        try {
+          await Promise.all(inbounds.map((inbound) => logWebhook({
+            ...logMeta,
+            event: 'incoming_message',
+            from: inbound.from,
+            text: inbound.text,
+            ok: true,
+            note: `${inbounds.length > 1 ? 'batch ' : ''}accepted${inbound.messageId ? `: ${inbound.messageId}` : ''}`,
+            body,
+            headers: req.headers,
+            processing: 'received',
+          })));
+          await processInboundMessages(inbounds, requestId);
+        } catch (err) {
+          console.error(`[WP Webhook][${requestId}] async receipt failed:`, err.message, err.stack);
+        }
+      });
       return;
     }
 
