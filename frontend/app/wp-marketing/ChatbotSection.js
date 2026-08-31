@@ -314,6 +314,7 @@ function InboxPanel({ liveTick }) {
   const [live] = useState(true);
   const bottomRef = useRef(null);
   const activeIdRef = useRef(null);
+  const conversationRequestRef = useRef(0);
   activeIdRef.current = activeId;
 
   const loadList = useCallback(async (silent = true) => {
@@ -330,10 +331,17 @@ function InboxPanel({ liveTick }) {
 
   const openConvo = useCallback(async (id, soft = false) => {
     if (!id) return;
-    if (!soft) setActiveId(id);
+    if (!soft) {
+      activeIdRef.current = id;
+      setActiveId(id);
+    }
+    const requestId = ++conversationRequestRef.current;
     setErr('');
     try {
       const r = await wpMarketing.getChatbotConversation(id);
+      // Polling can return out of order. Never let an older response replace
+      // a newer thread or a conversation selected by the user.
+      if (requestId !== conversationRequestRef.current || activeIdRef.current !== id) return;
       setThread(r.data.conversation);
       setMessages(r.data.messages || []);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: soft ? 'auto' : 'smooth' }), 40);
@@ -458,7 +466,8 @@ function InboxPanel({ liveTick }) {
                   }`}>
                     <p className="text-[12.5px] whitespace-pre-wrap leading-relaxed">{m.text}</p>
                     <div className="mt-1 flex items-center gap-2 text-[9.5px] text-zinc-400">
-                      <span>{fmtTime(m.createdAt)}</span>
+                      <span>{fmtTime(m.sourceTimestamp || m.createdAt)}</span>
+                      {m.messageType && m.messageType !== 'text' && <span>· {m.messageType}</span>}
                       {m.matchedAction && m.matchedAction !== 'manual' && (
                         <span className="opacity-80">· {m.matchedAction}</span>
                       )}

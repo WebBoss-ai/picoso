@@ -428,8 +428,23 @@ const wpChatMessageSchema = new mongoose.Schema({
   text:           { type: String, default: '' },
   matchedAction:  { type: String, default: '' },
   wamid:          { type: String, default: null },
+  messageType:    { type: String, default: 'text' },
+  media:          { type: mongoose.Schema.Types.Mixed, default: null },
+  sourcePayload:  { type: mongoose.Schema.Types.Mixed, default: null },
+  sourceTimestamp:{ type: Date, default: null },
   createdAt:      { type: Date, default: Date.now },
 });
+
+// CampaignBot retries deliveries. A WhatsApp message id is the stable
+// idempotency key, so the same inbound message must never be shown twice or
+// trigger a second bot reply.
+wpChatMessageSchema.index(
+  { clientId: 1, direction: 1, wamid: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { direction: 'inbound', wamid: { $type: 'string' } },
+  },
+);
 
 const wpChatConversationSchema = new mongoose.Schema({
   clientId:      { type: mongoose.Schema.Types.ObjectId, ref: 'WpClient', required: true, index: true },

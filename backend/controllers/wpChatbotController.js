@@ -134,9 +134,10 @@ export const getConversation = async (req, res) => {
     }).lean();
     if (!convo) return res.status(404).json({ error: 'Conversation not found' });
 
+    // Do not truncate a conversation. CampaignBot can deliver messages in
+    // bursts, and the inbox must expose the complete stored history.
     const messages = await WpChatMessage.find({ conversationId: convo._id })
-      .sort({ createdAt: 1 })
-      .limit(300)
+      .sort({ createdAt: 1, _id: 1 })
       .lean();
 
     res.json({ success: true, conversation: convo, messages });
@@ -259,6 +260,7 @@ export const replyConversation = async (req, res) => {
       direction: 'outbound',
       text,
       matchedAction: 'manual',
+      messageType: 'text',
       wamid,
     });
 

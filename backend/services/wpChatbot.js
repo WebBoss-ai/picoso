@@ -299,31 +299,47 @@ ${buildBrainContext(brain)}`;
 
 async function upsertConversation(clientId, contactPhone, contactName, lastMessage, direction) {
   const phone = phoneDigits(contactPhone);
-  const existing = await WpChatConversation.findOne({ clientId, contactPhone: phone });
-
-  const convo = await WpChatConversation.findOneAndUpdate(
-    { clientId, contactPhone: phone },
-    {
-      $set: {
-        contactName: contactName || existing?.contactName || '',
-        lastMessage: String(lastMessage || '').slice(0, 280),
-        lastDirection: direction,
-        lastMessageAt: new Date(),
-        status: 'open',
-      },
-      $inc: { messageCount: 1, ...(direction === 'outbound' ? { botReplies: 1 } : {}) },
-      $setOnInsert: { clientId, contactPhone: phone, createdAt: new Date() },
+  const filter = { clientId, contactPhone: phone };
+  const update = {
+    $set: {
+      ...(contactName ? { contactName } : {}),
+      lastMessage: String(lastMessage || '').slice(0, 280),
+      lastDirection: direction,
+      lastMessageAt: new Date(),
+      status: 'open',
     },
-    { upsert: true, new: true },
-  );
+    $inc: { messageCount: 1, ...(direction === 'outbound' ? { botReplies: 1 } : {}) },
+    $setOnInsert: { clientId, contactPhone: phone, createdAt: new Date() },
+  };
 
-  return { convo, isNew: !existing };
+  try {
+    const existing = await WpChatConversation.exists(filter);
+    const convo = await WpChatConversation.findOneAndUpdate(filter, update, { upsert: true, new: true });
+    return { convo, isNew: !existing };
+  } catch (err) {
+    // Two webhook deliveries for a new contact can race on the compound
+    // unique index. Re-read the conversation instead of dropping the message.
+    if (err?.code !== 11000) throw err;
+    const convo = await WpChatConversation.findOneAndUpdate(filter, update, { new: true });
+    return { convo, isNew: false };
+  }
 }
 
 /**
  * Handle inbound WhatsApp message — always tries to reply.
  */
-export async function handleInboundChat({ from, text, name, messageId }) {
+const inboundLocks = new Map();
+
+async function handleInboundChatOnce({
+  from,
+  text,
+  name,
+  messageId,
+  type = 'text',
+  media = null,
+  sourcePayload = null,
+  sourceTimestamp = null,
+}) {
   const phone = phoneDigits(from);
   if (!phone) {
     console.warn('[WP Chatbot] no phone on inbound');
@@ -345,15 +361,51 @@ export async function handleInboundChat({ from, text, name, messageId }) {
   const inboundText = String(text || '').trim();
   const toPhone = toE164(from);
 
+  const stableMessageId = String(messageId || '').trim() || null;
+  if (stableMessageId) {
+    const alreadyStored = await WpChatMessage.findOne({
+      clientId,
+      direction: 'inbound',
+      wamid: stableMessageId,
+    }).lean();
+    if (alreadyStored) {
+      return {
+        duplicate: true,
+        conversationId: alreadyStored.conversationId,
+        matchedAction: 'duplicate',
+      };
+    }
+  }
+
   const { convo } = await upsertConversation(clientId, phone, name || '', inboundText, 'inbound');
 
-  await WpChatMessage.create({
-    clientId,
-    conversationId: convo._id,
-    direction: 'inbound',
-    text: inboundText,
-    wamid: messageId || null,
-  });
+  try {
+    await WpChatMessage.create({
+      clientId,
+      conversationId: convo._id,
+      direction: 'inbound',
+      text: inboundText,
+      wamid: stableMessageId,
+      messageType: String(type || 'text').toLowerCase(),
+      media: media || null,
+      sourcePayload: sourcePayload || null,
+      sourceTimestamp: sourceTimestamp || null,
+    });
+  } catch (err) {
+    // The unique inbound wamid index makes concurrent/retried webhook
+    // deliveries idempotent even when both requests pass the read check.
+    if (err?.code !== 11000) throw err;
+    const alreadyStored = await WpChatMessage.findOne({
+      clientId,
+      direction: 'inbound',
+      wamid: stableMessageId,
+    }).lean();
+    return {
+      duplicate: true,
+      conversationId: alreadyStored?.conversationId || convo._id,
+      matchedAction: 'duplicate',
+    };
+  }
 
   await WpChatbotBrain.updateOne({ _id: brain._id }, { $inc: { 'stats.messagesReceived': 1 } });
 
@@ -411,6 +463,7 @@ export async function handleInboundChat({ from, text, name, messageId }) {
     direction: 'outbound',
     text: reply.text,
     matchedAction: reply.matchedAction + (sendError ? `:error:${sendError.slice(0, 80)}` : ''),
+    messageType: 'text',
     wamid,
   });
 
@@ -440,4 +493,31 @@ export async function handleInboundChat({ from, text, name, messageId }) {
     sendError,
     toPhone,
   };
+}
+
+/**
+ * Serialize retries for the same WhatsApp message id in this process. The
+ * database unique index remains the cross-process safeguard.
+ */
+export async function handleInboundChat(args = {}) {
+  const messageId = String(args.messageId || '').trim();
+  if (!messageId) return handleInboundChatOnce(args);
+
+  const active = inboundLocks.get(messageId);
+  if (active) {
+    const result = await active;
+    return {
+      duplicate: true,
+      conversationId: result?.conversationId || null,
+      matchedAction: 'duplicate',
+    };
+  }
+
+  const work = handleInboundChatOnce(args);
+  inboundLocks.set(messageId, work);
+  try {
+    return await work;
+  } finally {
+    if (inboundLocks.get(messageId) === work) inboundLocks.delete(messageId);
+  }
 }
