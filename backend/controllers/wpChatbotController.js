@@ -214,7 +214,9 @@ export const streamEvents = async (req, res) => {
   chatbotBus.on('chat', onChat);
 
   const heartbeat = setInterval(() => {
-    res.write(`: ping ${Date.now()}\n\n`);
+    // Send data, not only an SSE comment, so the browser can prove the
+    // connection is alive even when no WhatsApp message is arriving.
+    send({ type: 'heartbeat', at: new Date().toISOString() });
   }, 15000);
 
   req.on('close', () => {

@@ -516,6 +516,7 @@ export default function ChatbotSection() {
   const [webhook, setWebhook] = useState(null);
   const [liveTick, setLiveTick] = useState(0);
   const [sseStatus, setSseStatus] = useState('connecting');
+  const [lastHeartbeat, setLastHeartbeat] = useState(null);
   const [debugEvents, setDebugEvents] = useState([]);
 
   const pushDebug = useCallback((event) => {
@@ -558,6 +559,10 @@ export default function ChatbotSection() {
           try {
             const data = JSON.parse(ev.data);
             if (!data?.type || data.type === 'connected') return;
+            if (data.type === 'heartbeat') {
+              setLastHeartbeat(data.at);
+              return;
+            }
             pushDebug(data);
 
             if (data.type === 'webhook_received' || data.type === 'webhook_rejected') {
@@ -731,6 +736,7 @@ export default function ChatbotSection() {
         </code>
         <p className="text-[11px] text-zinc-500">
           Live stream: <span className={`font-mono ${sseStatus === 'connected' ? 'text-emerald-700' : 'text-amber-700'}`}>{sseStatus}</span>
+          {lastHeartbeat && <> {' · '}heartbeat {fmtTime(lastHeartbeat)}</>}
           {' · '}No polling; inbound events refresh the inbox automatically.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
