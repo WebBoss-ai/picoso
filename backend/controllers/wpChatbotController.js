@@ -171,7 +171,7 @@ export const getWebhookStatus = async (req, res) => {
       lastInboundSignature: lastInbound?.signature || null,
       lastInboundParsed: lastInbound?.parsed ?? null,
       receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
-      note: 'CampaignBot has no webhook-register API. They POST incoming_message events to this URL when your account callback is set to it.',
+      note: 'CampaignBot must POST incoming_message events to this configured callback URL. Valid requests are acknowledged immediately and processed asynchronously.',
       recent: recent.map((e) => ({
         id: e._id,
         event: e.event,

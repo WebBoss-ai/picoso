@@ -242,10 +242,10 @@ async function handleMessageStatus(data) {
   } = data || {};
   const wamid = firstString(rawWamid, messageId, alternateWamid);
   const status = String(rawStatus || '').toLowerCase();
-  if (!wamid) return;
+  if (!wamid) return { valid: false, reason: 'missing message_id' };
 
   const validStatuses = ['sent', 'delivered', 'read', 'failed'];
-  if (!validStatuses.includes(status)) return;
+  if (!validStatuses.includes(status)) return { valid: false, reason: 'invalid status' };
 
   const updateFields = { status };
   if (status === 'delivered') updateFields.deliveredAt = new Date();
@@ -264,14 +264,18 @@ async function handleMessageStatus(data) {
       status: { $in: ['queued', 'sent'] },
     }).sort({ createdAt: -1 });
   }
-  if (!log) return;
+  if (!log) return { valid: true, updated: false, reason: 'message log not found' };
 
   const ORDER = { queued: 0, sent: 1, delivered: 2, read: 3 };
   // Failed is terminal. Never let a delayed "sent" or "delivered" callback
   // overwrite a failure, and ignore older duplicate status callbacks.
-  if (log.status === 'failed' && status !== 'failed') return;
+  if (log.status === 'failed' && status !== 'failed') {
+    return { valid: true, updated: false, reason: 'failed status is terminal' };
+  }
   if (status !== 'failed' && log.status !== 'failed'
-    && (ORDER[status] ?? -1) <= (ORDER[log.status] ?? -1)) return;
+    && (ORDER[status] ?? -1) <= (ORDER[log.status] ?? -1)) {
+    return { valid: true, updated: false, reason: 'older or duplicate status' };
+  }
 
   await WpMessageLog.findByIdAndUpdate(log._id, { $set: updateFields });
 
@@ -286,6 +290,7 @@ async function handleMessageStatus(data) {
       );
     }
   }
+  return { valid: true, updated: true };
 }
 
 async function handleIncomingMessage(inbound, requestId = '') {
@@ -383,20 +388,31 @@ export const webhookHealth = async (req, res) => {
     return res.status(200).send(String(challenge));
   }
 
-  const last = await WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean();
-  const lastInbound = await WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean();
-  res.json({
-    ok: true,
-    message: 'CampaignBot webhook endpoint is live',
-    path: req.originalUrl || req.path,
-    lastWebhookAt: last?.createdAt || null,
-    lastInboundAt: lastInbound?.createdAt || null,
-    lastEvent: last?.event || null,
-    lastRequestId: last?.requestId || null,
-    lastProcessing: last?.processing || null,
-    lastSignature: last?.signature || null,
-    lastParsed: last?.parsed ?? null,
-  });
+  try {
+    const last = await WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean();
+    const lastInbound = await WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean();
+    return res.json({
+      ok: true,
+      message: 'CampaignBot webhook endpoint is live',
+      path: req.originalUrl || req.path,
+      lastWebhookAt: last?.createdAt || null,
+      lastInboundAt: lastInbound?.createdAt || null,
+      lastEvent: last?.event || null,
+      lastRequestId: last?.requestId || null,
+      lastProcessing: last?.processing || null,
+      lastSignature: last?.signature || null,
+      lastParsed: last?.parsed ?? null,
+    });
+  } catch (err) {
+    console.error('[WP Webhook] health lookup failed:', err.message);
+    return res.status(200).json({
+      ok: true,
+      message: 'CampaignBot webhook endpoint is live',
+      path: req.originalUrl || req.path,
+      database: 'unavailable',
+      error: err.message,
+    });
+  }
 };
 
 export const handleWebhook = async (req, res) => {
@@ -456,19 +472,27 @@ export const handleWebhook = async (req, res) => {
     }
 
     if (event === 'message_status' && (body.data || body.status)) {
-      await handleMessageStatus(body.data || body);
+      const statusPayload = body.data && typeof body.data === 'object' && !Array.isArray(body.data)
+        ? body.data
+        : body;
+      const statusResult = await handleMessageStatus(statusPayload);
+      const status = String(statusPayload.status || '').toLowerCase();
       await logWebhook({
         ...logMeta,
         event: 'message_status',
-        from: body.data?.recipient || '',
-        text: body.data?.status || '',
-        ok: true,
-        note: `status processed${body.data?.message_id ? `: ${body.data.message_id}` : ''}`,
+        from: statusPayload.recipient || '',
+        text: status,
+        ok: statusResult.valid,
+        note: statusResult.valid
+          ? `status ${statusResult.updated ? 'updated' : 'acknowledged'}${statusResult.reason ? `: ${statusResult.reason}` : ''}`
+          : `invalid status payload: ${statusResult.reason}`,
         body,
         headers: req.headers,
-        processing: 'processed',
+        processing: statusResult.valid ? 'processed' : 'failed',
       });
-      const status = body.data?.status;
+      if (!statusResult.valid) {
+        return res.status(400).json({ statusCode: 400, message: 'Invalid message status payload' });
+      }
       if (status === 'failed') {
         return res.json({ statusCode: 200, message: 'Failure status received successfully' });
       }

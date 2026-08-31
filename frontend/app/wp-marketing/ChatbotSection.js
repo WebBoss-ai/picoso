@@ -678,7 +678,7 @@ export default function ChatbotSection() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Inbound webhook</p>
             <p className="text-[12px] text-zinc-500 mt-0.5">
-              Our receiver is live. CampaignBot must POST <span className="font-mono text-zinc-700">incoming_message</span> events here (no register API exists on their side).
+              CampaignBot should POST <span className="font-mono text-zinc-700">incoming_message</span> events here. The backend acknowledges valid payloads immediately, then saves and replies.
             </p>
           </div>
           <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
