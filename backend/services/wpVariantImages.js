@@ -6,6 +6,7 @@
 import { WpExperiment } from '../models/wpMarketingModels.js';
 import { generateStickerImage, geminiImageConfigured } from './geminiImage.js';
 import { uploadWpMarketingImage } from '../utils/s3.js';
+import { composeWpPoster } from './wpPosterComposer.js';
 
 const CONCURRENCY = Number(process.env.WP_IMAGE_CONCURRENCY || 2);
 
@@ -62,11 +63,14 @@ export async function generateVariantImages(experimentId, opts = {}) {
     businessName,
     businessDescription: opts.businessDescription || '',
     colors: opts.colors || {},
+    designType: opts.designType || 'premium_poster',
   };
   const results = await mapPool(variants, CONCURRENCY, async (v) => {
     try {
-      const { buffer, mimeType } = await generateStickerImage(v, posterOpts);
-      const ext = /jpeg|jpg/i.test(mimeType) ? 'jpg' : 'png';
+      const { buffer: generatedBuffer } = await generateStickerImage(v, posterOpts);
+      const buffer = await composeWpPoster(generatedBuffer, v, posterOpts);
+      const mimeType = 'image/png';
+      const ext = 'png';
       const filename = `${(v.templateName || `variant_${v.variantNumber}`).slice(0, 40)}_${v.variantNumber}.${ext}`;
       const uploaded = await uploadWpMarketingImage(buffer, mimeType, filename);
 

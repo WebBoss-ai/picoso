@@ -4537,6 +4537,7 @@ function SettingsSection({ client, onClientUpdate }) {
     secondary: pd.colors?.secondary || '#F97316',
     accent:    pd.colors?.accent    || '#FEF3C7',
   });
+  const [designType, setDesignType] = useState(pd.designType || 'premium_poster');
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [error, setError] = useState('');
@@ -4549,6 +4550,7 @@ function SettingsSection({ client, onClientUpdate }) {
       secondary: next.colors?.secondary || '#F97316',
       accent:    next.colors?.accent    || '#FEF3C7',
     });
+    setDesignType(next.designType || 'premium_poster');
   }, [client]);
 
   const setColor = (key, value) => setColors((c) => ({ ...c, [key]: value }));
@@ -4559,7 +4561,7 @@ function SettingsSection({ client, onClientUpdate }) {
       const res = await wpMarketing.updatePosterDesign({
         businessDescription: desc,
         colors,
-        designType: 'premium_poster',
+        designType,
       });
       onClientUpdate?.({
         ...client,
@@ -4610,6 +4612,23 @@ function SettingsSection({ client, onClientUpdate }) {
             <p className="text-[13px] font-semibold text-slate-900">Poster gen design</p>
             <p className="text-[12.5px] text-slate-500 mt-1 leading-relaxed">
               Premium full-bleed square posters for every variant. Be specific about what you sell — posters follow this brief and your 3 brand colours.
+            </p>
+          </div>
+
+          <div>
+            <label className={label}>Illustration direction</label>
+            <select
+              value={designType}
+              onChange={(e) => setDesignType(e.target.value)}
+              className={field}
+            >
+              <option value="premium_poster">Refined editorial</option>
+              <option value="playful_illustration">Playful illustrated</option>
+              <option value="editorial_collage">Cut-paper collage</option>
+              <option value="bold_typographic">Bold graphic poster</option>
+            </select>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Exact business name, offer, message and CTA are typeset after the artwork is generated.
             </p>
           </div>
 

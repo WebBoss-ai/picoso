@@ -44,6 +44,7 @@ function posterOptsFromClient(client) {
     businessDescription: pd.businessDescription
       || [ws.businessType, ws.industry].filter(Boolean).join(' — '),
     colors: pd.colors,
+    designType: pd.designType,
   };
 }
 

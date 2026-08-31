@@ -1,6 +1,9 @@
 /**
- * Gemini Nano Banana 2 Lite — square premium business posters for WP Marketing.
- * Sticker-illustrated language, full-bleed modern composition (no badges / gradients).
+ * Gemini image generation for WP Marketing.
+ *
+ * Gemini creates the illustrated art direction only. Exact campaign copy is
+ * composited server-side afterwards, because generative models are unreliable
+ * at spelling, variables, URLs, and brand names.
  */
 
 const MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-lite-image';
@@ -19,6 +22,31 @@ function normaliseHex(c, fallback) {
   return fallback;
 }
 
+const LAYOUTS = [
+  'editorial split composition: calm copy space on the left third, the product or subject staged prominently on the right',
+  'playful celebration composition: an expressive illustrated scene with a soft, uncluttered upper area reserved for copy',
+  'bold typographic composition: a strong visual subject emerging from the lower half with quiet negative space above',
+  'product spotlight composition: one hero product or service moment, with a clean vertical copy zone along the left edge',
+  'warm narrative composition: a clear beginning-to-action visual story, with a quiet lower band reserved for copy',
+  'geometric modular composition: 2 or 3 intentional colour blocks and one hero illustration, with a clean central copy area',
+  'seasonal editorial composition: tasteful themed details around the edges, leaving the centre calm and readable',
+  'high-energy diagonal composition: movement from lower left to upper right, while the opposite corner stays quiet for copy',
+  'minimal art-directed composition: one memorable object or character, generous negative space, and refined details',
+  'premium announcement composition: a considered hero scene framed by subtle shapes, with a clear lower-third copy zone',
+];
+
+const STYLE_DIRECTIONS = {
+  premium_poster: 'refined editorial illustration with confident geometry, tactile paper texture, and a premium magazine campaign finish',
+  playful_illustration: 'warm playful illustrated scene with expressive characters or objects, soft organic shapes, and joyful handcrafted detail',
+  editorial_collage: 'layered cut-paper collage with ink contours, overlapping forms, subtle print texture, and an art-school editorial finish',
+  bold_typographic: 'high-contrast graphic campaign art with oversized visual shapes, strong scale contrast, and a striking poster composition',
+};
+
+function layoutFor(variant) {
+  const n = Math.max(1, Number(variant.variantNumber || 1));
+  return LAYOUTS[(n - 1) % LAYOUTS.length];
+}
+
 function posterPrompt(variant, opts = {}) {
   const businessName = opts.businessName || 'Picoso';
   const businessDesc = (opts.businessDescription || '').trim()
@@ -30,37 +58,41 @@ function posterPrompt(variant, opts = {}) {
 
   const concept = variant.imageConceptDescription
     || `${variant.copyAngle || 'campaign'} — ${variant.offer || 'offer'}`;
+  const layout = layoutFor(variant);
+  const style = STYLE_DIRECTIONS[opts.designType] || STYLE_DIRECTIONS.premium_poster;
 
   return [
-    `Design one square (1:1) Instagram marketing POSTER for "${businessName}".`,
-    `Business (be literal and specific — show what they actually sell/deliver): ${businessDesc}.`,
+    `Create one premium square (1:1) campaign artwork for "${businessName}".`,
+    `Business (be literal and specific — show what they actually sell or deliver): ${businessDesc}.`,
     ``,
-    `BRAND COLOURS (use these as flat solid colours only — no blends between them as gradients):`,
+    `BRAND PALETTE (use these consistently in the scene and shapes):`,
     `- Primary: ${primary}`,
     `- Secondary: ${secondary}`,
     `- Accent: ${accent}`,
     ``,
-    `VISUAL SYSTEM — premium modern UI poster:`,
-    `- Full-bleed edge-to-edge composition. Fill the entire square. No outer frame, no polaroid border, no card inset, no matte/passepartout, no paper sheet floating on a background.`,
-    `- Solid flat colour fields or soft paper/noise texture only. ABSOLUTELY NO colour gradients, NO glow, NO neon bloom, NO metallic shine backgrounds.`,
-    `- Illustration language may use sticker-like vector shapes (bold clean outlines, simplified icons) but they must feel integrated into one premium poster layout — NOT a sticker scrapbook, NOT a scattered sticker sheet.`,
-    `- Modern typography if any text: geometric sans or refined display type, tight tracking, editorial hierarchy. No hand-lettered scrapbook fonts, no chalk, no comic lettering.`,
-    `- Sparse, intentional layout with strong hierarchy and breathing room. Premium SaaS / Dribbble / Apple-marketing quality.`,
+    `ART DIRECTION: ${style}.`,
+    `COMPOSITION: ${layout}.`,
+    `- Full-bleed edge-to-edge composition. Fill the complete square with an intentional illustration, not a floating card.`,
+    `- Use sophisticated flat colour blocking, tactile paper grain, clean ink outlines, controlled shadows, layered cut-paper forms, and small contextual details.`,
+    `- Make the product, service, occasion, or action unmistakable. Build a visual metaphor around the actual offer, not generic abstract shapes.`,
+    `- Use a restrained 3-5 colour system from the palette, with strong contrast and a clear focal point.`,
+    `- Reserve approximately 35-45% of the canvas as calm, low-detail negative space for typesetting. Integrate that space into the composition rather than drawing a blank white panel.`,
+    `- Artwork should feel like a professionally art-directed brand campaign: dimensional, balanced, intentional, and ready for a high-end social feed.`,
     ``,
-    `STRICT BANS:`,
-    `- No loyalty badges, no shields, no "EXCLUSIVE MEMBER" seals, no crowns, no winged clocks as hero badges, no award ribbons.`,
-    `- No photoreal photos, no stock photos, no real people faces, no other brand logos.`,
-    `- No traditional ornate borders, gold frames, certificate looks, or badge-on-badge stacks.`,
-    `- No rainbow gradients or multi-stop colour washes.`,
+    `TEXT AND BRANDING SAFETY:`,
+    `- Do not render any letters, words, numbers, logos, watermarks, fake UI, or pseudo-text. The final exact copy and business name will be added after generation.`,
+    `- No loyalty badges, shields, membership seals, crowns, award ribbons, or badge stacks.`,
+    `- No stock-photo look, generic corporate handshake, random smiling headshots, other brand logos, or unrelated objects.`,
+    `- No ornate certificate borders, gold frames, scrapbook sticker sheets, rainbow gradients, neon bloom, or metallic backgrounds.`,
     ``,
-    `CONTENT FOR THIS VARIANT:`,
+    `CAMPAIGN STORY FOR THIS VARIANT:`,
     `- Angle: ${variant.copyAngle || 'general'}`,
     `- Tone: ${variant.tone || 'premium'}`,
     `- Offer / idea: ${variant.offer || concept}`,
     `- Visual brief: ${concept}`,
-    `- Optional short headline text related to the offer (max ~6 words). Prefer visual storytelling over text.`,
+    `- The artwork must communicate the offer visually even with the copy layer hidden.`,
     ``,
-    `Output a single polished square poster, ready as a WhatsApp / Instagram header.`,
+    `Output one polished, high-detail square illustration with no text.`,
   ].join('\n');
 }
 
@@ -115,7 +147,7 @@ export async function generateStickerImage(variant, opts = {}) {
       responseFormat: {
         image: {
           aspectRatio: '1:1',
-          imageSize: process.env.GEMINI_IMAGE_SIZE || '1K',
+        imageSize: process.env.GEMINI_IMAGE_SIZE || '2K',
         },
       },
     },
@@ -128,7 +160,7 @@ export async function generateStickerImage(variant, opts = {}) {
         responseModalities: ['TEXT', 'IMAGE'],
         imageConfig: {
           aspectRatio: '1:1',
-          imageSize: process.env.GEMINI_IMAGE_SIZE || '1K',
+          imageSize: process.env.GEMINI_IMAGE_SIZE || '2K',
         },
       },
     }));
