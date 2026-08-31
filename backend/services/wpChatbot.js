@@ -408,6 +408,17 @@ async function handleInboundChatOnce({
   }
 
   await WpChatbotBrain.updateOne({ _id: brain._id }, { $inc: { 'stats.messagesReceived': 1 } });
+  // The inbound record is durable at this point. Notify the UI before any
+  // LLM or outbound API call so the message appears without polling.
+  emitChatbotEvent({
+    type: 'inbound_received',
+    from,
+    text: inboundText,
+    messageId: stableMessageId,
+    messageType: String(type || 'text').toLowerCase(),
+    conversationId: String(convo._id),
+    at: new Date().toISOString(),
+  });
 
   // Build reply: fast path → LLM → welcome/fallback
   let reply = resolveFastReply(brain, inboundText);

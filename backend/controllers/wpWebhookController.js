@@ -65,6 +65,13 @@ async function logWebhook({
 
 async function markProcessing(requestId, processing, note = '') {
   if (!requestId) return;
+  emitChatbotEvent({
+    type: 'webhook_processing',
+    requestId,
+    processing,
+    note: note || null,
+    at: new Date().toISOString(),
+  });
   try {
     await WpWebhookEvent.updateMany(
       { requestId, event: 'incoming_message' },
@@ -480,12 +487,29 @@ export const handleWebhook = async (req, res) => {
     ` event=${event || 'none'} signature=${signatureState}` +
     ` bytes=${rawBodyLength} bodyKeys=${Object.keys(body).join(',')}`,
   );
+  emitChatbotEvent({
+    type: 'webhook_received',
+    requestId,
+    event: event || 'unknown',
+    signature: signatureState,
+    parsed: req.webhookJsonParsed !== false,
+    rawBodyLength,
+    at: new Date().toISOString(),
+  });
 
   if (!signatureCheck.ok) {
     console.warn(`[WP Webhook][${requestId}] signature ${signatureCheck.reason} — processing anyway`);
   }
 
   if (req.webhookJsonParsed === false) {
+    emitChatbotEvent({
+      type: 'webhook_rejected',
+      requestId,
+      event: 'invalid_json',
+      reason: req.webhookParseError || 'invalid JSON',
+      payloadPreview: rawBody.slice(0, 2000),
+      at: new Date().toISOString(),
+    });
     await logWebhook({
       ...logMeta,
       event: 'invalid_json',
@@ -548,6 +572,14 @@ export const handleWebhook = async (req, res) => {
     if (hasInboundShape) {
       const inbounds = extractInboundMessages(body);
       if (!inbounds.length) {
+        emitChatbotEvent({
+          type: 'webhook_rejected',
+          requestId,
+          event: event || 'incoming_message',
+          reason: 'no sender/message found',
+          payloadPreview: JSON.stringify(body).slice(0, 2000),
+          at: new Date().toISOString(),
+        });
         await logWebhook({
           ...logMeta,
           event: event || 'incoming_message',

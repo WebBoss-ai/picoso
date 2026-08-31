@@ -149,9 +149,10 @@ export const getConversation = async (req, res) => {
 /** GET /wp-marketing/chatbot/webhook-status */
 export const getWebhookStatus = async (req, res) => {
   try {
-    const [lastAny, lastInbound, recent] = await Promise.all([
+    const [lastAny, lastInbound, lastRejected, recent] = await Promise.all([
       WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.findOne({ ok: false }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.find().sort({ createdAt: -1 }).limit(15).lean(),
     ]);
     const webhookUrl = bot.getPublicWebhookUrl();
@@ -170,6 +171,9 @@ export const getWebhookStatus = async (req, res) => {
       lastInboundProcessing: lastInbound?.processing || null,
       lastInboundSignature: lastInbound?.signature || null,
       lastInboundParsed: lastInbound?.parsed ?? null,
+      lastRejectedAt: lastRejected?.createdAt || null,
+      lastRejectedNote: lastRejected?.note || null,
+      lastRejectedPayload: lastRejected?.payloadPreview || null,
       receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
       note: 'CampaignBot must POST incoming_message events to this configured callback URL. Valid requests are acknowledged immediately and processed asynchronously.',
       recent: recent.map((e) => ({

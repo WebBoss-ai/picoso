@@ -356,16 +356,8 @@ function InboxPanel({ liveTick }) {
     return () => clearTimeout(t);
   }, [loadList]);
 
-  // Fast auto-refresh — no manual reload needed
-  useEffect(() => {
-    const iv = setInterval(() => {
-      loadList(true);
-      if (activeIdRef.current) openConvo(activeIdRef.current, true);
-    }, 2500);
-    return () => clearInterval(iv);
-  }, [loadList, openConvo]);
-
-  // Instant refresh when parent SSE/liveTick fires
+  // Refresh only after the backend confirms a durable live event. No polling
+  // is needed, so the inbox stays current without repeated requests.
   useEffect(() => {
     if (!liveTick) return;
     loadList(true);
@@ -523,6 +515,14 @@ export default function ChatbotSection() {
   const [testResult, setTestResult] = useState(null);
   const [webhook, setWebhook] = useState(null);
   const [liveTick, setLiveTick] = useState(0);
+  const [sseStatus, setSseStatus] = useState('connecting');
+  const [debugEvents, setDebugEvents] = useState([]);
+
+  const pushDebug = useCallback((event) => {
+    const entry = { ...event, receivedAt: new Date().toISOString() };
+    console.debug('[WP Chatbot live event]', entry);
+    setDebugEvents((items) => [entry, ...items].slice(0, 30));
+  }, []);
 
   const load = useCallback(async () => {
     setError('');
@@ -544,7 +544,7 @@ export default function ChatbotSection() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Live SSE + webhook status poll
+  // One live SSE connection replaces inbox/status polling.
   useEffect(() => {
     const pin = typeof window !== 'undefined' ? sessionStorage.getItem('picoso_wp_pin') : '';
     const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
@@ -552,28 +552,61 @@ export default function ChatbotSection() {
     if (pin) {
       try {
         es = new EventSource(`${apiBase}/wp-marketing/chatbot/events?pin=${encodeURIComponent(pin)}`);
+        es.onopen = () => setSseStatus('connected');
+        es.onerror = () => setSseStatus('reconnecting');
         es.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
-            if (data?.type && data.type !== 'connected') {
+            if (!data?.type || data.type === 'connected') return;
+            pushDebug(data);
+
+            if (data.type === 'webhook_received' || data.type === 'webhook_rejected') {
+              setWebhook((previous) => ({
+                ...(previous || {}),
+                lastWebhookAt: data.at,
+                lastEvent: data.event || 'unknown',
+                lastRequestId: data.requestId || previous?.lastRequestId || null,
+                lastProcessing: data.type === 'webhook_rejected' ? 'failed' : 'received',
+                lastSignature: data.signature || previous?.lastSignature || null,
+                lastParsed: data.parsed ?? previous?.lastParsed ?? null,
+                ...(data.event === 'incoming_message' ? {
+                  lastInboundAt: data.at,
+                  lastInboundRequestId: data.requestId || null,
+                  lastInboundProcessing: data.type === 'webhook_rejected' ? 'failed' : 'received',
+                } : {}),
+                ...(data.type === 'webhook_rejected' ? {
+                  lastRejectedAt: data.at,
+                  lastRejectedNote: data.reason || 'Webhook rejected',
+                  lastRejectedPayload: data.payloadPreview || null,
+                } : {}),
+              }));
+            }
+            if (data.type === 'webhook_processing') {
+              setWebhook((previous) => ({
+                ...(previous || {}),
+                lastProcessing: data.processing || previous?.lastProcessing || null,
+                lastInboundProcessing: data.processing || previous?.lastInboundProcessing || null,
+                ...(data.note ? { lastRejectedNote: data.note } : {}),
+              }));
+            }
+
+            if (['inbound_received', 'inbound', 'outbound'].includes(data.type)) {
               setLiveTick((n) => n + 1);
-              setTab('inbox');
-              load();
+              if (data.type !== 'outbound') setTab('inbox');
+              load().catch(() => {});
             }
           } catch { /* ignore */ }
         };
-      } catch { /* EventSource unavailable */ }
+      } catch {
+        setSseStatus('unavailable');
+      }
+    } else {
+      setSseStatus('missing PIN');
     }
-    const iv = setInterval(() => {
-      wpMarketing.getChatbotWebhookStatus()
-        .then((r) => setWebhook(r.data))
-        .catch(() => {});
-    }, 5000);
     return () => {
       es?.close();
-      clearInterval(iv);
     };
-  }, [load]);
+  }, [load, pushDebug]);
 
   const save = async () => {
     if (!brain) return;
@@ -696,6 +729,10 @@ export default function ChatbotSection() {
         <code className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
           {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
         </code>
+        <p className="text-[11px] text-zinc-500">
+          Live stream: <span className={`font-mono ${sseStatus === 'connected' ? 'text-emerald-700' : 'text-amber-700'}`}>{sseStatus}</span>
+          {' · '}No polling; inbound events refresh the inbox automatically.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
           <p>Last webhook: <span className="font-mono text-zinc-800">{webhook?.lastWebhookAt ? fmtTime(webhook.lastWebhookAt) : 'never'}</span></p>
           <p>Last inbound: <span className="font-mono text-zinc-800">{webhook?.lastInboundAt ? fmtTime(webhook.lastInboundAt) : 'never'}</span></p>
@@ -719,6 +756,26 @@ export default function ChatbotSection() {
               </div>
             ))}
           </div>
+        )}
+        {webhook?.lastRejectedPayload && (
+          <details className="rounded-xl border border-red-100 bg-red-50/60 p-2.5">
+            <summary className="cursor-pointer text-[10.5px] font-semibold text-red-700">
+              Latest rejected payload · {webhook.lastRejectedNote || 'invalid payload'}
+            </summary>
+            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[9.5px] text-red-700">
+              {webhook.lastRejectedPayload}
+            </pre>
+          </details>
+        )}
+        {debugEvents.length > 0 && (
+          <details className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-2.5">
+            <summary className="cursor-pointer text-[10.5px] font-semibold text-zinc-600">
+              Frontend live log · {debugEvents.length} events
+            </summary>
+            <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-all text-[9.5px] text-zinc-600">
+              {debugEvents.map((event) => `${event.receivedAt} · ${event.type} · ${event.requestId || event.messageId || '-'}${event.reason ? ` · ${event.reason}` : ''}`).join('\n')}
+            </pre>
+          </details>
         )}
       </div>
 
