@@ -143,6 +143,37 @@ function parseSourceTimestamp(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function parseEmbeddedPayload(value) {
+  if (value && typeof value === 'object') return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectPayloadEnvelopes(body = {}) {
+  const root = parseEmbeddedPayload(body) || {};
+  const queue = [root];
+  const envelopes = [];
+  const seen = new Set();
+  const nestedKeys = ['data', 'payload', 'body', 'webhook', 'event_data'];
+
+  while (queue.length) {
+    const current = parseEmbeddedPayload(queue.shift());
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    envelopes.push(current);
+    for (const key of nestedKeys) {
+      const nested = parseEmbeddedPayload(current[key]);
+      if (nested) queue.push(nested);
+    }
+  }
+  return envelopes;
+}
+
 function normaliseInbound(message = {}, body = {}, contact = {}) {
   if (!message || typeof message !== 'object') message = { text: message };
   const from = firstString(
@@ -173,7 +204,9 @@ function normaliseInbound(message = {}, body = {}, contact = {}) {
     type,
     media: mediaFromMessage(message),
     sourcePayload: message,
-    sourceTimestamp: parseSourceTimestamp(message.timestamp || body.timestamp),
+    sourceTimestamp: parseSourceTimestamp(
+      message.timestamp || body.timestamp || body.system?.received_at,
+    ),
   };
 }
 
@@ -185,41 +218,48 @@ function normaliseInbound(message = {}, body = {}, contact = {}) {
 export function extractInboundMessages(body = {}) {
   const candidates = [];
 
-  if (Array.isArray(body.processed)) {
-    candidates.push(...body.processed.map((message) => ({ message, contact: body.meta_contacts?.[0] })));
-  } else if (body.processed && typeof body.processed === 'object') {
-    candidates.push({ message: body.processed, contact: body.meta_contacts?.[0] });
-  }
+  for (const envelope of collectPayloadEnvelopes(body)) {
+    const contacts = Array.isArray(envelope.meta_contacts)
+      ? envelope.meta_contacts
+      : (Array.isArray(envelope.contacts) ? envelope.contacts : []);
+    const processed = parseEmbeddedPayload(envelope.processed);
+    if (Array.isArray(processed)) {
+      candidates.push(...processed.map((message) => ({ message, contact: contacts[0], envelope })));
+    } else if (processed) {
+      candidates.push({ message: processed, contact: contacts[0], envelope });
+    }
 
-  for (const entry of Array.isArray(body.entry) ? body.entry : []) {
-    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
-      const value = change?.value || {};
-      const contacts = Array.isArray(value.contacts) ? value.contacts : [];
-      for (const message of Array.isArray(value.messages) ? value.messages : []) {
-        candidates.push({ message, contact: contacts[0] });
+    for (const entry of Array.isArray(envelope.entry) ? envelope.entry : []) {
+      for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+        const value = parseEmbeddedPayload(change?.value) || {};
+        const valueContacts = Array.isArray(value.contacts) ? value.contacts : contacts;
+        for (const message of Array.isArray(value.messages) ? value.messages : []) {
+          candidates.push({ message, contact: valueContacts[0], envelope: value });
+        }
       }
     }
-  }
 
-  const genericMessages = [
-    ...(Array.isArray(body.messages) ? body.messages : []),
-    ...(Array.isArray(body.data?.messages) ? body.data.messages : []),
-    ...(Array.isArray(body.data) ? body.data : []),
-  ];
-  candidates.push(...genericMessages.map((message) => ({ message, contact: body.meta_contacts?.[0] })));
+    const genericMessages = [
+      ...(Array.isArray(envelope.messages) ? envelope.messages : []),
+      ...(Array.isArray(envelope.data?.messages) ? envelope.data.messages : []),
+    ];
+    candidates.push(...genericMessages.map((message) => ({
+      message,
+      contact: contacts[0],
+      envelope,
+    })));
 
-  if (!candidates.length) {
-    const message = body.message || (
-      body.data && typeof body.data === 'object' && !Array.isArray(body.data)
-        ? body.data.message || body.data
-        : body
-    );
-    candidates.push({ message, contact: body.meta_contacts?.[0] });
+    const message = parseEmbeddedPayload(envelope.message);
+    if (message) candidates.push({ message, contact: contacts[0], envelope });
+
+    if (firstString(envelope.from, envelope.sender, envelope.phone)) {
+      candidates.push({ message: envelope, contact: contacts[0], envelope });
+    }
   }
 
   const seenIds = new Set();
   return candidates
-    .map(({ message, contact }) => normaliseInbound(message, body, contact))
+    .map(({ message, contact, envelope }) => normaliseInbound(message, envelope || body, contact))
     .filter((message) => {
       if (!message) return false;
       // A batch must not process the same message twice if both a generic and
@@ -420,7 +460,9 @@ export const handleWebhook = async (req, res) => {
   const requestId = req.webhookRequestId || req.headers['x-request-id'] || crypto.randomUUID();
   const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
   const body = req.body || {};
-  const event = body.event || body.type || body.event_type || '';
+  const event = collectPayloadEnvelopes(body)
+    .map((envelope) => firstString(envelope.event, envelope.type, envelope.event_type))
+    .find(Boolean) || '';
   const rawBodyLength = Buffer.byteLength(rawBody, 'utf8');
   const signatureCheck = sigHeader
     ? verifySignature(rawBody, sigHeader)
@@ -502,11 +544,7 @@ export const handleWebhook = async (req, res) => {
     const hasInboundShape = event === 'incoming_message'
       || event === 'message'
       || event === 'messages'
-      || body.processed?.from
-      || Array.isArray(body.processed)
-      || Array.isArray(body.messages)
-      || Array.isArray(body.data?.messages)
-      || Array.isArray(body.data);
+      || extractInboundMessages(body).length > 0;
     if (hasInboundShape) {
       const inbounds = extractInboundMessages(body);
       if (!inbounds.length) {

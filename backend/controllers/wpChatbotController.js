@@ -184,6 +184,7 @@ export const getWebhookStatus = async (req, res) => {
         signature: e.signature,
         parsed: e.parsed,
         rawBodyLength: e.rawBodyLength,
+        payloadPreview: e.payloadPreview,
         at: e.createdAt,
       })),
     });

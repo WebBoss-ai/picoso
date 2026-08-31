@@ -707,9 +707,16 @@ export default function ChatbotSection() {
         {webhook?.recent?.length > 0 && (
           <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-2.5 max-h-28 overflow-y-auto space-y-1">
             {webhook.recent.slice(0, 6).map((e) => (
-              <p key={e.id} className="text-[10.5px] font-mono text-zinc-600 truncate">
-                {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.from || '-'} · {e.text || e.note || ''}
-              </p>
+              <div key={e.id}>
+                <p className="text-[10.5px] font-mono text-zinc-600 truncate">
+                  {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.from || '-'} · {e.text || e.note || ''}
+                </p>
+                {!e.ok && e.payloadPreview && (
+                  <pre className="mt-0.5 max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[9px] text-red-500">
+                    {e.payloadPreview}
+                  </pre>
+                )}
+              </div>
             ))}
           </div>
         )}
