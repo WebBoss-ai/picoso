@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import routes from './routes/routes.js';
 import { DeliveryPartner, User, Campaign } from './models/Model.js';
 import { WpClient } from './models/wpMarketingModels.js';
@@ -35,8 +36,11 @@ app.use((req, res, next) => {
     const pin  = req.headers['x-wp-pin'] ? '[pin:set]' : '[pin:MISSING]';
     const auth = req.headers.authorization ? '[auth:set]' : '';
     const tag  = isWp ? ` ${pin}${auth}` : '';
+    const webhookTag = isWebhookPath(req) && req.webhookRequestId
+      ? ` [webhook:${req.webhookRequestId}]`
+      : '';
     const color = res.statusCode >= 500 ? '\x1b[31m' : res.statusCode >= 400 ? '\x1b[33m' : '\x1b[32m';
-    console.log(`${color}${req.method} ${req.originalUrl || req.path} → ${res.statusCode}\x1b[0m  ${ms}ms${tag}`);
+    console.log(`${color}${req.method} ${req.originalUrl || req.path} → ${res.statusCode}\x1b[0m  ${ms}ms${webhookTag}${tag}`);
   });
   next();
 });
@@ -46,6 +50,7 @@ app.use((req, res, next) => {
   if (!isWebhookPath(req)) return next();
   if (req.method === 'GET' || req.method === 'HEAD') return next();
 
+  req.webhookRequestId = req.headers['x-request-id'] || crypto.randomUUID();
   const chunks = [];
   req.on('data', (chunk) => chunks.push(chunk));
   req.on('end', () => {
@@ -53,14 +58,22 @@ app.use((req, res, next) => {
     req.rawBody = raw.toString('utf8');
     try {
       req.body = JSON.parse(req.rawBody || '{}');
-    } catch {
+      req.webhookJsonParsed = true;
+    } catch (err) {
       req.body = {};
+      req.webhookJsonParsed = false;
+      req.webhookParseError = err.message;
     }
-    console.log(`[WP Webhook] raw ${req.method} ${req.originalUrl || req.path} event=${req.body?.event || 'none'} bytes=${raw.length}`);
+    console.log(
+      `[WP Webhook][${req.webhookRequestId}] raw ${req.method} ${req.originalUrl || req.path}` +
+      ` event=${req.body?.event || 'none'} bytes=${raw.length}` +
+      ` content-type=${req.headers['content-type'] || 'missing'}` +
+      ` json=${req.webhookJsonParsed ? 'ok' : `error:${req.webhookParseError}`}`,
+    );
     next();
   });
   req.on('error', (err) => {
-    console.error('[WP Webhook] body read error:', err.message);
+    console.error(`[WP Webhook][${req.webhookRequestId}] body read error:`, err.message);
     next(err);
   });
 });

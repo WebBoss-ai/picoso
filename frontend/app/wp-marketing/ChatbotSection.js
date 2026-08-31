@@ -682,11 +682,15 @@ export default function ChatbotSection() {
             </p>
           </div>
           <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
-            webhook?.lastInboundAt
+            webhook?.lastInboundProcessing === 'failed'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : webhook?.lastInboundAt
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
               : 'border-amber-200 bg-amber-50 text-amber-700'
           }`}>
-            {webhook?.lastInboundAt ? 'Receiving' : 'Waiting for inbound'}
+            {webhook?.lastInboundProcessing === 'failed'
+              ? 'Processing error'
+              : webhook?.lastInboundAt ? 'Receiving' : 'Waiting for inbound'}
           </span>
         </div>
         <code className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
@@ -696,12 +700,15 @@ export default function ChatbotSection() {
           <p>Last webhook: <span className="font-mono text-zinc-800">{webhook?.lastWebhookAt ? fmtTime(webhook.lastWebhookAt) : 'never'}</span></p>
           <p>Last inbound: <span className="font-mono text-zinc-800">{webhook?.lastInboundAt ? fmtTime(webhook.lastInboundAt) : 'never'}</span></p>
           <p>Last event: <span className="font-mono text-zinc-800">{webhook?.lastEvent || '-'}</span></p>
+          <p>Processing: <span className="font-mono text-zinc-800">{webhook?.lastInboundProcessing || '-'}</span></p>
+          <p>Signature: <span className="font-mono text-zinc-800">{webhook?.lastInboundSignature || '-'}</span></p>
+          <p>Request ID: <span className="font-mono text-zinc-800">{webhook?.lastInboundRequestId || '-'}</span></p>
         </div>
         {webhook?.recent?.length > 0 && (
           <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-2.5 max-h-28 overflow-y-auto space-y-1">
             {webhook.recent.slice(0, 6).map((e) => (
               <p key={e.id} className="text-[10.5px] font-mono text-zinc-600 truncate">
-                {fmtTime(e.at)} · {e.event} · {e.from || '-'} · {e.text || e.note || ''}
+                {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.from || '-'} · {e.text || e.note || ''}
               </p>
             ))}
           </div>

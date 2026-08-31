@@ -467,11 +467,16 @@ export const WpChatMessage       = mongoose.models.WpChatMessage       || mongoo
 
 /* ── WpWebhookEvent — debug log of every CampaignBot webhook hit ─────────── */
 const wpWebhookEventSchema = new mongoose.Schema({
+  requestId:   { type: String, default: '', index: true },
   event:       { type: String, default: '' },
   from:        { type: String, default: '' },
   text:        { type: String, default: '' },
   ok:          { type: Boolean, default: true },
   note:        { type: String, default: '' },
+  processing:  { type: String, default: 'received' },
+  rawBodyLength:{ type: Number, default: 0 },
+  signature:   { type: String, default: 'missing' },
+  parsed:      { type: Boolean, default: true },
   payloadPreview: { type: String, default: '' },
   headers:     { type: mongoose.Schema.Types.Mixed, default: {} },
   createdAt:   { type: Date, default: Date.now, index: true },

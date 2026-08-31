@@ -20,14 +20,32 @@ const WEBHOOK_SECRETS = [
   '8c226a84bf474b0dffae2efb7b69f05f3fefada3a16c115ffeb45b7a53cc34ab',
 ].filter(Boolean);
 
-async function logWebhook({ event, from, text, ok, note, body, headers }) {
+async function logWebhook({
+  requestId,
+  event,
+  from,
+  text,
+  ok,
+  note,
+  body,
+  headers,
+  rawBodyLength = 0,
+  signature = 'missing',
+  parsed = true,
+  processing = 'received',
+}) {
   try {
     await WpWebhookEvent.create({
+      requestId: requestId || '',
       event: event || '',
       from: from || '',
       text: String(text || '').slice(0, 500),
       ok: ok !== false,
       note: note || '',
+      processing,
+      rawBodyLength,
+      signature,
+      parsed,
       payloadPreview: JSON.stringify(body || {}).slice(0, 2000),
       headers: {
         signature: headers?.['x-webhook-signature'] ? 'present' : 'missing',
@@ -42,6 +60,18 @@ async function logWebhook({ event, from, text, ok, note, body, headers }) {
     }
   } catch (err) {
     console.error('[WP Webhook] log failed:', err.message);
+  }
+}
+
+async function markProcessing(requestId, processing, note = '') {
+  if (!requestId) return;
+  try {
+    await WpWebhookEvent.updateMany(
+      { requestId, event: 'incoming_message' },
+      { $set: { processing, ...(note ? { note } : {}) } },
+    );
+  } catch (err) {
+    console.error(`[WP Webhook][${requestId}] processing log update failed:`, err.message);
   }
 }
 
@@ -258,13 +288,14 @@ async function handleMessageStatus(data) {
   }
 }
 
-async function handleIncomingMessage(inbound) {
+async function handleIncomingMessage(inbound, requestId = '') {
   if (!inbound?.from) {
-    console.warn('[WP Webhook] incoming without from');
+    console.warn(`[WP Webhook][${requestId || 'unknown'}] incoming without from`);
     return null;
   }
 
-  console.log(`[WP Webhook] INBOUND from=${inbound.from} text="${String(inbound.text || '').slice(0, 100)}"`);
+  console.log(`[WP Webhook][${requestId || 'unknown'}] INBOUND from=${inbound.from} type=${inbound.type} id=${inbound.messageId || 'none'} text="${String(inbound.text || '').slice(0, 100)}"`);
+  await markProcessing(requestId, 'processing');
 
   let result;
   try {
@@ -287,15 +318,19 @@ async function handleIncomingMessage(inbound) {
       conversationId: result?.conversationId || null,
       at: new Date().toISOString(),
     });
-    console.log(`[WP Webhook] reply via=${result?.matchedAction} err=${result?.sendError || 'none'}`);
+    await markProcessing(requestId, result?.duplicate ? 'duplicate' : 'processed');
+    console.log(`[WP Webhook][${requestId || 'unknown'}] reply via=${result?.matchedAction} err=${result?.sendError || 'none'}`);
   } catch (err) {
-    console.error('[WP Webhook] chatbot error:', err.message, err.stack);
+    console.error(`[WP Webhook][${requestId || 'unknown'}] chatbot error:`, err.message, err.stack);
+    await markProcessing(requestId, 'failed', `chatbot error: ${err.message}`);
     await logWebhook({
+      requestId,
       event: 'incoming_message',
       from: inbound.from,
       text: inbound.text,
       ok: false,
       note: `chatbot error: ${err.message}`,
+      processing: 'failed',
     });
     return null;
   }
@@ -321,14 +356,15 @@ async function handleIncomingMessage(inbound) {
   return result;
 }
 
-async function processInboundMessages(messages) {
+async function processInboundMessages(messages, requestId = '') {
   // Keep one webhook batch ordered. This prevents simultaneous upserts for
   // the same contact from racing and makes the inbox chronology predictable.
   for (const inbound of messages) {
     try {
-      await handleIncomingMessage(inbound);
+      await handleIncomingMessage(inbound, requestId);
     } catch (err) {
-      console.error('[WP Webhook] inbound processing failed:', err.message);
+      await markProcessing(requestId, 'failed', `processing error: ${err.message}`);
+      console.error(`[WP Webhook][${requestId || 'unknown'}] inbound processing failed:`, err.message);
     }
   }
 }
@@ -356,40 +392,81 @@ export const webhookHealth = async (req, res) => {
     lastWebhookAt: last?.createdAt || null,
     lastInboundAt: lastInbound?.createdAt || null,
     lastEvent: last?.event || null,
+    lastRequestId: last?.requestId || null,
+    lastProcessing: last?.processing || null,
+    lastSignature: last?.signature || null,
+    lastParsed: last?.parsed ?? null,
   });
 };
 
 export const handleWebhook = async (req, res) => {
   const rawBody = req.rawBody || JSON.stringify(req.body || {});
+  const requestId = req.webhookRequestId || req.headers['x-request-id'] || crypto.randomUUID();
   const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
   const body = req.body || {};
   const event = body.event || body.type || body.event_type || '';
+  const rawBodyLength = Buffer.byteLength(rawBody, 'utf8');
+  const signatureCheck = sigHeader
+    ? verifySignature(rawBody, sigHeader)
+    : { ok: false, reason: 'missing' };
+  const signatureState = signatureCheck.ok ? 'valid' : `invalid:${signatureCheck.reason}`;
+  const logMeta = {
+    requestId,
+    rawBodyLength,
+    signature: signatureState,
+    parsed: req.webhookJsonParsed !== false,
+  };
 
-  console.log(`[WP Webhook] HIT method=${req.method} url=${req.originalUrl || req.path} event=${event || 'none'} sig=${sigHeader ? 'yes' : 'no'} bodyKeys=${Object.keys(body).join(',')}`);
+  console.log(
+    `[WP Webhook][${requestId}] HIT method=${req.method} url=${req.originalUrl || req.path}` +
+    ` event=${event || 'none'} signature=${signatureState}` +
+    ` bytes=${rawBodyLength} bodyKeys=${Object.keys(body).join(',')}`,
+  );
 
-  if (sigHeader) {
-    const check = verifySignature(rawBody, sigHeader);
-    if (!check.ok) {
-      console.warn(`[WP Webhook] signature ${check.reason} — processing anyway`);
-    }
+  if (!signatureCheck.ok) {
+    console.warn(`[WP Webhook][${requestId}] signature ${signatureCheck.reason} — processing anyway`);
+  }
+
+  if (req.webhookJsonParsed === false) {
+    await logWebhook({
+      ...logMeta,
+      event: 'invalid_json',
+      ok: false,
+      note: `invalid JSON: ${req.webhookParseError || 'parse failed'}`,
+      body: {},
+      headers: req.headers,
+      processing: 'failed',
+    });
+    return res.status(400).json({ statusCode: 400, message: 'Invalid JSON webhook payload' });
   }
 
   try {
     // CampaignBot "overview" ping sometimes posts signing meta without event
     if (!event && body.algorithm && body.secret) {
-      await logWebhook({ event: 'ping', ok: true, note: 'signing overview ping', body, headers: req.headers });
+      await logWebhook({
+        ...logMeta,
+        event: 'ping',
+        ok: true,
+        note: 'signing overview ping',
+        body,
+        headers: req.headers,
+        processing: 'processed',
+      });
       return res.json({ statusCode: 200, message: 'Webhook received and verified successfully' });
     }
 
     if (event === 'message_status' && (body.data || body.status)) {
       await handleMessageStatus(body.data || body);
       await logWebhook({
+        ...logMeta,
         event: 'message_status',
         from: body.data?.recipient || '',
         text: body.data?.status || '',
         ok: true,
+        note: `status processed${body.data?.message_id ? `: ${body.data.message_id}` : ''}`,
         body,
         headers: req.headers,
+        processing: 'processed',
       });
       const status = body.data?.status;
       if (status === 'failed') {
@@ -409,11 +486,20 @@ export const handleWebhook = async (req, res) => {
     if (hasInboundShape) {
       const inbounds = extractInboundMessages(body);
       if (!inbounds.length) {
-        await logWebhook({ event: event || 'incoming_message', ok: false, note: 'invalid payload', body, headers: req.headers });
+        await logWebhook({
+          ...logMeta,
+          event: event || 'incoming_message',
+          ok: false,
+          note: 'invalid payload: no sender/message found',
+          body,
+          headers: req.headers,
+          processing: 'failed',
+        });
         return res.status(400).json({ statusCode: 400, message: 'Invalid incoming message payload' });
       }
 
       await Promise.all(inbounds.map((inbound) => logWebhook({
+        ...logMeta,
         event: 'incoming_message',
         from: inbound.from,
         text: inbound.text,
@@ -421,6 +507,7 @@ export const handleWebhook = async (req, res) => {
         note: `${inbounds.length > 1 ? 'batch ' : ''}accepted${inbound.messageId ? `: ${inbound.messageId}` : ''}`,
         body,
         headers: req.headers,
+        processing: 'received',
       })));
 
       // Ack immediately so CampaignBot does not timeout/retry
@@ -435,15 +522,26 @@ export const handleWebhook = async (req, res) => {
     }
 
     await logWebhook({
+      ...logMeta,
       event: event || 'unknown',
       ok: true,
       note: 'acknowledged unhandled',
       body,
       headers: req.headers,
+      processing: 'ignored',
     });
     res.json({ statusCode: 200, message: 'Event acknowledged' });
   } catch (err) {
-    console.error('[WP Webhook] Error:', err.message);
+    console.error(`[WP Webhook][${requestId}] Error:`, err.message, err.stack);
+    await logWebhook({
+      ...logMeta,
+      event: event || 'error',
+      ok: false,
+      note: `handler error: ${err.message}`,
+      body,
+      headers: req.headers,
+      processing: 'failed',
+    });
     res.json({ statusCode: 200, message: 'Webhook received (processing error logged)' });
   }
 };
