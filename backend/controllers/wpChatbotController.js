@@ -10,6 +10,11 @@ import {
 } from '../models/wpMarketingModels.js';
 import { getOrCreateBrain, handleInboundChat } from '../services/wpChatbot.js';
 import { chatbotBus } from '../services/wpChatbotBus.js';
+import {
+  getInboundSyncState,
+  registerWebhookWithCampaignBot,
+  syncInboundMessages,
+} from '../services/wpInboundSync.js';
 import * as bot from '../services/campaignBot.js';
 
 function clientId(req) {
@@ -161,11 +166,19 @@ export const getWebhookStatus = async (req, res) => {
     ]);
     const webhookUrl = bot.getPublicWebhookUrl();
     const serverNow = new Date().toISOString();
+    const sync = getInboundSyncState();
+    const lastWebhookMs = lastAny?.createdAt ? Date.now() - new Date(lastAny.createdAt).getTime() : null;
+    const minutesSinceLastWebhook = lastWebhookMs != null ? Math.floor(lastWebhookMs / 60000) : null;
+    const webhookStale = lastWebhookMs == null || lastWebhookMs > 5 * 60 * 1000;
 
     res.json({
       success: true,
       serverNow,
       webhookUrl,
+      webhookUrls: sync.webhookUrls || [webhookUrl],
+      minutesSinceLastWebhook,
+      webhookStale,
+      inboundSync: sync,
       lastWebhookAt: lastAny?.createdAt || null,
       lastInboundAt: lastInbound?.createdAt || null,
       lastEvent: lastAny?.event || null,
@@ -189,7 +202,9 @@ export const getWebhookStatus = async (req, res) => {
       lastRejectedRawBody: lastRejected?.rawBodyPreview || null,
       lastRejectedDebugTrace: lastRejected?.debugTrace || null,
       receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
-      note: 'CampaignBot POSTs incoming_message here. Valid requests return HTTP 200 immediately, then process async.',
+      note: webhookStale
+        ? 'CampaignBot has not POSTed a webhook recently. Active sync poller is running every 15s as backup.'
+        : 'CampaignBot POSTs incoming_message here. Valid requests return HTTP 200 immediately, then process async.',
       recent: recent.map((e) => ({
         id: e._id,
         event: e.event,
@@ -208,6 +223,26 @@ export const getWebhookStatus = async (req, res) => {
         at: e.createdAt,
       })),
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/** POST /wp-marketing/chatbot/sync-inbound — force poll CampaignBot now */
+export const syncInbound = async (req, res) => {
+  try {
+    const result = await syncInboundMessages();
+    res.json({ success: true, result, sync: getInboundSyncState() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/** POST /wp-marketing/chatbot/register-webhook — try to register webhook URL with CampaignBot */
+export const registerWebhook = async (req, res) => {
+  try {
+    const result = await registerWebhookWithCampaignBot();
+    res.json({ success: true, result, sync: getInboundSyncState() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

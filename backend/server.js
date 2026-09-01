@@ -9,6 +9,7 @@ import { DeliveryPartner, User, Campaign } from './models/Model.js';
 import { WpClient } from './models/wpMarketingModels.js';
 import { startScheduler } from './services/wpScheduler.js';
 import { ensureDefaultBrain } from './services/wpChatbot.js';
+import { startInboundSync } from './services/wpInboundSync.js';
 import * as wpWebhook from './controllers/wpWebhookController.js';
 import * as bot from './services/campaignBot.js';
 
@@ -166,6 +167,7 @@ mongoose.connect(process.env.MONGO_URI)
     await seedWpClients();
     await ensureDefaultBrain();
     startScheduler();
+    startInboundSync();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 

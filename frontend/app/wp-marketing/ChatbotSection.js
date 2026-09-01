@@ -92,7 +92,7 @@ function stageFromSseEvent(e = {}) {
       : `Processing: ${e.processing || e.note || '-'}`,
     inbound_received: 'Inbound saved to DB',
     inbound: `Reply sent (${e.matchedAction || 'bot'})`,
-    outbound: 'Outbound message',
+    inbound_sync: `Synced from CampaignBot (${e.source || 'poll'})`,
     heartbeat: 'SSE heartbeat',
     connected: 'SSE connected',
   };
@@ -318,10 +318,14 @@ function WebhookLiveDashboard({
   pollError,
   now,
   onRefresh,
+  onSyncNow,
+  onRegisterWebhook,
+  syncing,
   refreshing,
 }) {
   const feed = buildActivityFeed(liveEvents, debugLog);
   const pipeline = pipelineState(feed, webhook);
+  const sync = webhook?.inboundSync || {};
 
   return (
     <div className="mb-5 rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm overflow-hidden">
@@ -350,6 +354,11 @@ function WebhookLiveDashboard({
             {lastHeartbeat && (
               <span className="rounded-lg bg-white/10 px-2.5 py-1 text-zinc-200">
                 Heartbeat {fmtRelative(lastHeartbeat, now)}
+              </span>
+            )}
+            {sync.lastRunAt && (
+              <span className="rounded-lg bg-white/10 px-2.5 py-1 text-zinc-200">
+                Sync {fmtRelative(sync.lastRunAt, now)}
               </span>
             )}
           </div>
@@ -381,6 +390,38 @@ function WebhookLiveDashboard({
         <code className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
           {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
         </code>
+
+        {(webhook?.webhookUrls || []).length > 1 && (
+          <p className="text-[10px] text-zinc-500 font-mono">
+            Alt URL: {webhook.webhookUrls.find((u) => u !== webhook.webhookUrl) || '-'}
+          </p>
+        )}
+
+        {webhook?.webhookStale && (
+          <div className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-3 space-y-2">
+            <p className="text-[12px] font-semibold text-red-800">
+              CampaignBot has NOT pushed any webhook in {webhook.minutesSinceLastWebhook ?? '?'} minutes
+            </p>
+            <p className="text-[11px] text-red-700">
+              Your WhatsApp messages are not reaching picoso.in. The monitor and sync poller are running, but only CampaignBot can deliver real inbound events. Verify the webhook URL above is set exactly in CampaignBot dashboard.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={onSyncNow} disabled={syncing} className="rounded-lg bg-red-800 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">
+                {syncing ? 'Syncing…' : 'Sync from CampaignBot now'}
+              </button>
+              <button type="button" onClick={onRegisterWebhook} disabled={syncing} className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-800 disabled:opacity-50">
+                Register webhook URL
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5 text-[11px] text-zinc-600 space-y-1">
+          <p><span className="font-semibold text-zinc-800">Active sync poller:</span> every {Math.round((sync.pollIntervalMs || 15000) / 1000)}s {sync.workingFetchPath ? `(via ${sync.workingFetchPath})` : '(no fetch API found yet)'}</p>
+          <p>Last sync run: {sync.lastRunAt ? `${fmtRelative(sync.lastRunAt, now)} · fetched ${sync.lastFetched || 0} · processed ${sync.lastProcessed || 0}` : 'not started'}</p>
+          {sync.lastError && <p className="text-amber-800">Sync note: {sync.lastError}</p>}
+          {sync.lastRegisterNote && <p className="text-zinc-500">Register: {sync.lastRegisterNote}</p>}
+        </div>
 
         {pollError && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
@@ -1201,6 +1242,7 @@ export default function ChatbotSection() {
   const [lastPollAt, setLastPollAt] = useState(null);
   const [pollCount, setPollCount] = useState(0);
   const [pollError, setPollError] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const now = useLiveClock(1000);
 
@@ -1237,6 +1279,32 @@ export default function ChatbotSection() {
       setPollError(e?.response?.data?.error || e?.message || 'status fetch failed');
     }
   }, []);
+
+  const runSyncNow = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await wpMarketing.syncChatbotInbound();
+      await refreshWebhookStatus();
+      await refreshWebhookDebug(true);
+      setLiveTick((n) => n + 1);
+    } catch (e) {
+      setPollError(e?.response?.data?.error || e?.message || 'sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [refreshWebhookStatus, refreshWebhookDebug]);
+
+  const runRegisterWebhook = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await wpMarketing.registerChatbotWebhook();
+      await refreshWebhookStatus();
+    } catch (e) {
+      setPollError(e?.response?.data?.error || e?.message || 'register failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [refreshWebhookStatus]);
 
   const load = useCallback(async () => {
     setError('');
@@ -1335,12 +1403,12 @@ export default function ChatbotSection() {
           refreshWebhookDebug(true).catch(() => {});
         }
 
-        if (['inbound_received', 'inbound', 'outbound'].includes(data.type)) {
-          setLiveTick((n) => n + 1);
-          if (data.type !== 'outbound') setTab('inbox');
-          refreshWebhookStatus().catch(() => {});
-          load().catch(() => {});
-        }
+            if (['inbound_received', 'inbound', 'outbound', 'inbound_sync'].includes(data.type)) {
+              setLiveTick((n) => n + 1);
+              if (data.type !== 'outbound') setTab('inbox');
+              refreshWebhookStatus().catch(() => {});
+              load().catch(() => {});
+            }
       },
     });
 
@@ -1457,6 +1525,9 @@ export default function ChatbotSection() {
         pollError={pollError}
         now={now}
         onRefresh={() => { refreshWebhookStatus(); refreshWebhookDebug(); }}
+        onSyncNow={runSyncNow}
+        onRegisterWebhook={runRegisterWebhook}
+        syncing={syncing}
         refreshing={debugRefreshing}
       />
 
