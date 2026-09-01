@@ -2,7 +2,7 @@
  * CampaignBot Webhook Handler
  *
  * POST /api/webhooks/campaignbot  (also /webhooks/campaignbot)
- * GET  /api/webhooks/campaignbot  — health check (paste in browser to verify)
+ * GET  /api/webhooks/campaignbot  — health check
  */
 
 import crypto from 'crypto';
@@ -13,12 +13,18 @@ import {
 } from '../models/wpMarketingModels.js';
 import { handleInboundChat } from '../services/wpChatbot.js';
 import { emitChatbotEvent } from '../services/wpChatbotBus.js';
+import {
+  detectWebhookEvent,
+  extractInboundMessagesWithDebug,
+} from '../services/wpWebhookExtract.js';
 
 const WEBHOOK_SECRETS = [
   process.env.CAMPAIGNBOT_WEBHOOK_SECRET,
   process.env.CAMPAIGNBOT_API_KEY,
   '8c226a84bf474b0dffae2efb7b69f05f3fefada3a16c115ffeb45b7a53cc34ab',
 ].filter(Boolean);
+
+const RAW_BODY_STORE_LIMIT = 12000;
 
 async function logWebhook({
   requestId,
@@ -29,10 +35,12 @@ async function logWebhook({
   note,
   body,
   headers,
+  rawBody = '',
   rawBodyLength = 0,
   signature = 'missing',
   parsed = true,
   processing = 'received',
+  debugTrace = null,
 }) {
   try {
     await WpWebhookEvent.create({
@@ -44,17 +52,18 @@ async function logWebhook({
       note: note || '',
       processing,
       rawBodyLength,
+      rawBodyPreview: String(rawBody || '').slice(0, RAW_BODY_STORE_LIMIT),
       signature,
       parsed,
-      payloadPreview: JSON.stringify(body || {}).slice(0, 2000),
+      payloadPreview: JSON.stringify(body || {}).slice(0, 8000),
+      debugTrace,
       headers: {
         signature: headers?.['x-webhook-signature'] ? 'present' : 'missing',
         'content-type': headers?.['content-type'] || '',
         'user-agent': headers?.['user-agent'] || '',
       },
     });
-    // keep table small
-    const old = await WpWebhookEvent.find().sort({ createdAt: -1 }).skip(300).select('_id').lean();
+    const old = await WpWebhookEvent.find().sort({ createdAt: -1 }).skip(500).select('_id').lean();
     if (old.length) {
       await WpWebhookEvent.deleteMany({ _id: { $in: old.map((o) => o._id) } });
     }
@@ -104,180 +113,6 @@ function firstString(...values) {
   return '';
 }
 
-function textFromMessage(message = {}) {
-  if (typeof message === 'string') return message.trim();
-  if (!message || typeof message !== 'object') return '';
-  const text = message.text;
-  if (typeof text === 'string') return text.trim();
-  if (text && typeof text === 'object') {
-    const nested = firstString(text.body, text.text, text.title, text.caption);
-    if (nested) return nested;
-  }
-
-  const interactive = message.interactive || {};
-  return firstString(
-    message.body,
-    message.caption,
-    message.message,
-    message.content,
-    message.messageContent,
-    message.button?.text,
-    message.button?.title,
-    message.list_reply?.title,
-    message.interactive?.button_reply?.title,
-    message.interactive?.list_reply?.title,
-    interactive.button_reply?.id,
-    interactive.list_reply?.id,
-  );
-}
-
-function mediaFromMessage(message = {}) {
-  if (!message || typeof message !== 'object') return null;
-  if (message.media && typeof message.media === 'object') return message.media;
-  if (typeof message.media === 'string' && message.media.trim()) return { url: message.media.trim() };
-  for (const type of ['image', 'video', 'audio', 'document', 'sticker']) {
-    if (message[type] && typeof message[type] === 'object') return message[type];
-  }
-  return null;
-}
-
-function parseSourceTimestamp(value) {
-  if (!value) return null;
-  const numeric = Number(value);
-  const date = Number.isFinite(numeric) && numeric > 0
-    ? new Date(numeric < 1e12 ? numeric * 1000 : numeric)
-    : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function parseEmbeddedPayload(value) {
-  if (value && typeof value === 'object') return value;
-  if (typeof value !== 'string' || !value.trim()) return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function collectPayloadEnvelopes(body = {}) {
-  const root = parseEmbeddedPayload(body) || {};
-  const queue = [root];
-  const envelopes = [];
-  const seen = new Set();
-  const nestedKeys = ['data', 'payload', 'body', 'webhook', 'event_data'];
-
-  while (queue.length) {
-    const current = parseEmbeddedPayload(queue.shift());
-    if (!current || seen.has(current)) continue;
-    seen.add(current);
-    envelopes.push(current);
-    for (const key of nestedKeys) {
-      const nested = parseEmbeddedPayload(current[key]);
-      if (nested) queue.push(nested);
-    }
-  }
-  return envelopes;
-}
-
-function normaliseInbound(message = {}, body = {}, contact = {}) {
-  if (!message || typeof message !== 'object') message = { text: message };
-  const from = firstString(
-    message.from,
-    message.sender,
-    message.phone,
-    body.from,
-    body.sender,
-  );
-  if (!from) return null;
-
-  const type = firstString(message.type, message.messageType, 'text').toLowerCase();
-  const text = textFromMessage(message)
-    || (type !== 'text' ? `[${type} message]` : '');
-
-  return {
-    from,
-    text,
-    name: firstString(
-      message.name,
-      message.profile_name,
-      message.pushName,
-      message.profile?.name,
-      contact.name,
-      contact.profile?.name,
-    ),
-    messageId: firstString(message.message_id, message.messageId, message.wamid, message.id) || null,
-    type,
-    media: mediaFromMessage(message),
-    sourcePayload: message,
-    sourceTimestamp: parseSourceTimestamp(
-      message.timestamp || body.timestamp || body.system?.received_at,
-    ),
-  };
-}
-
-/**
- * CampaignBot documents `processed` as one object, but providers can batch
- * messages or forward Meta's entry/changes envelope. Always collect every
- * message instead of selecting only index zero.
- */
-export function extractInboundMessages(body = {}) {
-  const candidates = [];
-
-  for (const envelope of collectPayloadEnvelopes(body)) {
-    const contacts = Array.isArray(envelope.meta_contacts)
-      ? envelope.meta_contacts
-      : (Array.isArray(envelope.contacts) ? envelope.contacts : []);
-    const processed = parseEmbeddedPayload(envelope.processed);
-    if (Array.isArray(processed)) {
-      candidates.push(...processed.map((message) => ({ message, contact: contacts[0], envelope })));
-    } else if (processed) {
-      candidates.push({ message: processed, contact: contacts[0], envelope });
-    }
-
-    for (const entry of Array.isArray(envelope.entry) ? envelope.entry : []) {
-      for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
-        const value = parseEmbeddedPayload(change?.value) || {};
-        const valueContacts = Array.isArray(value.contacts) ? value.contacts : contacts;
-        for (const message of Array.isArray(value.messages) ? value.messages : []) {
-          candidates.push({ message, contact: valueContacts[0], envelope: value });
-        }
-      }
-    }
-
-    const genericMessages = [
-      ...(Array.isArray(envelope.messages) ? envelope.messages : []),
-      ...(Array.isArray(envelope.data?.messages) ? envelope.data.messages : []),
-    ];
-    candidates.push(...genericMessages.map((message) => ({
-      message,
-      contact: contacts[0],
-      envelope,
-    })));
-
-    const message = parseEmbeddedPayload(envelope.message);
-    if (message) candidates.push({ message, contact: contacts[0], envelope });
-
-    if (firstString(envelope.from, envelope.sender, envelope.phone)) {
-      candidates.push({ message: envelope, contact: contacts[0], envelope });
-    }
-  }
-
-  const seenIds = new Set();
-  return candidates
-    .map(({ message, contact, envelope }) => normaliseInbound(message, envelope || body, contact))
-    .filter((message) => {
-      if (!message) return false;
-      // A batch must not process the same message twice if both a generic and
-      // a nested representation is present.
-      if (!message.messageId) return true;
-      if (seenIds.has(message.messageId)) return false;
-      seenIds.add(message.messageId);
-      return true;
-    });
-}
-
 async function handleMessageStatus(data) {
   const {
     message_id: rawWamid,
@@ -314,8 +149,6 @@ async function handleMessageStatus(data) {
   if (!log) return { valid: true, updated: false, reason: 'message log not found' };
 
   const ORDER = { queued: 0, sent: 1, delivered: 2, read: 3 };
-  // Failed is terminal. Never let a delayed "sent" or "delivered" callback
-  // overwrite a failure, and ignore older duplicate status callbacks.
   if (log.status === 'failed' && status !== 'failed') {
     return { valid: true, updated: false, reason: 'failed status is terminal' };
   }
@@ -375,29 +208,25 @@ async function handleIncomingMessage(inbound, requestId = '') {
   } catch (err) {
     console.error(`[WP Webhook][${requestId || 'unknown'}] chatbot error:`, err.message, err.stack);
     await markProcessing(requestId, 'failed', `chatbot error: ${err.message}`);
-    await logWebhook({
+    emitChatbotEvent({
+      type: 'webhook_processing',
       requestId,
-      event: 'incoming_message',
-      from: inbound.from,
-      text: inbound.text,
-      ok: false,
-      note: `chatbot error: ${err.message}`,
       processing: 'failed',
+      note: `chatbot error: ${err.message}`,
+      at: new Date().toISOString(),
     });
     return null;
   }
 
-  // CampaignBot may retry a delivery until it sees a successful response.
-  // The message-id check in handleInboundChat makes retries harmless.
   if (result?.duplicate) return result;
 
   const phone = String(inbound.from).replace(/\D/g, '');
-  if (!phone) return;
+  if (!phone) return result;
   const log = await WpMessageLog.findOne({
     contactPhone: { $regex: phone },
     status: { $in: ['sent', 'delivered', 'read'] },
   }).sort({ createdAt: -1 });
-  if (!log) return;
+  if (!log) return result;
   await WpMessageLog.findByIdAndUpdate(log._id, { $set: { replied: true } });
   if (log.experimentId && log.variantNumber != null) {
     await WpExperiment.updateOne(
@@ -409,8 +238,6 @@ async function handleIncomingMessage(inbound, requestId = '') {
 }
 
 async function processInboundMessages(messages, requestId = '') {
-  // Keep one webhook batch ordered. This prevents simultaneous upserts for
-  // the same contact from racing and makes the inbox chronology predictable.
   for (const inbound of messages) {
     try {
       await handleIncomingMessage(inbound, requestId);
@@ -421,9 +248,15 @@ async function processInboundMessages(messages, requestId = '') {
   }
 }
 
-/** GET — health / verify URL is reachable (+ Meta hub.challenge support) */
+function isIncomingWebhook(event, body) {
+  if (['incoming_message', 'message', 'messages'].includes(event)) return true;
+  if (body?.processed !== undefined) return true;
+  const { messages } = extractInboundMessagesWithDebug(body);
+  return messages.length > 0;
+}
+
+/** GET — health */
 export const webhookHealth = async (req, res) => {
-  // Meta / BSP verification handshake (if forwarded)
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
@@ -445,17 +278,11 @@ export const webhookHealth = async (req, res) => {
       lastWebhookAt: last?.createdAt || null,
       lastInboundAt: lastInbound?.createdAt || null,
       lastEvent: last?.event || null,
-      lastRequestId: last?.requestId || null,
-      lastProcessing: last?.processing || null,
-      lastSignature: last?.signature || null,
-      lastParsed: last?.parsed ?? null,
     });
   } catch (err) {
-    console.error('[WP Webhook] health lookup failed:', err.message);
     return res.status(200).json({
       ok: true,
       message: 'CampaignBot webhook endpoint is live',
-      path: req.originalUrl || req.path,
       database: 'unavailable',
       error: err.message,
     });
@@ -467,9 +294,7 @@ export const handleWebhook = async (req, res) => {
   const requestId = req.webhookRequestId || req.headers['x-request-id'] || crypto.randomUUID();
   const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
   const body = req.body || {};
-  const event = collectPayloadEnvelopes(body)
-    .map((envelope) => firstString(envelope.event, envelope.type, envelope.event_type))
-    .find(Boolean) || '';
+  const event = detectWebhookEvent(body);
   const rawBodyLength = Buffer.byteLength(rawBody, 'utf8');
   const signatureCheck = sigHeader
     ? verifySignature(rawBody, sigHeader)
@@ -477,16 +302,17 @@ export const handleWebhook = async (req, res) => {
   const signatureState = signatureCheck.ok ? 'valid' : `invalid:${signatureCheck.reason}`;
   const logMeta = {
     requestId,
+    rawBody,
     rawBodyLength,
     signature: signatureState,
     parsed: req.webhookJsonParsed !== false,
   };
 
   console.log(
-    `[WP Webhook][${requestId}] HIT method=${req.method} url=${req.originalUrl || req.path}` +
-    ` event=${event || 'none'} signature=${signatureState}` +
+    `[WP Webhook][${requestId}] HIT event=${event || 'none'} signature=${signatureState}` +
     ` bytes=${rawBodyLength} bodyKeys=${Object.keys(body).join(',')}`,
   );
+
   emitChatbotEvent({
     type: 'webhook_received',
     requestId,
@@ -494,20 +320,19 @@ export const handleWebhook = async (req, res) => {
     signature: signatureState,
     parsed: req.webhookJsonParsed !== false,
     rawBodyLength,
+    bodyKeys: Object.keys(body),
     at: new Date().toISOString(),
   });
 
-  if (!signatureCheck.ok) {
-    console.warn(`[WP Webhook][${requestId}] signature ${signatureCheck.reason} — processing anyway`);
-  }
-
   if (req.webhookJsonParsed === false) {
+    const debugTrace = { steps: [{ step: 'json_parse_failed', detail: req.webhookParseError }] };
     emitChatbotEvent({
       type: 'webhook_rejected',
       requestId,
       event: 'invalid_json',
       reason: req.webhookParseError || 'invalid JSON',
-      payloadPreview: rawBody.slice(0, 2000),
+      rawBodyPreview: rawBody.slice(0, 8000),
+      debugTrace,
       at: new Date().toISOString(),
     });
     await logWebhook({
@@ -518,12 +343,12 @@ export const handleWebhook = async (req, res) => {
       body: {},
       headers: req.headers,
       processing: 'failed',
+      debugTrace,
     });
     return res.status(400).json({ statusCode: 400, message: 'Invalid JSON webhook payload' });
   }
 
   try {
-    // CampaignBot "overview" ping sometimes posts signing meta without event
     if (!event && body.algorithm && body.secret) {
       await logWebhook({
         ...logMeta,
@@ -565,57 +390,80 @@ export const handleWebhook = async (req, res) => {
       return res.json({ statusCode: 200, message: 'Message status received successfully' });
     }
 
-    const hasInboundShape = event === 'incoming_message'
-      || event === 'message'
-      || event === 'messages'
-      || extractInboundMessages(body).length > 0;
-    if (hasInboundShape) {
-      const inbounds = extractInboundMessages(body);
-      if (!inbounds.length) {
-        emitChatbotEvent({
-          type: 'webhook_rejected',
-          requestId,
-          event: event || 'incoming_message',
-          reason: 'no sender/message found',
-          payloadPreview: JSON.stringify(body).slice(0, 2000),
-          at: new Date().toISOString(),
-        });
-        await logWebhook({
-          ...logMeta,
-          event: event || 'incoming_message',
-          ok: false,
-          note: 'invalid payload: no sender/message found',
-          body,
-          headers: req.headers,
-          processing: 'failed',
-        });
-        return res.status(400).json({ statusCode: 400, message: 'Invalid incoming message payload' });
-      }
+    if (isIncomingWebhook(event, body)) {
+      const { messages: inbounds, debug } = extractInboundMessagesWithDebug(body, rawBody);
 
-      // Acknowledge before any database or chatbot work. CampaignBot treats
-      // this response as delivery confirmation and may retry on a slow 5xx.
+      // Always acknowledge incoming webhooks with 200 so CampaignBot keeps delivering.
       res.status(200).json({
         statusCode: 200,
         message: inbounds.length === 1
           ? 'Incoming message received successfully'
-          : `${inbounds.length} incoming messages received successfully`,
+          : inbounds.length > 1
+            ? `${inbounds.length} incoming messages received successfully`
+            : 'Incoming message received successfully',
+        requestId,
+        extracted: inbounds.length,
       });
+
       setImmediate(async () => {
         try {
+          if (!inbounds.length) {
+            const failNote = 'extraction failed: no sender/message found — see debugTrace';
+            emitChatbotEvent({
+              type: 'webhook_rejected',
+              requestId,
+              event: event || 'incoming_message',
+              reason: failNote,
+              payloadPreview: JSON.stringify(body).slice(0, 8000),
+              rawBodyPreview: rawBody.slice(0, 8000),
+              debugTrace: debug,
+              at: new Date().toISOString(),
+            });
+            await logWebhook({
+              ...logMeta,
+              event: 'incoming_message',
+              ok: false,
+              note: failNote,
+              body,
+              headers: req.headers,
+              processing: 'failed',
+              debugTrace: debug,
+            });
+            return;
+          }
+
           await Promise.all(inbounds.map((inbound) => logWebhook({
             ...logMeta,
             event: 'incoming_message',
             from: inbound.from,
             text: inbound.text,
             ok: true,
-            note: `${inbounds.length > 1 ? 'batch ' : ''}accepted${inbound.messageId ? `: ${inbound.messageId}` : ''}`,
+            note: `accepted via ${inbound._extractSource || 'parser'}${inbound.messageId ? `: ${inbound.messageId}` : ''}`,
             body,
             headers: req.headers,
             processing: 'received',
+            debugTrace: debug,
           })));
+
+          emitChatbotEvent({
+            type: 'webhook_extracted',
+            requestId,
+            count: inbounds.length,
+            from: inbounds[0]?.from,
+            text: inbounds[0]?.text,
+            debugTrace: debug,
+            at: new Date().toISOString(),
+          });
+
           await processInboundMessages(inbounds, requestId);
         } catch (err) {
           console.error(`[WP Webhook][${requestId}] async receipt failed:`, err.message, err.stack);
+          emitChatbotEvent({
+            type: 'webhook_rejected',
+            requestId,
+            reason: `async error: ${err.message}`,
+            at: new Date().toISOString(),
+          });
         }
       });
       return;
@@ -645,3 +493,6 @@ export const handleWebhook = async (req, res) => {
     res.json({ statusCode: 200, message: 'Webhook received (processing error logged)' });
   }
 };
+
+// Re-export for tests
+export { extractInboundMessagesWithDebug } from '../services/wpWebhookExtract.js';

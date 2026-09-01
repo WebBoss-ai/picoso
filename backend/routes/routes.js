@@ -280,6 +280,7 @@ router.get('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatb
 router.put('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatbot.updateBrain);
 router.get('/wp-marketing/chatbot/stats',                  requireWpPin, wpChatbot.getStats);
 router.get('/wp-marketing/chatbot/webhook-status',         requireWpPin, wpChatbot.getWebhookStatus);
+router.get('/wp-marketing/chatbot/webhook-debug',          requireWpPin, wpChatbot.getWebhookDebug);
 router.get('/wp-marketing/chatbot/events',                 requireWpPin, wpChatbot.streamEvents);
 router.get('/wp-marketing/chatbot/conversations',          requireWpPin, wpChatbot.listConversations);
 router.get('/wp-marketing/chatbot/conversations/:id',      requireWpPin, wpChatbot.getConversation);

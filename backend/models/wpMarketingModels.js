@@ -478,6 +478,8 @@ const wpWebhookEventSchema = new mongoose.Schema({
   signature:   { type: String, default: 'missing' },
   parsed:      { type: Boolean, default: true },
   payloadPreview: { type: String, default: '' },
+  rawBodyPreview: { type: String, default: '' },
+  debugTrace:  { type: mongoose.Schema.Types.Mixed, default: null },
   headers:     { type: mongoose.Schema.Types.Mixed, default: {} },
   createdAt:   { type: Date, default: Date.now, index: true },
 });

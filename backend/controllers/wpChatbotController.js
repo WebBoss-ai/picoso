@@ -153,12 +153,14 @@ export const getWebhookStatus = async (req, res) => {
       WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ ok: false }).sort({ createdAt: -1 }).lean(),
-      WpWebhookEvent.find().sort({ createdAt: -1 }).limit(15).lean(),
+      WpWebhookEvent.find().sort({ createdAt: -1 }).limit(25).lean(),
     ]);
     const webhookUrl = bot.getPublicWebhookUrl();
+    const serverNow = new Date().toISOString();
 
     res.json({
       success: true,
+      serverNow,
       webhookUrl,
       lastWebhookAt: lastAny?.createdAt || null,
       lastInboundAt: lastInbound?.createdAt || null,
@@ -174,8 +176,10 @@ export const getWebhookStatus = async (req, res) => {
       lastRejectedAt: lastRejected?.createdAt || null,
       lastRejectedNote: lastRejected?.note || null,
       lastRejectedPayload: lastRejected?.payloadPreview || null,
+      lastRejectedRawBody: lastRejected?.rawBodyPreview || null,
+      lastRejectedDebugTrace: lastRejected?.debugTrace || null,
       receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
-      note: 'CampaignBot must POST incoming_message events to this configured callback URL. Valid requests are acknowledged immediately and processed asynchronously.',
+      note: 'CampaignBot POSTs incoming_message here. Valid requests return HTTP 200 immediately, then process async.',
       recent: recent.map((e) => ({
         id: e._id,
         event: e.event,
@@ -189,6 +193,46 @@ export const getWebhookStatus = async (req, res) => {
         parsed: e.parsed,
         rawBodyLength: e.rawBodyLength,
         payloadPreview: e.payloadPreview,
+        rawBodyPreview: e.rawBodyPreview,
+        debugTrace: e.debugTrace,
+        at: e.createdAt,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/** GET /wp-marketing/chatbot/webhook-debug — full trace for support */
+export const getWebhookDebug = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+    const events = await WpWebhookEvent.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({
+      success: true,
+      serverNow: new Date().toISOString(),
+      webhookUrl: bot.getPublicWebhookUrl(),
+      count: events.length,
+      events: events.map((e) => ({
+        id: e._id,
+        requestId: e.requestId,
+        event: e.event,
+        from: e.from,
+        text: e.text,
+        ok: e.ok,
+        note: e.note,
+        processing: e.processing,
+        signature: e.signature,
+        parsed: e.parsed,
+        rawBodyLength: e.rawBodyLength,
+        payloadPreview: e.payloadPreview,
+        rawBodyPreview: e.rawBodyPreview,
+        debugTrace: e.debugTrace,
+        headers: e.headers,
         at: e.createdAt,
       })),
     });

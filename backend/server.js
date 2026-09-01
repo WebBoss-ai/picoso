@@ -175,6 +175,7 @@ app.use('/api', routes);
 app.get('/webhooks/campaignbot', wpWebhook.webhookHealth);
 app.post('/webhooks/campaignbot', wpWebhook.handleWebhook);
 app.get('/api/webhooks/campaignbot', wpWebhook.webhookHealth);
+app.post('/api/webhooks/campaignbot', wpWebhook.handleWebhook);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Trezla Bowl Shop API Running' });

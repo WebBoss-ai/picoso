@@ -19,8 +19,208 @@ function fmtTime(d) {
   const dt = new Date(d);
   const now = new Date();
   const sameDay = dt.toDateString() === now.toDateString();
-  if (sameDay) return dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  if (sameDay) return dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtRelative(d) {
+  if (!d) return 'never';
+  const ms = Date.now() - new Date(d).getTime();
+  if (ms < 0) return 'just now';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+  return fmtTime(d);
+}
+
+function tryPrettyJson(raw) {
+  if (!raw) return '';
+  try {
+    return JSON.stringify(typeof raw === 'string' ? JSON.parse(raw) : raw, null, 2);
+  } catch {
+    return String(raw);
+  }
+}
+
+/* ── Webhook debug console (frontend-only diagnostics) ───────────────────── */
+function WebhookDebugConsole({
+  webhook,
+  debugLog,
+  liveEvents,
+  sseStatus,
+  lastHeartbeat,
+  serverNow,
+  onRefresh,
+  refreshing,
+}) {
+  const [expandedId, setExpandedId] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    serverNow,
+    webhookUrl: webhook?.webhookUrl,
+    sseStatus,
+    lastHeartbeat,
+    lastWebhookAt: webhook?.lastWebhookAt,
+    lastInboundAt: webhook?.lastInboundAt,
+    lastRejectedNote: webhook?.lastRejectedNote,
+    lastRejectedPayload: webhook?.lastRejectedPayload,
+    lastRejectedRawBody: webhook?.lastRejectedRawBody,
+    lastRejectedDebugTrace: webhook?.lastRejectedDebugTrace,
+    recent: debugLog,
+    liveEvents: liveEvents.slice(0, 40),
+  };
+
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  const rows = debugLog?.length ? debugLog : (webhook?.recent || []);
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">Webhook debug console</p>
+          <p className="text-[11px] text-amber-900/70 mt-0.5">
+            Copy this report and send it for support. Updates live via SSE — no refresh needed.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+          >
+            {refreshing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            Reload logs
+          </button>
+          <button
+            type="button"
+            onClick={copyReport}
+            className="rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-800"
+          >
+            {copied ? 'Copied' : 'Copy full report'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[10.5px] font-mono">
+        <div className="rounded-lg border border-amber-100 bg-white p-2">
+          <p className="text-amber-600">Server now</p>
+          <p className="text-amber-950">{serverNow ? fmtTime(serverNow) : '-'}</p>
+        </div>
+        <div className="rounded-lg border border-amber-100 bg-white p-2">
+          <p className="text-amber-600">SSE / heartbeat</p>
+          <p className="text-amber-950">{sseStatus}{lastHeartbeat ? ` · ${fmtRelative(lastHeartbeat)}` : ''}</p>
+        </div>
+        <div className="rounded-lg border border-amber-100 bg-white p-2">
+          <p className="text-amber-600">Last webhook</p>
+          <p className="text-amber-950">{fmtRelative(webhook?.lastWebhookAt)} ({fmtTime(webhook?.lastWebhookAt)})</p>
+        </div>
+        <div className="rounded-lg border border-amber-100 bg-white p-2">
+          <p className="text-amber-600">Last inbound</p>
+          <p className="text-amber-950">{fmtRelative(webhook?.lastInboundAt)} · {webhook?.lastInboundProcessing || '-'}</p>
+        </div>
+      </div>
+
+      {webhook?.lastRejectedNote && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 space-y-2">
+          <p className="text-[11px] font-semibold text-red-800">Latest failure: {webhook.lastRejectedNote}</p>
+          {webhook.lastRejectedDebugTrace?.steps && (
+            <pre className="max-h-32 overflow-auto text-[9px] text-red-700 whitespace-pre-wrap break-all">
+              {tryPrettyJson(webhook.lastRejectedDebugTrace)}
+            </pre>
+          )}
+          {webhook.lastRejectedRawBody && (
+            <details>
+              <summary className="cursor-pointer text-[10px] font-medium text-red-700">Raw body from CampaignBot</summary>
+              <pre className="mt-1 max-h-40 overflow-auto text-[9px] text-red-800 whitespace-pre-wrap break-all">{webhook.lastRejectedRawBody}</pre>
+            </details>
+          )}
+          {webhook.lastRejectedPayload && (
+            <details>
+              <summary className="cursor-pointer text-[10px] font-medium text-red-700">Parsed JSON body</summary>
+              <pre className="mt-1 max-h-40 overflow-auto text-[9px] text-red-800 whitespace-pre-wrap break-all">{tryPrettyJson(webhook.lastRejectedPayload)}</pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      <div className="rounded-xl border border-amber-100 bg-white max-h-80 overflow-y-auto">
+        <p className="sticky top-0 bg-white border-b border-amber-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+          Stored webhook events ({rows.length})
+        </p>
+        {rows.length === 0 ? (
+          <p className="p-4 text-[11px] text-amber-800/60">No webhook events stored yet. Send a WhatsApp message to Picoso number.</p>
+        ) : (
+          rows.map((e) => {
+            const id = e.id || e.requestId || e.at;
+            const open = expandedId === id;
+            return (
+              <div key={id} className="border-b border-amber-50 last:border-0">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(open ? null : id)}
+                  className="w-full text-left px-3 py-2 hover:bg-amber-50/80"
+                >
+                  <p className={`text-[10px] font-mono truncate ${e.ok === false ? 'text-red-700' : 'text-amber-950'}`}>
+                    {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.ok === false ? 'FAIL' : 'OK'} · {e.from || '-'} · {e.note || e.text || ''}
+                  </p>
+                </button>
+                {open && (
+                  <div className="px-3 pb-3 space-y-2 bg-amber-50/50">
+                    <pre className="text-[9px] text-amber-950 whitespace-pre-wrap break-all max-h-48 overflow-auto">
+                      {tryPrettyJson({
+                        requestId: e.requestId,
+                        signature: e.signature,
+                        parsed: e.parsed,
+                        rawBodyLength: e.rawBodyLength,
+                        note: e.note,
+                        debugTrace: e.debugTrace,
+                      })}
+                    </pre>
+                    {e.rawBodyPreview && (
+                      <details open>
+                        <summary className="text-[9px] font-semibold text-amber-800">rawBodyPreview</summary>
+                        <pre className="text-[9px] whitespace-pre-wrap break-all max-h-40 overflow-auto">{e.rawBodyPreview}</pre>
+                      </details>
+                    )}
+                    {e.payloadPreview && (
+                      <details>
+                        <summary className="text-[9px] font-semibold text-amber-800">payloadPreview</summary>
+                        <pre className="text-[9px] whitespace-pre-wrap break-all max-h-40 overflow-auto">{tryPrettyJson(e.payloadPreview)}</pre>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {liveEvents.length > 0 && (
+        <details className="rounded-xl border border-amber-100 bg-white p-2.5">
+          <summary className="cursor-pointer text-[10px] font-semibold text-amber-800">
+            Live SSE events this session ({liveEvents.length})
+          </summary>
+          <pre className="mt-2 max-h-48 overflow-auto text-[9px] text-amber-900 whitespace-pre-wrap break-all">
+            {tryPrettyJson(liveEvents.slice(0, 40))}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function StatPill({ label, value }) {
@@ -514,6 +714,9 @@ export default function ChatbotSection() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [webhook, setWebhook] = useState(null);
+  const [debugLog, setDebugLog] = useState([]);
+  const [serverNow, setServerNow] = useState(null);
+  const [debugRefreshing, setDebugRefreshing] = useState(false);
   const [liveTick, setLiveTick] = useState(0);
   const [sseStatus, setSseStatus] = useState('connecting');
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
@@ -521,8 +724,17 @@ export default function ChatbotSection() {
 
   const pushDebug = useCallback((event) => {
     const entry = { ...event, receivedAt: new Date().toISOString() };
-    console.debug('[WP Chatbot live event]', entry);
-    setDebugEvents((items) => [entry, ...items].slice(0, 30));
+    setDebugEvents((items) => [entry, ...items].slice(0, 50));
+  }, []);
+
+  const refreshWebhookDebug = useCallback(async () => {
+    setDebugRefreshing(true);
+    try {
+      const r = await wpMarketing.getChatbotWebhookDebug({ limit: 40 });
+      setDebugLog(r.data.events || []);
+      setServerNow(r.data.serverNow || new Date().toISOString());
+    } catch { /* ignore */ }
+    finally { setDebugRefreshing(false); }
   }, []);
 
   const load = useCallback(async () => {
@@ -535,13 +747,17 @@ export default function ChatbotSection() {
       ]);
       setBrain(b.data.brain);
       setStats(s.data.stats);
-      if (w?.data) setWebhook(w.data);
+      if (w?.data) {
+        setWebhook(w.data);
+        setServerNow(w.data.serverNow || null);
+      }
+      await refreshWebhookDebug();
     } catch (e) {
       setError(e?.response?.data?.error || 'Could not load chatbot');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshWebhookDebug]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -565,26 +781,29 @@ export default function ChatbotSection() {
             }
             pushDebug(data);
 
-            if (data.type === 'webhook_received' || data.type === 'webhook_rejected') {
+            if (data.type === 'webhook_received' || data.type === 'webhook_rejected' || data.type === 'webhook_extracted') {
               setWebhook((previous) => ({
                 ...(previous || {}),
                 lastWebhookAt: data.at,
                 lastEvent: data.event || 'unknown',
                 lastRequestId: data.requestId || previous?.lastRequestId || null,
-                lastProcessing: data.type === 'webhook_rejected' ? 'failed' : 'received',
+                lastProcessing: data.type === 'webhook_rejected' ? 'failed' : data.type === 'webhook_extracted' ? 'extracted' : 'received',
                 lastSignature: data.signature || previous?.lastSignature || null,
                 lastParsed: data.parsed ?? previous?.lastParsed ?? null,
-                ...(data.event === 'incoming_message' ? {
+                ...(data.event === 'incoming_message' || data.type === 'webhook_extracted' ? {
                   lastInboundAt: data.at,
                   lastInboundRequestId: data.requestId || null,
-                  lastInboundProcessing: data.type === 'webhook_rejected' ? 'failed' : 'received',
+                  lastInboundProcessing: data.type === 'webhook_rejected' ? 'failed' : data.processing || 'received',
                 } : {}),
                 ...(data.type === 'webhook_rejected' ? {
                   lastRejectedAt: data.at,
                   lastRejectedNote: data.reason || 'Webhook rejected',
                   lastRejectedPayload: data.payloadPreview || null,
+                  lastRejectedRawBody: data.rawBodyPreview || null,
+                  lastRejectedDebugTrace: data.debugTrace || null,
                 } : {}),
               }));
+              refreshWebhookDebug().catch(() => {});
             }
             if (data.type === 'webhook_processing') {
               setWebhook((previous) => ({
@@ -611,7 +830,7 @@ export default function ChatbotSection() {
     return () => {
       es?.close();
     };
-  }, [load, pushDebug]);
+  }, [load, pushDebug, refreshWebhookDebug]);
 
   const save = async () => {
     if (!brain) return;
@@ -740,50 +959,25 @@ export default function ChatbotSection() {
           {' · '}No polling; inbound events refresh the inbox automatically.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
-          <p>Last webhook: <span className="font-mono text-zinc-800">{webhook?.lastWebhookAt ? fmtTime(webhook.lastWebhookAt) : 'never'}</span></p>
-          <p>Last inbound: <span className="font-mono text-zinc-800">{webhook?.lastInboundAt ? fmtTime(webhook.lastInboundAt) : 'never'}</span></p>
+          <p>Last webhook: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastWebhookAt)}</span></p>
+          <p>Last inbound: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastInboundAt)}</span></p>
           <p>Last event: <span className="font-mono text-zinc-800">{webhook?.lastEvent || '-'}</span></p>
           <p>Processing: <span className="font-mono text-zinc-800">{webhook?.lastInboundProcessing || '-'}</span></p>
           <p>Signature: <span className="font-mono text-zinc-800">{webhook?.lastInboundSignature || '-'}</span></p>
           <p>Request ID: <span className="font-mono text-zinc-800">{webhook?.lastInboundRequestId || '-'}</span></p>
         </div>
-        {webhook?.recent?.length > 0 && (
-          <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-2.5 max-h-28 overflow-y-auto space-y-1">
-            {webhook.recent.slice(0, 6).map((e) => (
-              <div key={e.id}>
-                <p className="text-[10.5px] font-mono text-zinc-600 truncate">
-                  {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.from || '-'} · {e.text || e.note || ''}
-                </p>
-                {!e.ok && e.payloadPreview && (
-                  <pre className="mt-0.5 max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[9px] text-red-500">
-                    {e.payloadPreview}
-                  </pre>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        {webhook?.lastRejectedPayload && (
-          <details className="rounded-xl border border-red-100 bg-red-50/60 p-2.5">
-            <summary className="cursor-pointer text-[10.5px] font-semibold text-red-700">
-              Latest rejected payload · {webhook.lastRejectedNote || 'invalid payload'}
-            </summary>
-            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[9.5px] text-red-700">
-              {webhook.lastRejectedPayload}
-            </pre>
-          </details>
-        )}
-        {debugEvents.length > 0 && (
-          <details className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-2.5">
-            <summary className="cursor-pointer text-[10.5px] font-semibold text-zinc-600">
-              Frontend live log · {debugEvents.length} events
-            </summary>
-            <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-all text-[9.5px] text-zinc-600">
-              {debugEvents.map((event) => `${event.receivedAt} · ${event.type} · ${event.requestId || event.messageId || '-'}${event.reason ? ` · ${event.reason}` : ''}`).join('\n')}
-            </pre>
-          </details>
-        )}
       </div>
+
+      <WebhookDebugConsole
+        webhook={webhook}
+        debugLog={debugLog}
+        liveEvents={debugEvents}
+        sseStatus={sseStatus}
+        lastHeartbeat={lastHeartbeat}
+        serverNow={serverNow}
+        onRefresh={refreshWebhookDebug}
+        refreshing={debugRefreshing}
+      />
 
       {/* Live test — sends a real WhatsApp reply via CampaignBot */}
       <div className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4">
