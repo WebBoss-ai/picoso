@@ -99,6 +99,14 @@ function stageFromSseEvent(e = {}) {
   return map[e.type] || e.type || 'Event';
 }
 
+function isVerifyWebhookEvent(e = {}) {
+  return e.isVerify === true
+    || e.type === 'webhook_verify'
+    || String(e.text || '').includes('__picoso_webhook_verify__')
+    || e.from === '+919999999999'
+    || String(e.note || '').includes('wamid.VERIFY');
+}
+
 function sseDetail(e = {}) {
   const parts = [e.type];
   if (e.event) parts.push(e.event);
@@ -123,6 +131,7 @@ function buildActivityFeed(liveEvents = [], debugLog = []) {
   };
 
   for (const e of debugLog) {
+    if (isVerifyWebhookEvent(e)) continue;
     push({
       id: `srv-${e.id || e.requestId || e.at}`,
       at: e.at,
@@ -137,7 +146,7 @@ function buildActivityFeed(liveEvents = [], debugLog = []) {
   }
 
   for (const e of liveEvents) {
-    if (e.type === 'heartbeat') continue;
+    if (e.type === 'heartbeat' || isVerifyWebhookEvent(e)) continue;
     push({
       id: `sse-${e.receivedAt || e.at}-${e.type}`,
       at: e.at || e.receivedAt,
@@ -364,16 +373,16 @@ function WebhookVerifyPanel({ verify, loading, onRun, now }) {
 
       {verify?.diagnostics && (
         <details className="rounded-lg border border-blue-100 bg-white p-3">
-          <summary className="cursor-pointer text-[11px] font-semibold text-blue-800">Server POST tracker (in-memory)</summary>
+          <summary className="cursor-pointer text-[11px] font-semibold text-blue-800">Server POST tracker (real vs self-test)</summary>
           <pre className="mt-2 text-[10px] font-mono text-zinc-700 whitespace-pre-wrap break-all max-h-48 overflow-auto">
             {tryPrettyJson({
-              totalPosts: verify.diagnostics.totalPosts,
-              lastPostAt: verify.diagnostics.lastPostAt,
-              lastPostIp: verify.diagnostics.lastPostIp,
-              lastPostUserAgent: verify.diagnostics.lastPostUserAgent,
-              lastPostEvent: verify.diagnostics.lastPostEvent,
-              lastPostBodyPreview: verify.diagnostics.lastPostBodyPreview,
-              recentHits: verify.diagnostics.recentHits?.slice(0, 8),
+              totalRealPosts: verify.diagnostics.totalRealPosts,
+              totalVerifyPosts: verify.diagnostics.totalVerifyPosts,
+              lastRealPostAt: verify.diagnostics.lastRealPostAt,
+              lastRealPostIp: verify.diagnostics.lastRealPostIp,
+              lastRealPostUserAgent: verify.diagnostics.lastRealPostUserAgent,
+              minutesSinceLastRealPost: verify.diagnostics.minutesSinceLastRealPost,
+              recentRealHits: verify.diagnostics.recentRealHits?.slice(0, 8),
             })}
           </pre>
         </details>
@@ -486,10 +495,10 @@ function WebhookLiveDashboard({
         {webhook?.webhookStale && (
           <div className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-3 space-y-2">
             <p className="text-[12px] font-semibold text-red-800">
-              CampaignBot has NOT pushed any webhook in {webhook.minutesSinceLastWebhook ?? '?'} minutes
+              CampaignBot has NOT pushed a real WhatsApp webhook in {webhook.webhookDiagnostics?.minutesSinceLastRealPost ?? webhook.minutesSinceLastWebhook ?? '?'} minutes
             </p>
             <p className="text-[11px] text-red-700">
-              Your WhatsApp messages are not reaching picoso.in. The monitor and sync poller are running, but only CampaignBot can deliver real inbound events. Verify the webhook URL above is set exactly in CampaignBot dashboard.
+              Your WhatsApp messages are not reaching picoso.in. Self-test pings do not count — only CampaignBot can deliver real inbound events. Verify the webhook URL above is set exactly in CampaignBot dashboard.
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={onSyncNow} disabled={syncing} className="rounded-lg bg-red-800 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">
@@ -1436,10 +1445,6 @@ export default function ChatbotSection() {
     }
   }, [refreshWebhookDebug]);
 
-  useEffect(() => {
-    runVerify().catch(() => {});
-  }, [runVerify]);
-
   useEffect(() => { load(); }, [load]);
 
   // Continuous polling — webhook status + debug log every 2s.
@@ -1476,6 +1481,7 @@ export default function ChatbotSection() {
           setLastHeartbeat(data.at);
           return;
         }
+        if (isVerifyWebhookEvent(data)) return;
         pushDebug(data);
 
         if (data.type === 'webhook_received' || data.type === 'webhook_rejected' || data.type === 'webhook_extracted') {

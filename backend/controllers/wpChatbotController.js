@@ -19,6 +19,7 @@ import {
   analyzeRootCause,
   getWebhookDiagnostics,
 } from '../services/wpWebhookDiagnostics.js';
+import { REAL_WEBHOOK_QUERY } from '../services/wpWebhookVerify.js';
 import * as bot from '../services/campaignBot.js';
 
 function clientId(req) {
@@ -160,10 +161,10 @@ export const getWebhookStatus = async (req, res) => {
   try {
     const cid = clientId(req);
     const [lastAny, lastInbound, lastRejected, recent, lastInboundMsg, lastOutboundMsg, convoCount] = await Promise.all([
-      WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
-      WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
-      WpWebhookEvent.findOne({ ok: false }).sort({ createdAt: -1 }).lean(),
-      WpWebhookEvent.find().sort({ createdAt: -1 }).limit(25).lean(),
+      WpWebhookEvent.findOne(REAL_WEBHOOK_QUERY).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.findOne({ ...REAL_WEBHOOK_QUERY, event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.findOne({ ...REAL_WEBHOOK_QUERY, ok: false }).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.find(REAL_WEBHOOK_QUERY).sort({ createdAt: -1 }).limit(25).lean(),
       WpChatMessage.findOne({ clientId: cid, direction: 'inbound' }).sort({ createdAt: -1 }).lean(),
       WpChatMessage.findOne({ clientId: cid, direction: 'outbound' }).sort({ createdAt: -1 }).lean(),
       WpChatConversation.countDocuments({ clientId: cid }),
@@ -171,9 +172,10 @@ export const getWebhookStatus = async (req, res) => {
     const webhookUrl = bot.getPublicWebhookUrl();
     const serverNow = new Date().toISOString();
     const sync = getInboundSyncState();
+    const diagnostics = getWebhookDiagnostics();
     const lastWebhookMs = lastAny?.createdAt ? Date.now() - new Date(lastAny.createdAt).getTime() : null;
     const minutesSinceLastWebhook = lastWebhookMs != null ? Math.floor(lastWebhookMs / 60000) : null;
-    const webhookStale = lastWebhookMs == null || lastWebhookMs > 5 * 60 * 1000;
+    const webhookStale = diagnostics.realPostStale;
 
     res.json({
       success: true,
@@ -208,7 +210,7 @@ export const getWebhookStatus = async (req, res) => {
       lastRejectedDebugTrace: lastRejected?.debugTrace || null,
       receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
       note: webhookStale
-        ? 'CampaignBot has not POSTed a webhook recently. Active sync poller is running every 15s as backup.'
+        ? `CampaignBot has not POSTed a real WhatsApp webhook in ${diagnostics.minutesSinceLastRealPost ?? minutesSinceLastWebhook ?? '?'} minutes. Active sync poller is running every 15s as backup.`
         : 'CampaignBot POSTs incoming_message here. Valid requests return HTTP 200 immediately, then process async.',
       recent: recent.map((e) => ({
         id: e._id,
@@ -236,16 +238,16 @@ export const getWebhookStatus = async (req, res) => {
 /** GET /wp-marketing/chatbot/webhook-verify — full diagnostic + root cause */
 export const verifyWebhook = async (req, res) => {
   try {
-    const diagnostics = getWebhookDiagnostics();
     const sync = getInboundSyncState();
     const webhookUrl = bot.getPublicWebhookUrl();
     const altUrl = webhookUrl.includes('/api/webhooks')
       ? webhookUrl.replace('/api/webhooks', '/webhooks')
       : webhookUrl.replace('/webhooks', '/api/webhooks');
 
-    const [lastAny, eventCount, cbStatus] = await Promise.all([
-      WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
+    const [lastAny, eventCount, realEventCount, cbStatus] = await Promise.all([
+      WpWebhookEvent.findOne(REAL_WEBHOOK_QUERY).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.countDocuments(),
+      WpWebhookEvent.countDocuments(REAL_WEBHOOK_QUERY),
       bot.testConnection().catch((err) => ({ connected: false, error: err.message })),
     ]);
 
@@ -284,34 +286,39 @@ export const verifyWebhook = async (req, res) => {
     }
 
     const causes = analyzeRootCause({
-      diagnostics,
+      diagnostics: getWebhookDiagnostics(),
       lastWebhookAt: lastAny?.createdAt,
       sync,
       cbConnected: cbStatus?.connected,
     });
 
+    const diag = getWebhookDiagnostics();
     const checklist = [
       {
         id: 'endpoint_live',
-        label: 'Webhook endpoint reachable',
+        label: 'Webhook endpoint reachable (self-test)',
         pass: selfTest.ok,
         detail: selfTest.ok
-          ? `POST ${webhookUrl} → HTTP ${selfTest.status}`
+          ? `POST ${webhookUrl} → HTTP ${selfTest.status} (picoso internal ping — not CampaignBot)`
           : `Failed: ${selfTest.error || selfTest.responsePreview || 'unknown'}`,
       },
       {
         id: 'mongodb',
-        label: 'MongoDB webhook log',
-        pass: eventCount > 0,
-        detail: `${eventCount} events stored, last at ${lastAny?.createdAt || 'never'}`,
+        label: 'MongoDB real webhook log',
+        pass: realEventCount > 0,
+        detail: realEventCount > 0
+          ? `${realEventCount} real event(s), last at ${lastAny?.createdAt || 'never'}`
+          : `${eventCount} total stored (${eventCount - realEventCount} self-test filtered out) — no real CampaignBot traffic logged`,
       },
       {
         id: 'post_received',
-        label: 'POST hit this server process',
-        pass: diagnostics.totalPosts > 0 && !diagnostics.postStale,
-        detail: diagnostics.totalPosts > 0
-          ? `${diagnostics.totalPosts} POST(s), last ${diagnostics.lastPostAt} from ${diagnostics.lastPostIp}`
-          : 'No POST ever recorded in this server process',
+        label: 'Real POST from CampaignBot hit server',
+        pass: diag.totalRealPosts > 0 && !diag.realPostStale,
+        detail: diag.totalRealPosts > 0
+          ? `${diag.totalRealPosts} real POST(s), last ${diag.lastRealPostAt} from ${diag.lastRealPostIp}`
+          : diag.totalVerifyPosts > 0
+            ? `Only ${diag.totalVerifyPosts} self-test POST(s) — no CampaignBot traffic yet`
+            : 'No POST ever recorded in this server process',
       },
       {
         id: 'campaignbot_api',
@@ -324,11 +331,12 @@ export const verifyWebhook = async (req, res) => {
       {
         id: 'campaignbot_delivering',
         label: 'CampaignBot delivering real WhatsApp webhooks',
-        pass: !diagnostics.postStale && diagnostics.lastPostEvent === 'incoming_message'
-          && !String(diagnostics.lastPostBodyPreview || '').includes('__picoso_webhook_verify__'),
-        detail: diagnostics.postStale
-          ? `No CampaignBot POST in ${diagnostics.minutesSinceLastPost ?? '?'} min — YOUR MESSAGES ARE NOT REACHING PICOSO`
-          : `Last event: ${diagnostics.lastPostEvent} at ${diagnostics.lastPostAt}`,
+        pass: !diag.realPostStale && diag.totalRealPosts > 0,
+        detail: diag.totalRealPosts === 0
+          ? 'No real WhatsApp webhook ever received — configure webhook in CampaignBot dashboard'
+          : diag.realPostStale
+            ? `No real CampaignBot POST in ${diag.minutesSinceLastRealPost ?? '?'} min — YOUR MESSAGES ARE NOT REACHING PICOSO`
+            : `Last real webhook: ${diag.lastRealPostAt} from ${diag.lastRealPostIp}`,
       },
     ];
 
@@ -337,7 +345,7 @@ export const verifyWebhook = async (req, res) => {
       serverNow: new Date().toISOString(),
       webhookUrl,
       altUrl,
-      diagnostics,
+      diagnostics: diag,
       sync,
       selfTest,
       checklist,
@@ -345,7 +353,8 @@ export const verifyWebhook = async (req, res) => {
       campaignBotApi: cbStatus,
       mongo: {
         totalEvents: eventCount,
-        lastEventAt: lastAny?.createdAt || null,
+        realEvents: realEventCount,
+        lastRealEventAt: lastAny?.createdAt || null,
         lastEvent: lastAny?.event || null,
         lastNote: lastAny?.note || null,
       },
@@ -354,8 +363,8 @@ export const verifyWebhook = async (req, res) => {
         '1. In CampaignBot dashboard set webhook URL exactly to: ' + webhookUrl,
         '2. Enable incoming_message webhook events',
         '3. Send a WhatsApp message to your business number (+91 81670 80111)',
-        '4. Click Run verification — "POST hit this server" must update within seconds',
-        '5. If step 4 fails but self-test passes, CampaignBot is NOT firing webhooks — contact CampaignBot support',
+        '4. Click Run verification — "Real POST from CampaignBot" must show a new hit within seconds',
+        '5. Self-test passing only proves picoso.in works — if step 4 fails, CampaignBot is NOT firing webhooks',
       ],
     });
   } catch (err) {
@@ -387,7 +396,7 @@ export const registerWebhook = async (req, res) => {
 export const getWebhookDebug = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
-    const events = await WpWebhookEvent.find()
+    const events = await WpWebhookEvent.find(REAL_WEBHOOK_QUERY)
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();

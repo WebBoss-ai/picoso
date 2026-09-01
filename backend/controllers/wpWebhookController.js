@@ -18,6 +18,7 @@ import {
   extractInboundMessagesWithDebug,
 } from '../services/wpWebhookExtract.js';
 import { recordWebhookHit } from '../services/wpWebhookDiagnostics.js';
+import { isSelfVerifyRequest } from '../services/wpWebhookVerify.js';
 
 const WEBHOOK_SECRETS = [
   process.env.CAMPAIGNBOT_WEBHOOK_SECRET,
@@ -42,6 +43,7 @@ async function logWebhook({
   parsed = true,
   processing = 'received',
   debugTrace = null,
+  isVerify = false,
 }) {
   try {
     await WpWebhookEvent.create({
@@ -52,6 +54,7 @@ async function logWebhook({
       ok: ok !== false,
       note: note || '',
       processing,
+      isVerify: !!isVerify,
       rawBodyLength,
       rawBodyPreview: String(rawBody || '').slice(0, RAW_BODY_STORE_LIMIT),
       signature,
@@ -301,12 +304,14 @@ export const handleWebhook = async (req, res) => {
   const body = req.body || {};
   const event = detectWebhookEvent(body);
   const rawBodyLength = Buffer.byteLength(rawBody, 'utf8');
+  const isVerify = isSelfVerifyRequest(req, body);
 
   recordWebhookHit(req, {
     requestId,
     event: event || body?.event,
     bytes: rawBodyLength,
     bodyPreview: rawBody.slice(0, 500),
+    isVerify,
   });
 
   const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
@@ -324,8 +329,23 @@ export const handleWebhook = async (req, res) => {
 
   console.log(
     `[WP Webhook][${requestId}] HIT event=${event || 'none'} signature=${signatureState}` +
-    ` bytes=${rawBodyLength} bodyKeys=${Object.keys(body).join(',')}`,
+    ` bytes=${rawBodyLength} bodyKeys=${Object.keys(body).join(',')}` +
+    (isVerify ? ' [self-verify]' : ''),
   );
+
+  if (isVerify) {
+    emitChatbotEvent({
+      type: 'webhook_verify',
+      requestId,
+      at: new Date().toISOString(),
+    });
+    return res.status(200).json({
+      statusCode: 200,
+      message: 'Self-test webhook acknowledged',
+      requestId,
+      verify: true,
+    });
+  }
 
   emitChatbotEvent({
     type: 'webhook_received',
@@ -406,6 +426,15 @@ export const handleWebhook = async (req, res) => {
 
     if (isIncomingWebhook(event, body)) {
       const { messages: inbounds, debug } = extractInboundMessagesWithDebug(body, rawBody);
+
+      if (isSelfVerifyRequest(req, body, inbounds)) {
+        return res.status(200).json({
+          statusCode: 200,
+          message: 'Self-test webhook acknowledged',
+          requestId,
+          verify: true,
+        });
+      }
 
       // Always acknowledge incoming webhooks with 200 so CampaignBot keeps delivering.
       res.status(200).json({
