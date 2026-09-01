@@ -28,12 +28,22 @@ function fmtRelative(d) {
   const ms = Date.now() - new Date(d).getTime();
   if (ms < 0) return 'just now';
   const sec = Math.floor(ms / 1000);
+  if (sec < 5) return 'just now';
   if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);
   if (hr < 48) return `${hr}h ago`;
   return fmtTime(d);
+}
+
+/** Re-render every second so relative timestamps stay live. */
+function useLiveClock(intervalMs = 1000) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
 }
 
 function tryPrettyJson(raw) {
@@ -91,7 +101,7 @@ function WebhookDebugConsole({
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">Webhook debug console</p>
           <p className="text-[11px] text-amber-900/70 mt-0.5">
-            Copy this report and send it for support. Updates live via SSE — no refresh needed.
+            Timestamps tick live every second. Webhook log auto-refreshes every 4s + on SSE events.
           </p>
         </div>
         <div className="flex gap-2">
@@ -117,7 +127,7 @@ function WebhookDebugConsole({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[10.5px] font-mono">
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">Server now</p>
-          <p className="text-amber-950">{serverNow ? fmtTime(serverNow) : '-'}</p>
+          <p className="text-amber-950">{serverNow ? `${fmtRelative(serverNow)} · ${fmtTime(serverNow)}` : '-'}</p>
         </div>
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">SSE / heartbeat</p>
@@ -125,7 +135,7 @@ function WebhookDebugConsole({
         </div>
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">Last webhook</p>
-          <p className="text-amber-950">{fmtRelative(webhook?.lastWebhookAt)} ({fmtTime(webhook?.lastWebhookAt)})</p>
+          <p className="text-amber-950">{fmtRelative(webhook?.lastWebhookAt)} ({fmtTime(webhook?.lastWebhookAt) || '-'})</p>
         </div>
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">Last inbound</p>
@@ -174,7 +184,7 @@ function WebhookDebugConsole({
                   className="w-full text-left px-3 py-2 hover:bg-amber-50/80"
                 >
                   <p className={`text-[10px] font-mono truncate ${e.ok === false ? 'text-red-700' : 'text-amber-950'}`}>
-                    {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.ok === false ? 'FAIL' : 'OK'} · {e.from || '-'} · {e.note || e.text || ''}
+                    {fmtRelative(e.at)} · {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.ok === false ? 'FAIL' : 'OK'} · {e.from || '-'} · {e.note || e.text || ''}
                   </p>
                 </button>
                 {open && (
@@ -556,13 +566,21 @@ function InboxPanel({ liveTick }) {
     return () => clearTimeout(t);
   }, [loadList]);
 
-  // Refresh only after the backend confirms a durable live event. No polling
-  // is needed, so the inbox stays current without repeated requests.
+  // Refresh on SSE events, and poll every few seconds as a backup.
   useEffect(() => {
     if (!liveTick) return;
     loadList(true);
     if (activeIdRef.current) openConvo(activeIdRef.current, true);
   }, [liveTick, loadList, openConvo]);
+
+  useEffect(() => {
+    loadList(true);
+    const id = setInterval(() => {
+      loadList(true);
+      if (activeIdRef.current) openConvo(activeIdRef.current, true);
+    }, 4000);
+    return () => clearInterval(id);
+  }, [loadList, openConvo]);
 
   const sendReply = async () => {
     if (!reply.trim() || !activeId) return;
@@ -637,7 +655,7 @@ function InboxPanel({ liveTick }) {
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
             <Inbox className="w-7 h-7 text-zinc-300 mb-2" />
             <p className="text-[13px] font-medium text-zinc-500">Select a conversation</p>
-            <p className="text-[11.5px] text-zinc-400 mt-1">Inbox auto-updates every few seconds</p>
+          <p className="text-[11px] text-zinc-400 mt-1">Inbox refreshes every 4 seconds and on new webhooks</p>
           </div>
         ) : (
           <>
@@ -727,14 +745,30 @@ export default function ChatbotSection() {
     setDebugEvents((items) => [entry, ...items].slice(0, 50));
   }, []);
 
-  const refreshWebhookDebug = useCallback(async () => {
-    setDebugRefreshing(true);
+  const refreshWebhookDebug = useCallback(async (silent = false) => {
+    if (!silent) setDebugRefreshing(true);
     try {
       const r = await wpMarketing.getChatbotWebhookDebug({ limit: 40 });
       setDebugLog(r.data.events || []);
       setServerNow(r.data.serverNow || new Date().toISOString());
     } catch { /* ignore */ }
-    finally { setDebugRefreshing(false); }
+    finally { if (!silent) setDebugRefreshing(false); }
+  }, []);
+
+  const lastWebhookAtRef = useRef(null);
+
+  const refreshWebhookStatus = useCallback(async () => {
+    try {
+      const w = await wpMarketing.getChatbotWebhookStatus();
+      if (!w?.data) return;
+      const nextAt = w.data.lastWebhookAt;
+      if (nextAt && nextAt !== lastWebhookAtRef.current) {
+        lastWebhookAtRef.current = nextAt;
+        setLiveTick((n) => n + 1);
+      }
+      setWebhook(w.data);
+      setServerNow(w.data.serverNow || new Date().toISOString());
+    } catch { /* ignore */ }
   }, []);
 
   const load = useCallback(async () => {
@@ -750,6 +784,7 @@ export default function ChatbotSection() {
       if (w?.data) {
         setWebhook(w.data);
         setServerNow(w.data.serverNow || null);
+        lastWebhookAtRef.current = w.data.lastWebhookAt || null;
       }
       await refreshWebhookDebug();
     } catch (e) {
@@ -760,6 +795,20 @@ export default function ChatbotSection() {
   }, [refreshWebhookDebug]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Live clock — relative times tick every second without manual refresh.
+  useLiveClock(1000);
+
+  // Continuous polling keeps webhook status + debug log current even if SSE drops.
+  useEffect(() => {
+    const poll = () => {
+      refreshWebhookStatus().catch(() => {});
+      refreshWebhookDebug(true).catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 4000);
+    return () => clearInterval(id);
+  }, [refreshWebhookStatus, refreshWebhookDebug]);
 
   // One live SSE connection replaces inbox/status polling.
   useEffect(() => {
@@ -803,7 +852,8 @@ export default function ChatbotSection() {
                   lastRejectedDebugTrace: data.debugTrace || null,
                 } : {}),
               }));
-              refreshWebhookDebug().catch(() => {});
+              refreshWebhookStatus().catch(() => {});
+              refreshWebhookDebug(true).catch(() => {});
             }
             if (data.type === 'webhook_processing') {
               setWebhook((previous) => ({
@@ -830,7 +880,7 @@ export default function ChatbotSection() {
     return () => {
       es?.close();
     };
-  }, [load, pushDebug, refreshWebhookDebug]);
+  }, [load, pushDebug, refreshWebhookDebug, refreshWebhookStatus]);
 
   const save = async () => {
     if (!brain) return;
@@ -955,12 +1005,13 @@ export default function ChatbotSection() {
         </code>
         <p className="text-[11px] text-zinc-500">
           Live stream: <span className={`font-mono ${sseStatus === 'connected' ? 'text-emerald-700' : 'text-amber-700'}`}>{sseStatus}</span>
-          {lastHeartbeat && <> {' · '}heartbeat {fmtTime(lastHeartbeat)}</>}
-          {' · '}No polling; inbound events refresh the inbox automatically.
+          {lastHeartbeat && <> {' · '}heartbeat {fmtRelative(lastHeartbeat)}</>}
+          {' · '}Auto-refresh every 4s
+          {' · '}Local time {fmtTime(new Date())}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
-          <p>Last webhook: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastWebhookAt)}</span></p>
-          <p>Last inbound: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastInboundAt)}</span></p>
+          <p>Last webhook: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastWebhookAt)}</span> <span className="text-zinc-400">({fmtTime(webhook?.lastWebhookAt) || '-'})</span></p>
+          <p>Last inbound: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastInboundAt)}</span> <span className="text-zinc-400">({fmtTime(webhook?.lastInboundAt) || '-'})</span></p>
           <p>Last event: <span className="font-mono text-zinc-800">{webhook?.lastEvent || '-'}</span></p>
           <p>Processing: <span className="font-mono text-zinc-800">{webhook?.lastInboundProcessing || '-'}</span></p>
           <p>Signature: <span className="font-mono text-zinc-800">{webhook?.lastInboundSignature || '-'}</span></p>
