@@ -113,6 +113,56 @@ function collectEnvelopes(body) {
   return envelopes;
 }
 
+function isEmptyObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+}
+
+/** CampaignBot sometimes sends processed:{} but puts Meta payload in meta_raw. */
+function extractFromMetaRaw(metaRaw, envelope, contact, path, candidates, addStep) {
+  const raw = parseEmbedded(metaRaw);
+  if (!raw || typeof raw !== 'object') return;
+
+  let found = 0;
+
+  if (Array.isArray(raw.entry)) {
+    for (const entry of raw.entry) {
+      for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+        const value = parseEmbedded(change?.value) || {};
+        const valueContacts = Array.isArray(value.contacts) ? value.contacts : [];
+        const c = valueContacts[0] || contact;
+        for (const message of Array.isArray(value.messages) ? value.messages : []) {
+          candidates.push({
+            message,
+            envelope: value,
+            contact: c,
+            source: `${path}.meta_raw.entry.changes.messages`,
+          });
+          found += 1;
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(raw.messages)) {
+    raw.messages.forEach((m, i) => {
+      candidates.push({
+        message: m,
+        envelope: raw,
+        contact,
+        source: `${path}.meta_raw.messages[${i}]`,
+      });
+      found += 1;
+    });
+  }
+
+  if (looksLikeMessage(raw)) {
+    candidates.push({ message: raw, envelope, contact, source: `${path}.meta_raw(self)` });
+    found += 1;
+  }
+
+  if (found) addStep('meta_raw_messages', { path, count: found });
+}
+
 function contactFromEnvelope(envelope = {}) {
   const lists = [
     envelope.meta_contacts,
@@ -204,12 +254,18 @@ export function extractInboundMessagesWithDebug(body = {}, rawBody = '') {
           contact,
           source: `${path}.processed[${i}]`,
         }));
-      } else if (processed) {
+      } else if (isEmptyObject(processed)) {
+        addStep('processed_empty', { path, hint: 'CampaignBot sent processed:{} — trying meta_raw' });
+      } else if (processed && typeof processed === 'object') {
         addStep('processed_object', { path, keys: Object.keys(processed) });
         candidates.push({ message: processed, envelope: node, contact, source: `${path}.processed` });
       } else {
         addStep('processed_unparsed', { path, type: typeof node.processed });
       }
+    }
+
+    if (node.meta_raw !== undefined) {
+      extractFromMetaRaw(node.meta_raw, node, contact, path, candidates, addStep);
     }
 
     if (Array.isArray(node.messages)) {

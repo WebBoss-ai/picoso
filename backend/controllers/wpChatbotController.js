@@ -149,11 +149,15 @@ export const getConversation = async (req, res) => {
 /** GET /wp-marketing/chatbot/webhook-status */
 export const getWebhookStatus = async (req, res) => {
   try {
-    const [lastAny, lastInbound, lastRejected, recent] = await Promise.all([
+    const cid = clientId(req);
+    const [lastAny, lastInbound, lastRejected, recent, lastInboundMsg, lastOutboundMsg, convoCount] = await Promise.all([
       WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ ok: false }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.find().sort({ createdAt: -1 }).limit(25).lean(),
+      WpChatMessage.findOne({ clientId: cid, direction: 'inbound' }).sort({ createdAt: -1 }).lean(),
+      WpChatMessage.findOne({ clientId: cid, direction: 'outbound' }).sort({ createdAt: -1 }).lean(),
+      WpChatConversation.countDocuments({ clientId: cid }),
     ]);
     const webhookUrl = bot.getPublicWebhookUrl();
     const serverNow = new Date().toISOString();
@@ -173,6 +177,12 @@ export const getWebhookStatus = async (req, res) => {
       lastInboundProcessing: lastInbound?.processing || null,
       lastInboundSignature: lastInbound?.signature || null,
       lastInboundParsed: lastInbound?.parsed ?? null,
+      lastInboundSavedAt: lastInboundMsg?.createdAt || null,
+      lastInboundSavedText: lastInboundMsg?.text?.slice(0, 120) || null,
+      lastOutboundReplyAt: lastOutboundMsg?.createdAt || null,
+      lastOutboundReplyText: lastOutboundMsg?.text?.slice(0, 120) || null,
+      lastOutboundAction: lastOutboundMsg?.matchedAction || null,
+      conversationCount: convoCount,
       lastRejectedAt: lastRejected?.createdAt || null,
       lastRejectedNote: lastRejected?.note || null,
       lastRejectedPayload: lastRejected?.payloadPreview || null,
@@ -243,25 +253,28 @@ export const getWebhookDebug = async (req, res) => {
 
 /** GET /wp-marketing/chatbot/events — SSE live stream (pass ?pin=) */
 export const streamEvents = async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders?.();
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Content-Encoding', 'identity');
+  if (res.flushHeaders) res.flushHeaders();
 
   const send = (payload) => {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if (typeof res.flush === 'function') res.flush();
   };
 
+  // Force proxies (nginx, cloudflare) to flush immediately.
+  res.write(': stream-open\n\n');
   send({ type: 'connected', at: new Date().toISOString() });
 
   const onChat = (payload) => send(payload);
   chatbotBus.on('chat', onChat);
 
   const heartbeat = setInterval(() => {
-    // Send data, not only an SSE comment, so the browser can prove the
-    // connection is alive even when no WhatsApp message is arriving.
     send({ type: 'heartbeat', at: new Date().toISOString() });
-  }, 15000);
+  }, 10000);
 
   req.on('close', () => {
     clearInterval(heartbeat);

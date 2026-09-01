@@ -69,14 +69,17 @@ const WEBHOOK_PIPELINE = [
 
 function stageFromServerEvent(e = {}) {
   const proc = String(e.processing || '').toLowerCase();
-  if (e.ok === false) return `Failed: ${e.note || e.event || 'error'}`;
+  const note = String(e.note || '');
+  if (e.ok === false) return `Failed: ${note || e.event || 'error'}`;
+  if (note.toLowerCase().includes('accepted')) return 'Message extracted & accepted';
   if (proc === 'processing') return 'Chatbot processing';
-  if (proc === 'processed') return 'Completed';
+  if (proc === 'processed') return 'Chatbot reply completed';
   if (proc === 'received') return 'Webhook received';
   if (proc === 'duplicate') return 'Duplicate (skipped)';
-  if (proc === 'failed') return `Failed: ${e.note || 'error'}`;
-  if (e.event === 'message_status') return `Status: ${e.text || e.note || '-'}`;
-  return e.event || e.note || 'Webhook event';
+  if (proc === 'failed') return `Failed: ${note || 'error'}`;
+  if (proc === 'acknowledged') return 'HTTP 200 ack sent';
+  if (e.event === 'message_status') return `Status: ${e.text || note || '-'}`;
+  return e.event || note || 'Webhook event';
 }
 
 function stageFromSseEvent(e = {}) {
@@ -181,6 +184,33 @@ function pipelineState(feed = [], webhook = null) {
     if (!hit && step.processing) {
       hit = related.find((f) => step.processing.includes(f.processing));
     }
+
+    // DB-backed chatbot steps — visible via polling even when SSE is down.
+    if (!hit && step.id === 'save' && webhook?.lastInboundSavedAt) {
+      return {
+        ...step,
+        state: 'done',
+        at: webhook.lastInboundSavedAt,
+        detail: webhook.lastInboundSavedText || 'saved to MongoDB',
+      };
+    }
+    if (!hit && step.id === 'reply' && webhook?.lastOutboundReplyAt) {
+      return {
+        ...step,
+        state: 'done',
+        at: webhook.lastOutboundReplyAt,
+        detail: `${webhook.lastOutboundAction || 'bot'}: ${(webhook.lastOutboundReplyText || '').slice(0, 60)}`,
+      };
+    }
+    if (!hit && step.id === 'process' && webhook?.lastInboundSavedAt && !webhook?.lastOutboundReplyAt) {
+      return {
+        ...step,
+        state: 'pending',
+        at: webhook.lastInboundSavedAt,
+        detail: 'Inbound saved — waiting for outbound reply',
+      };
+    }
+
     const failed = related.some((f) => f.status === 'fail');
     return {
       ...step,
@@ -196,6 +226,74 @@ function statusDot(state) {
   if (state === 'pending') return 'bg-amber-400 animate-pulse';
   if (state === 'fail') return 'bg-red-500';
   return 'bg-zinc-200';
+}
+
+/** Fetch-based SSE — works through nginx/proxy better than EventSource. */
+function connectChatbotStream({ apiBase, pin, onEvent, onStatus }) {
+  let closed = false;
+  let controller = null;
+  let retryTimer = null;
+
+  const connect = async () => {
+    if (closed) return;
+    controller?.abort();
+    controller = new AbortController();
+    onStatus('connecting');
+    try {
+      const url = `${apiBase}/wp-marketing/chatbot/events?pin=${encodeURIComponent(pin)}`;
+      const resp = await fetch(url, {
+        headers: {
+          Accept: 'text/event-stream',
+          'x-wp-pin': pin,
+        },
+        signal: controller.signal,
+      });
+      if (!resp.ok) {
+        onStatus(`error HTTP ${resp.status}`);
+        retryTimer = setTimeout(connect, 4000);
+        return;
+      }
+      onStatus('connected');
+      const reader = resp.body?.getReader();
+      if (!reader) {
+        onStatus('error no stream');
+        retryTimer = setTimeout(connect, 4000);
+        return;
+      }
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (!closed) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop() || '';
+        for (const chunk of chunks) {
+          const line = chunk.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          try {
+            onEvent(JSON.parse(line.slice(6)));
+          } catch { /* ignore malformed */ }
+        }
+      }
+      if (!closed) {
+        onStatus('reconnecting');
+        retryTimer = setTimeout(connect, 2000);
+      }
+    } catch (err) {
+      if (closed || err?.name === 'AbortError') return;
+      onStatus(`error: ${err.message || 'stream failed'}`);
+      retryTimer = setTimeout(connect, 4000);
+    }
+  };
+
+  connect();
+
+  return () => {
+    closed = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    controller?.abort();
+  };
 }
 
 function tryPrettyJson(raw) {
@@ -290,8 +388,27 @@ function WebhookLiveDashboard({
           </div>
         )}
 
+        {webhook?.lastOutboundReplyText && (
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-[11px] text-emerald-900">
+            <span className="font-semibold">Last bot reply ({webhook.lastOutboundAction || 'bot'}): </span>
+            {webhook.lastOutboundReplyText}
+          </div>
+        )}
+
+        {webhook?.lastInboundSavedAt && !webhook?.lastOutboundReplyAt && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-900">
+            Inbound was saved to DB but no bot reply yet — check CampaignBot send API or brain config.
+          </div>
+        )}
+
+        {!webhook?.lastInboundSavedAt && webhook?.lastInboundAt && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-900">
+            Webhook was received but message was not saved to chatbot DB — backend may need restart with latest code.
+          </div>
+        )}
+
         {/* Key metrics — relative + absolute, both live */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
           {[
             { label: 'Last webhook', value: webhook?.lastWebhookAt },
             { label: 'Last inbound', value: webhook?.lastInboundAt },
@@ -299,6 +416,9 @@ function WebhookLiveDashboard({
             { label: 'Processing', value: webhook?.lastInboundProcessing, static: true },
             { label: 'Signature', value: webhook?.lastInboundSignature, static: true },
             { label: 'Request ID', value: webhook?.lastInboundRequestId ? String(webhook.lastInboundRequestId).slice(0, 12) : '-', static: true },
+            { label: 'DB inbound', value: webhook?.lastInboundSavedAt },
+            { label: 'DB reply', value: webhook?.lastOutboundReplyAt },
+            { label: 'Conversations', value: webhook?.conversationCount ?? 0, static: true },
           ].map(({ label, value, static: isStatic }) => (
             <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2">
               <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-400">{label}</p>
@@ -1158,78 +1278,73 @@ export default function ChatbotSection() {
     return () => clearInterval(id);
   }, [refreshWebhookStatus, refreshWebhookDebug]);
 
-  // One live SSE connection replaces inbox/status polling.
+  // Live stream via fetch (EventSource often hangs behind nginx).
   useEffect(() => {
     const pin = typeof window !== 'undefined' ? sessionStorage.getItem('picoso_wp_pin') : '';
     const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api';
-    let es;
-    if (pin) {
-      try {
-        es = new EventSource(`${apiBase}/wp-marketing/chatbot/events?pin=${encodeURIComponent(pin)}`);
-        es.onopen = () => setSseStatus('connected');
-        es.onerror = () => setSseStatus('reconnecting');
-        es.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data);
-            if (!data?.type || data.type === 'connected') return;
-            if (data.type === 'heartbeat') {
-              setLastHeartbeat(data.at);
-              return;
-            }
-            pushDebug(data);
-
-            if (data.type === 'webhook_received' || data.type === 'webhook_rejected' || data.type === 'webhook_extracted') {
-              setWebhook((previous) => ({
-                ...(previous || {}),
-                lastWebhookAt: data.at,
-                lastEvent: data.event || 'unknown',
-                lastRequestId: data.requestId || previous?.lastRequestId || null,
-                lastProcessing: data.type === 'webhook_rejected' ? 'failed' : data.type === 'webhook_extracted' ? 'extracted' : 'received',
-                lastSignature: data.signature || previous?.lastSignature || null,
-                lastParsed: data.parsed ?? previous?.lastParsed ?? null,
-                ...(data.event === 'incoming_message' || data.type === 'webhook_extracted' ? {
-                  lastInboundAt: data.at,
-                  lastInboundRequestId: data.requestId || null,
-                  lastInboundProcessing: data.type === 'webhook_rejected' ? 'failed' : data.processing || 'received',
-                } : {}),
-                ...(data.type === 'webhook_rejected' ? {
-                  lastRejectedAt: data.at,
-                  lastRejectedNote: data.reason || 'Webhook rejected',
-                  lastRejectedPayload: data.payloadPreview || null,
-                  lastRejectedRawBody: data.rawBodyPreview || null,
-                  lastRejectedDebugTrace: data.debugTrace || null,
-                } : {}),
-              }));
-              refreshWebhookStatus().catch(() => {});
-              refreshWebhookDebug(true).catch(() => {});
-            }
-            if (data.type === 'webhook_processing') {
-              setWebhook((previous) => ({
-                ...(previous || {}),
-                lastProcessing: data.processing || previous?.lastProcessing || null,
-                lastInboundProcessing: data.processing || previous?.lastInboundProcessing || null,
-                ...(data.note ? { lastRejectedNote: data.note } : {}),
-              }));
-              refreshWebhookStatus().catch(() => {});
-              refreshWebhookDebug(true).catch(() => {});
-            }
-
-            if (['inbound_received', 'inbound', 'outbound'].includes(data.type)) {
-              setLiveTick((n) => n + 1);
-              if (data.type !== 'outbound') setTab('inbox');
-              load().catch(() => {});
-            }
-          } catch { /* ignore */ }
-        };
-      } catch {
-        setSseStatus('unavailable');
-      }
-    } else {
+    if (!pin) {
       setSseStatus('missing PIN');
+      return undefined;
     }
-    return () => {
-      es?.close();
-    };
+
+    const disconnect = connectChatbotStream({
+      apiBase,
+      pin,
+      onStatus: setSseStatus,
+      onEvent: (data) => {
+        if (!data?.type || data.type === 'connected') return;
+        if (data.type === 'heartbeat') {
+          setLastHeartbeat(data.at);
+          return;
+        }
+        pushDebug(data);
+
+        if (data.type === 'webhook_received' || data.type === 'webhook_rejected' || data.type === 'webhook_extracted') {
+          setWebhook((previous) => ({
+            ...(previous || {}),
+            lastWebhookAt: data.at,
+            lastEvent: data.event || 'unknown',
+            lastRequestId: data.requestId || previous?.lastRequestId || null,
+            lastProcessing: data.type === 'webhook_rejected' ? 'failed' : data.type === 'webhook_extracted' ? 'extracted' : 'received',
+            lastSignature: data.signature || previous?.lastSignature || null,
+            lastParsed: data.parsed ?? previous?.lastParsed ?? null,
+            ...(data.event === 'incoming_message' || data.type === 'webhook_extracted' ? {
+              lastInboundAt: data.at,
+              lastInboundRequestId: data.requestId || null,
+              lastInboundProcessing: data.type === 'webhook_rejected' ? 'failed' : data.processing || 'received',
+            } : {}),
+            ...(data.type === 'webhook_rejected' ? {
+              lastRejectedAt: data.at,
+              lastRejectedNote: data.reason || 'Webhook rejected',
+              lastRejectedPayload: data.payloadPreview || null,
+              lastRejectedRawBody: data.rawBodyPreview || null,
+              lastRejectedDebugTrace: data.debugTrace || null,
+            } : {}),
+          }));
+          refreshWebhookStatus().catch(() => {});
+          refreshWebhookDebug(true).catch(() => {});
+        }
+        if (data.type === 'webhook_processing') {
+          setWebhook((previous) => ({
+            ...(previous || {}),
+            lastProcessing: data.processing || previous?.lastProcessing || null,
+            lastInboundProcessing: data.processing || previous?.lastInboundProcessing || null,
+            ...(data.note ? { lastRejectedNote: data.note } : {}),
+          }));
+          refreshWebhookStatus().catch(() => {});
+          refreshWebhookDebug(true).catch(() => {});
+        }
+
+        if (['inbound_received', 'inbound', 'outbound'].includes(data.type)) {
+          setLiveTick((n) => n + 1);
+          if (data.type !== 'outbound') setTab('inbox');
+          refreshWebhookStatus().catch(() => {});
+          load().catch(() => {});
+        }
+      },
+    });
+
+    return disconnect;
   }, [load, pushDebug, refreshWebhookDebug, refreshWebhookStatus]);
 
   const save = async () => {
