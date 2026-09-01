@@ -137,7 +137,7 @@ export function analyzeRootCause({ diagnostics, lastWebhookAt, sync, cbConnected
     });
   }
 
-  if (diagnostics.totalVerifyPosts > 0 && diagnostics.totalRealPosts === 0) {
+  if (diagnostics.totalVerifyPosts > 0 && diagnostics.totalRealPosts === 0 && !lastWebhookAt) {
     causes.push({
       severity: 'info',
       code: 'ONLY_SELF_TEST',
@@ -188,4 +188,16 @@ export function analyzeRootCause({ diagnostics, lastWebhookAt, sync, cbConnected
   }
 
   return causes;
+}
+
+/** Restore last real POST timestamps from Mongo after server restart. */
+export function hydrateDiagnosticsFromEvent(event = {}) {
+  if (!event?.createdAt) return;
+  const at = new Date(event.createdAt).toISOString();
+  state.lastRealPostAt = at;
+  state.lastRealPostEvent = event.event || 'incoming_message';
+  state.lastRealPostBodyPreview = String(event.payloadPreview || event.text || '').slice(0, 500);
+  state.lastRealPostIp = event.headers?.['x-forwarded-for'] || 'db';
+  state.lastRealPostUserAgent = event.headers?.['user-agent'] || 'mongodb';
+  if (state.totalRealPosts === 0) state.totalRealPosts = 1;
 }

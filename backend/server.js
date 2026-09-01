@@ -10,6 +10,9 @@ import { WpClient } from './models/wpMarketingModels.js';
 import { startScheduler } from './services/wpScheduler.js';
 import { ensureDefaultBrain } from './services/wpChatbot.js';
 import { startInboundSync } from './services/wpInboundSync.js';
+import { WpWebhookEvent } from './models/wpMarketingModels.js';
+import { CAMPAIGNBOT_TRAFFIC_QUERY } from './services/wpWebhookVerify.js';
+import { hydrateDiagnosticsFromEvent } from './services/wpWebhookDiagnostics.js';
 import * as wpWebhook from './controllers/wpWebhookController.js';
 import * as bot from './services/campaignBot.js';
 
@@ -168,6 +171,12 @@ mongoose.connect(process.env.MONGO_URI)
     await ensureDefaultBrain();
     startScheduler();
     startInboundSync();
+    try {
+      const last = await WpWebhookEvent.findOne(CAMPAIGNBOT_TRAFFIC_QUERY).sort({ createdAt: -1 }).lean();
+      if (last) hydrateDiagnosticsFromEvent(last);
+    } catch (err) {
+      console.warn('[WP WebhookDiag] hydrate skipped:', err.message);
+    }
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 

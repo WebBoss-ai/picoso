@@ -19,12 +19,11 @@ import {
 } from '../services/wpWebhookExtract.js';
 import { recordWebhookHit } from '../services/wpWebhookDiagnostics.js';
 import { isSelfVerifyRequest } from '../services/wpWebhookVerify.js';
-
-const WEBHOOK_SECRETS = [
-  process.env.CAMPAIGNBOT_WEBHOOK_SECRET,
-  process.env.CAMPAIGNBOT_API_KEY,
-  '8c226a84bf474b0dffae2efb7b69f05f3fefada3a16c115ffeb45b7a53cc34ab',
-].filter(Boolean);
+import {
+  getWebhookSecretCandidates,
+  isOverviewPing,
+  verifyWebhookSignature,
+} from '../services/wpWebhookSignature.js';
 
 const RAW_BODY_STORE_LIMIT = 12000;
 
@@ -95,18 +94,10 @@ async function markProcessing(requestId, processing, note = '') {
   }
 }
 
-function verifySignature(rawBody, signatureHeader) {
+
+function checkSignature(rawBody, signatureHeader, body = {}) {
   if (!signatureHeader) return { ok: false, reason: 'missing' };
-  const raw = typeof rawBody === 'string' ? rawBody : String(rawBody || '');
-  for (const secret of WEBHOOK_SECRETS) {
-    const expected = `sha256=${crypto.createHmac('sha256', secret).update(raw).digest('hex')}`;
-    try {
-      const a = Buffer.from(expected);
-      const b = Buffer.from(String(signatureHeader));
-      if (a.length === b.length && crypto.timingSafeEqual(a, b)) return { ok: true };
-    } catch { /* next */ }
-  }
-  return { ok: false, reason: 'mismatch' };
+  return verifyWebhookSignature(rawBody, signatureHeader, getWebhookSecretCandidates(body));
 }
 
 function firstString(...values) {
@@ -315,9 +306,7 @@ export const handleWebhook = async (req, res) => {
   });
 
   const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
-  const signatureCheck = sigHeader
-    ? verifySignature(rawBody, sigHeader)
-    : { ok: false, reason: 'missing' };
+  const signatureCheck = checkSignature(rawBody, sigHeader, body);
   const signatureState = signatureCheck.ok ? 'valid' : `invalid:${signatureCheck.reason}`;
   const logMeta = {
     requestId,
@@ -383,12 +372,24 @@ export const handleWebhook = async (req, res) => {
   }
 
   try {
-    if (!event && body.algorithm && body.secret) {
+    if (isOverviewPing(body)) {
+      if (sigHeader && !signatureCheck.ok) {
+        await logWebhook({
+          ...logMeta,
+          event: 'ping',
+          ok: false,
+          note: `overview signature ${signatureCheck.reason}`,
+          body,
+          headers: req.headers,
+          processing: 'failed',
+        });
+        return res.status(401).json({ statusCode: 401, message: 'Invalid or missing webhook signature' });
+      }
       await logWebhook({
         ...logMeta,
         event: 'ping',
         ok: true,
-        note: 'signing overview ping',
+        note: sigHeader ? 'signing overview ping verified' : 'signing overview ping (no signature header)',
         body,
         headers: req.headers,
         processing: 'processed',

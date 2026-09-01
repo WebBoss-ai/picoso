@@ -19,7 +19,10 @@ import {
   analyzeRootCause,
   getWebhookDiagnostics,
 } from '../services/wpWebhookDiagnostics.js';
-import { REAL_WEBHOOK_QUERY } from '../services/wpWebhookVerify.js';
+import { REAL_WEBHOOK_QUERY, CAMPAIGNBOT_TRAFFIC_QUERY } from '../services/wpWebhookVerify.js';
+import { runLocalWebhookSelfTest } from '../services/wpWebhookSelfTest.js';
+import { getWebhookSecretCandidates } from '../services/wpWebhookSignature.js';
+import { hydrateDiagnosticsFromEvent } from '../services/wpWebhookDiagnostics.js';
 import * as bot from '../services/campaignBot.js';
 
 function clientId(req) {
@@ -160,8 +163,9 @@ export const getConversation = async (req, res) => {
 export const getWebhookStatus = async (req, res) => {
   try {
     const cid = clientId(req);
-    const [lastAny, lastInbound, lastRejected, recent, lastInboundMsg, lastOutboundMsg, convoCount] = await Promise.all([
+    const [lastAny, lastCampaignBot, lastInbound, lastRejected, recent, lastInboundMsg, lastOutboundMsg, convoCount] = await Promise.all([
       WpWebhookEvent.findOne(REAL_WEBHOOK_QUERY).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.findOne(CAMPAIGNBOT_TRAFFIC_QUERY).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ ...REAL_WEBHOOK_QUERY, event: 'incoming_message' }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.findOne({ ...REAL_WEBHOOK_QUERY, ok: false }).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.find(REAL_WEBHOOK_QUERY).sort({ createdAt: -1 }).limit(25).lean(),
@@ -208,7 +212,10 @@ export const getWebhookStatus = async (req, res) => {
       lastRejectedPayload: lastRejected?.payloadPreview || null,
       lastRejectedRawBody: lastRejected?.rawBodyPreview || null,
       lastRejectedDebugTrace: lastRejected?.debugTrace || null,
-      receiving: !!(lastInbound?.createdAt && (Date.now() - new Date(lastInbound.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
+      lastCampaignBotWebhookAt: lastCampaignBot?.createdAt || null,
+      lastCampaignBotWebhookNote: lastCampaignBot?.note || null,
+      webhookSecretConfigured: getWebhookSecretCandidates().length > 0,
+      receiving: !!(lastCampaignBot?.createdAt && (Date.now() - new Date(lastCampaignBot.createdAt).getTime()) < 7 * 24 * 3600 * 1000),
       note: webhookStale
         ? `CampaignBot has not POSTed a real WhatsApp webhook in ${diagnostics.minutesSinceLastRealPost ?? minutesSinceLastWebhook ?? '?'} minutes. Active sync poller is running every 15s as backup.`
         : 'CampaignBot POSTs incoming_message here. Valid requests return HTTP 200 immediately, then process async.',
@@ -244,81 +251,73 @@ export const verifyWebhook = async (req, res) => {
       ? webhookUrl.replace('/api/webhooks', '/webhooks')
       : webhookUrl.replace('/webhooks', '/api/webhooks');
 
-    const [lastAny, eventCount, realEventCount, cbStatus] = await Promise.all([
+    const [lastAny, lastCampaignBot, eventCount, realEventCount, cbTrafficCount, cbStatus] = await Promise.all([
       WpWebhookEvent.findOne(REAL_WEBHOOK_QUERY).sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.findOne(CAMPAIGNBOT_TRAFFIC_QUERY).sort({ createdAt: -1 }).lean(),
       WpWebhookEvent.countDocuments(),
       WpWebhookEvent.countDocuments(REAL_WEBHOOK_QUERY),
+      WpWebhookEvent.countDocuments(CAMPAIGNBOT_TRAFFIC_QUERY),
       bot.testConnection().catch((err) => ({ connected: false, error: err.message })),
     ]);
 
-    // Self-test: POST to our own public webhook URL
-    let selfTest = { ok: false, error: 'not run' };
-    try {
-      const pingBody = JSON.stringify({
-        event: 'incoming_message',
-        meta_raw: {},
-        meta_contacts: [],
-        meta_metadata: {},
-        processed: {
-          message_id: `wamid.VERIFY_${Date.now()}`,
-          from: '+919999999999',
-          type: 'text',
-          text: '__picoso_webhook_verify__',
-          timestamp: new Date().toISOString(),
-          media: { id: null, url: null },
-        },
-        system: { received_at: new Date().toISOString(), source: 'self_verify' },
-      });
-      const pingRes = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Webhook-Verify': 'picoso-self-test' },
-        body: pingBody,
-      });
-      const pingText = await pingRes.text();
-      selfTest = {
-        ok: pingRes.status >= 200 && pingRes.status < 300,
-        status: pingRes.status,
-        url: webhookUrl,
-        responsePreview: pingText.slice(0, 300),
-      };
-    } catch (err) {
-      selfTest = { ok: false, error: err.message, url: webhookUrl };
+    const selfTest = runLocalWebhookSelfTest();
+    const secrets = getWebhookSecretCandidates();
+
+    const diag = getWebhookDiagnostics();
+    if (lastCampaignBot?.createdAt && diag.totalRealPosts === 0) {
+      hydrateDiagnosticsFromEvent(lastCampaignBot);
     }
+    const diagFinal = getWebhookDiagnostics();
 
     const causes = analyzeRootCause({
-      diagnostics: getWebhookDiagnostics(),
-      lastWebhookAt: lastAny?.createdAt,
+      diagnostics: diagFinal,
+      lastWebhookAt: lastCampaignBot?.createdAt,
       sync,
       cbConnected: cbStatus?.connected,
     });
 
-    const diag = getWebhookDiagnostics();
     const checklist = [
       {
         id: 'endpoint_live',
-        label: 'Webhook endpoint reachable (self-test)',
+        label: 'Webhook parser + endpoint logic (local test)',
         pass: selfTest.ok,
         detail: selfTest.ok
-          ? `POST ${webhookUrl} → HTTP ${selfTest.status} (picoso internal ping — not CampaignBot)`
-          : `Failed: ${selfTest.error || selfTest.responsePreview || 'unknown'}`,
+          ? `${selfTest.detail} — no HTTP ping (does not count as CampaignBot traffic)`
+          : `Local test failed: ${selfTest.detail || 'unknown'}`,
+      },
+      {
+        id: 'webhook_secret',
+        label: 'Webhook signing secret configured',
+        pass: secrets.length > 0,
+        detail: process.env.CAMPAIGNBOT_WEBHOOK_SECRET
+          ? 'CAMPAIGNBOT_WEBHOOK_SECRET is set — overview ping signatures can be verified'
+          : 'Set CAMPAIGNBOT_WEBHOOK_SECRET to your CampaignBot "client webhook secret key" (falls back to API key)',
+      },
+      {
+        id: 'signature_math',
+        label: 'HMAC-SHA256 signature verification',
+        pass: selfTest.signatureMathOk,
+        detail: selfTest.signatureMathOk
+          ? 'Signature round-trip OK (sha256= prefix, raw body)'
+          : 'Signature check failed — set CAMPAIGNBOT_WEBHOOK_SECRET from CampaignBot dashboard',
       },
       {
         id: 'mongodb',
-        label: 'MongoDB real webhook log',
-        pass: realEventCount > 0,
-        detail: realEventCount > 0
-          ? `${realEventCount} real event(s), last at ${lastAny?.createdAt || 'never'}`
-          : `${eventCount} total stored (${eventCount - realEventCount} self-test filtered out) — no real CampaignBot traffic logged`,
+        label: 'MongoDB CampaignBot traffic log',
+        pass: cbTrafficCount > 0,
+        detail: cbTrafficCount > 0
+          ? `${cbTrafficCount} CampaignBot event(s), last at ${lastCampaignBot?.createdAt || 'never'}`
+          : `${realEventCount} non-verify event(s) but all are manual probes — no CampaignBot WhatsApp traffic yet`,
       },
       {
         id: 'post_received',
         label: 'Real POST from CampaignBot hit server',
-        pass: diag.totalRealPosts > 0 && !diag.realPostStale,
-        detail: diag.totalRealPosts > 0
-          ? `${diag.totalRealPosts} real POST(s), last ${diag.lastRealPostAt} from ${diag.lastRealPostIp}`
-          : diag.totalVerifyPosts > 0
-            ? `Only ${diag.totalVerifyPosts} self-test POST(s) — no CampaignBot traffic yet`
-            : 'No POST ever recorded in this server process',
+        pass: diagFinal.totalRealPosts > 0 && !diagFinal.realPostStale,
+        detail: diagFinal.totalRealPosts > 0
+          ? `${diagFinal.totalRealPosts} real POST(s), last ${diagFinal.lastRealPostAt} from ${diagFinal.lastRealPostIp}`
+          : lastCampaignBot?.createdAt
+            ? `No POST since server boot — last CampaignBot event in DB: ${lastCampaignBot.createdAt}`
+            : 'No CampaignBot POST ever recorded',
       },
       {
         id: 'campaignbot_api',
@@ -331,12 +330,12 @@ export const verifyWebhook = async (req, res) => {
       {
         id: 'campaignbot_delivering',
         label: 'CampaignBot delivering real WhatsApp webhooks',
-        pass: !diag.realPostStale && diag.totalRealPosts > 0,
-        detail: diag.totalRealPosts === 0
-          ? 'No real WhatsApp webhook ever received — configure webhook in CampaignBot dashboard'
-          : diag.realPostStale
-            ? `No real CampaignBot POST in ${diag.minutesSinceLastRealPost ?? '?'} min — YOUR MESSAGES ARE NOT REACHING PICOSO`
-            : `Last real webhook: ${diag.lastRealPostAt} from ${diag.lastRealPostIp}`,
+        pass: cbTrafficCount > 0 && !diagFinal.realPostStale,
+        detail: cbTrafficCount === 0
+          ? 'No CampaignBot WhatsApp webhook ever logged (Aug 31 empty processed may be only attempt)'
+          : diagFinal.realPostStale
+            ? `No real CampaignBot POST in ${diagFinal.minutesSinceLastRealPost ?? '?'} min`
+            : `Last CampaignBot webhook: ${lastCampaignBot?.createdAt}`,
       },
     ];
 
@@ -345,15 +344,22 @@ export const verifyWebhook = async (req, res) => {
       serverNow: new Date().toISOString(),
       webhookUrl,
       altUrl,
-      diagnostics: diag,
+      diagnostics: diagFinal,
       sync,
       selfTest,
+      webhookSecrets: {
+        configured: secrets.length,
+        webhookSecretEnvSet: !!process.env.CAMPAIGNBOT_WEBHOOK_SECRET,
+        apiKeyFallback: !!process.env.CAMPAIGNBOT_API_KEY,
+      },
       checklist,
       rootCauses: causes,
       campaignBotApi: cbStatus,
       mongo: {
         totalEvents: eventCount,
         realEvents: realEventCount,
+        campaignBotEvents: cbTrafficCount,
+        lastCampaignBotEventAt: lastCampaignBot?.createdAt || null,
         lastRealEventAt: lastAny?.createdAt || null,
         lastEvent: lastAny?.event || null,
         lastNote: lastAny?.note || null,
@@ -361,10 +367,11 @@ export const verifyWebhook = async (req, res) => {
       realCause: causes.find((c) => c.severity === 'critical') || causes[0] || null,
       instructions: [
         '1. In CampaignBot dashboard set webhook URL exactly to: ' + webhookUrl,
-        '2. Enable incoming_message webhook events',
-        '3. Send a WhatsApp message to your business number (+91 81670 80111)',
-        '4. Click Run verification — "Real POST from CampaignBot" must show a new hit within seconds',
-        '5. Self-test passing only proves picoso.in works — if step 4 fails, CampaignBot is NOT firing webhooks',
+        '2. Copy "client webhook secret key" into server env as CAMPAIGNBOT_WEBHOOK_SECRET',
+        '3. Enable incoming_message webhook events and save (CampaignBot sends a signed overview ping)',
+        '4. Send a WhatsApp message to +91 81670 80111',
+        '5. Click Run verification — "Real POST from CampaignBot" must update within seconds',
+        '6. If step 5 fails, contact CampaignBot support — their dashboard webhook is not firing',
       ],
     });
   } catch (err) {
@@ -396,7 +403,7 @@ export const registerWebhook = async (req, res) => {
 export const getWebhookDebug = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
-    const events = await WpWebhookEvent.find(REAL_WEBHOOK_QUERY)
+    const events = await WpWebhookEvent.find(CAMPAIGNBOT_TRAFFIC_QUERY)
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();

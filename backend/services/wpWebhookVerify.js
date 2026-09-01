@@ -23,3 +23,12 @@ export const REAL_WEBHOOK_QUERY = {
     { note: { $not: /wamid\.VERIFY/i } },
   ],
 };
+
+/** Exclude manual probes — only likely CampaignBot-delivered traffic. */
+export const CAMPAIGNBOT_TRAFFIC_QUERY = {
+  $and: [
+    ...REAL_WEBHOOK_QUERY.$and,
+    { note: { $not: /TESTPROBE|Hello probe/i } },
+    { payloadPreview: { $not: /TESTPROBE|self_verify|wamid\.VERIFY/i } },
+  ],
+};
