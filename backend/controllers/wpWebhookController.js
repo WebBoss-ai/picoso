@@ -405,6 +405,15 @@ export const handleWebhook = async (req, res) => {
         extracted: inbounds.length,
       });
 
+      emitChatbotEvent({
+        type: 'webhook_processing',
+        requestId,
+        event: event || 'incoming_message',
+        processing: 'acknowledged',
+        note: `HTTP 200 sent to CampaignBot · extracted=${inbounds.length}`,
+        at: new Date().toISOString(),
+      });
+
       setImmediate(async () => {
         try {
           if (!inbounds.length) {

@@ -23,9 +23,9 @@ function fmtTime(d) {
   return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function fmtRelative(d) {
+function fmtRelative(d, now = Date.now()) {
   if (!d) return 'never';
-  const ms = Date.now() - new Date(d).getTime();
+  const ms = now - new Date(d).getTime();
   if (ms < 0) return 'just now';
   const sec = Math.floor(ms / 1000);
   if (sec < 5) return 'just now';
@@ -37,13 +37,164 @@ function fmtRelative(d) {
   return fmtTime(d);
 }
 
+function fmtClock(now = Date.now()) {
+  return new Date(now).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
 /** Re-render every second so relative timestamps stay live. */
 function useLiveClock(intervalMs = 1000) {
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), intervalMs);
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(id);
   }, [intervalMs]);
+  return now;
+}
+
+const WEBHOOK_PIPELINE = [
+  { id: 'post', label: 'POST hit server', types: ['webhook_received'] },
+  { id: 'ack', label: 'HTTP 200 ack sent', types: ['webhook_processing'], processing: ['acknowledged'] },
+  { id: 'parse', label: 'JSON parsed', types: ['webhook_received'], field: 'parsed' },
+  { id: 'extract', label: 'Message extracted', types: ['webhook_extracted'] },
+  { id: 'process', label: 'Chatbot processing', types: ['webhook_processing'], processing: ['processing', 'received'] },
+  { id: 'save', label: 'Inbound saved', types: ['inbound_received'] },
+  { id: 'reply', label: 'Reply sent', types: ['inbound'] },
+];
+
+function stageFromServerEvent(e = {}) {
+  const proc = String(e.processing || '').toLowerCase();
+  if (e.ok === false) return `Failed: ${e.note || e.event || 'error'}`;
+  if (proc === 'processing') return 'Chatbot processing';
+  if (proc === 'processed') return 'Completed';
+  if (proc === 'received') return 'Webhook received';
+  if (proc === 'duplicate') return 'Duplicate (skipped)';
+  if (proc === 'failed') return `Failed: ${e.note || 'error'}`;
+  if (e.event === 'message_status') return `Status: ${e.text || e.note || '-'}`;
+  return e.event || e.note || 'Webhook event';
+}
+
+function stageFromSseEvent(e = {}) {
+  const map = {
+    webhook_received: 'POST hit server',
+    webhook_rejected: `Rejected: ${e.reason || 'invalid'}`,
+    webhook_extracted: `Extracted ${e.count ?? 1} message(s)`,
+    webhook_processing: e.processing === 'acknowledged'
+      ? 'HTTP 200 ack sent to CampaignBot'
+      : `Processing: ${e.processing || e.note || '-'}`,
+    inbound_received: 'Inbound saved to DB',
+    inbound: `Reply sent (${e.matchedAction || 'bot'})`,
+    outbound: 'Outbound message',
+    heartbeat: 'SSE heartbeat',
+    connected: 'SSE connected',
+  };
+  return map[e.type] || e.type || 'Event';
+}
+
+function sseDetail(e = {}) {
+  const parts = [e.type];
+  if (e.event) parts.push(e.event);
+  if (e.requestId) parts.push(`req:${String(e.requestId).slice(0, 8)}`);
+  if (e.from) parts.push(e.from);
+  if (e.text) parts.push(`"${String(e.text).slice(0, 60)}"`);
+  if (e.reason) parts.push(e.reason);
+  if (e.signature) parts.push(`sig:${e.signature}`);
+  if (e.processing) parts.push(e.processing);
+  return parts.join(' · ');
+}
+
+function buildActivityFeed(liveEvents = [], debugLog = []) {
+  const seen = new Set();
+  const items = [];
+
+  const push = (item) => {
+    const key = `${item.at}-${item.stage}-${item.requestId || ''}-${item.source}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  };
+
+  for (const e of debugLog) {
+    push({
+      id: `srv-${e.id || e.requestId || e.at}`,
+      at: e.at,
+      source: 'server',
+      stage: stageFromServerEvent(e),
+      status: e.ok === false ? 'fail' : 'ok',
+      detail: [e.event, e.from, e.note || e.text].filter(Boolean).join(' · '),
+      requestId: e.requestId || null,
+      processing: e.processing || null,
+      event: e,
+    });
+  }
+
+  for (const e of liveEvents) {
+    if (e.type === 'heartbeat') continue;
+    push({
+      id: `sse-${e.receivedAt || e.at}-${e.type}`,
+      at: e.at || e.receivedAt,
+      source: 'live',
+      stage: stageFromSseEvent(e),
+      status: e.type === 'webhook_rejected' || e.processing === 'failed' ? 'fail'
+        : e.type === 'webhook_processing' ? 'pending' : 'ok',
+      detail: sseDetail(e),
+      requestId: e.requestId || null,
+      processing: e.processing || null,
+      event: e,
+    });
+  }
+
+  return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 100);
+}
+
+function pipelineState(feed = [], webhook = null) {
+  const latestReq = feed.find((f) => f.requestId)?.requestId
+    || webhook?.lastInboundRequestId
+    || webhook?.lastRequestId
+    || null;
+  const related = latestReq
+    ? feed.filter((f) => f.requestId === latestReq)
+    : feed.slice(0, 20);
+
+  const matchTypes = (f, types = []) => (
+    types.includes(f.event?.type)
+    || types.includes(f.event?.event)
+    || types.some((t) => f.stage?.toLowerCase().includes(t.replace('webhook_', '')))
+  );
+
+  return WEBHOOK_PIPELINE.map((step) => {
+    let hit = related.find((f) => matchTypes(f, step.types));
+    if (!hit && step.id === 'parse') {
+      hit = related.find((f) => f.event?.parsed === true || (f.source === 'server' && f.status === 'ok'));
+    }
+    if (!hit && step.id === 'post') {
+      hit = related.find((f) => f.stage.includes('POST') || f.stage.includes('received') || f.event?.event === 'incoming_message');
+    }
+    if (!hit && step.id === 'extract') {
+      hit = related.find((f) => f.stage.includes('Extracted') || (f.event?.from && f.status === 'ok'));
+    }
+    if (!hit && step.processing) {
+      hit = related.find((f) => step.processing.includes(f.processing));
+    }
+    const failed = related.some((f) => f.status === 'fail');
+    return {
+      ...step,
+      state: hit ? (hit.status === 'fail' ? 'fail' : hit.status === 'pending' ? 'pending' : 'done') : (failed ? 'skip' : 'wait'),
+      at: hit?.at || null,
+      detail: hit?.detail || null,
+    };
+  });
+}
+
+function statusDot(state) {
+  if (state === 'done') return 'bg-emerald-500';
+  if (state === 'pending') return 'bg-amber-400 animate-pulse';
+  if (state === 'fail') return 'bg-red-500';
+  return 'bg-zinc-200';
 }
 
 function tryPrettyJson(raw) {
@@ -55,7 +206,193 @@ function tryPrettyJson(raw) {
   }
 }
 
-/* ── Webhook debug console (frontend-only diagnostics) ───────────────────── */
+/* ── Live webhook dashboard — every step visible ─────────────────────────── */
+function WebhookLiveDashboard({
+  webhook,
+  debugLog,
+  liveEvents,
+  sseStatus,
+  lastHeartbeat,
+  serverNow,
+  lastPollAt,
+  pollCount,
+  pollError,
+  now,
+  onRefresh,
+  refreshing,
+}) {
+  const feed = buildActivityFeed(liveEvents, debugLog);
+  const pipeline = pipelineState(feed, webhook);
+
+  return (
+    <div className="mb-5 rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm overflow-hidden">
+      {/* Live header — clock always ticking */}
+      <div className="border-b border-zinc-100 bg-zinc-900 px-4 py-3 text-white">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">Webhook live monitor</p>
+            <p className="text-2xl font-mono font-semibold tabular-nums tracking-tight mt-0.5">
+              {fmtClock(now)}
+            </p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">
+              Local clock · updates every second
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+            <span className={`rounded-lg px-2.5 py-1 ${sseStatus === 'connected' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-200'}`}>
+              SSE: {sseStatus}
+            </span>
+            <span className="rounded-lg bg-white/10 px-2.5 py-1 text-zinc-200">
+              Poll #{pollCount} · {lastPollAt ? fmtRelative(lastPollAt, now) : 'starting…'}
+            </span>
+            <span className="rounded-lg bg-white/10 px-2.5 py-1 text-zinc-200">
+              Server {serverNow ? fmtRelative(serverNow, now) : '-'}
+            </span>
+            {lastHeartbeat && (
+              <span className="rounded-lg bg-white/10 px-2.5 py-1 text-zinc-200">
+                Heartbeat {fmtRelative(lastHeartbeat, now)}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Status row */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Inbound webhook</p>
+            <p className="text-[12px] text-zinc-500 mt-0.5">
+              CampaignBot POSTs <span className="font-mono text-zinc-700">incoming_message</span> here. Every step below updates live — no refresh needed.
+            </p>
+          </div>
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
+            webhook?.lastInboundProcessing === 'failed'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : webhook?.lastInboundAt
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-amber-200 bg-amber-50 text-amber-700'
+          }`}>
+            {webhook?.lastInboundProcessing === 'failed'
+              ? 'Processing error'
+              : webhook?.lastInboundAt ? 'Receiving' : 'Waiting for inbound'}
+          </span>
+        </div>
+
+        <code className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
+          {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
+        </code>
+
+        {pollError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+            Poll error: {pollError}
+          </div>
+        )}
+
+        {/* Key metrics — relative + absolute, both live */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {[
+            { label: 'Last webhook', value: webhook?.lastWebhookAt },
+            { label: 'Last inbound', value: webhook?.lastInboundAt },
+            { label: 'Last event', value: webhook?.lastEvent, static: true },
+            { label: 'Processing', value: webhook?.lastInboundProcessing, static: true },
+            { label: 'Signature', value: webhook?.lastInboundSignature, static: true },
+            { label: 'Request ID', value: webhook?.lastInboundRequestId ? String(webhook.lastInboundRequestId).slice(0, 12) : '-', static: true },
+          ].map(({ label, value, static: isStatic }) => (
+            <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2">
+              <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-400">{label}</p>
+              {isStatic ? (
+                <p className="text-[11px] font-mono text-zinc-800 truncate mt-0.5">{value || '-'}</p>
+              ) : (
+                <>
+                  <p className="text-[11px] font-mono font-semibold text-zinc-900 mt-0.5">{fmtRelative(value, now)}</p>
+                  <p className="text-[9px] font-mono text-zinc-400">{fmtTime(value) || '-'}</p>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Pipeline — every processing step */}
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Latest request pipeline</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {pipeline.map((step) => (
+              <div key={step.id} className="rounded-xl border border-zinc-100 p-2.5 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${statusDot(step.state)}`} />
+                  <p className="text-[10px] font-medium text-zinc-700 leading-tight">{step.label}</p>
+                </div>
+                <p className="text-[9px] font-mono text-zinc-400 capitalize">{step.state}</p>
+                {step.at && <p className="text-[9px] font-mono text-zinc-500">{fmtRelative(step.at, now)}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Live activity feed — always visible */}
+        <div className="rounded-xl border border-zinc-200 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 bg-zinc-50">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+              Live activity ({feed.length} events)
+            </p>
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[10px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {refreshing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              Refresh now
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto divide-y divide-zinc-50">
+            {feed.length === 0 ? (
+              <p className="p-4 text-[11px] text-zinc-400 text-center">No webhook activity yet. Send a WhatsApp message to your business number.</p>
+            ) : (
+              feed.map((item) => (
+                <div key={item.id} className="px-3 py-2 hover:bg-zinc-50/80">
+                  <div className="flex items-start gap-2">
+                    <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
+                      item.status === 'fail' ? 'bg-red-500' : item.status === 'pending' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'
+                    }`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-zinc-800">{item.stage}</p>
+                      <p className="text-[10px] font-mono text-zinc-500 truncate">{item.detail || '-'}</p>
+                      <p className="text-[9px] font-mono text-zinc-400 mt-0.5">
+                        {fmtRelative(item.at, now)} · {fmtTime(item.at)} · {item.source}
+                        {item.requestId ? ` · req:${String(item.requestId).slice(0, 8)}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {webhook?.lastRejectedNote && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 space-y-2">
+            <p className="text-[11px] font-semibold text-red-800">Latest failure: {webhook.lastRejectedNote}</p>
+            {webhook.lastRejectedDebugTrace?.steps && (
+              <pre className="max-h-32 overflow-auto text-[9px] text-red-700 whitespace-pre-wrap break-all">
+                {tryPrettyJson(webhook.lastRejectedDebugTrace)}
+              </pre>
+            )}
+            {webhook.lastRejectedRawBody && (
+              <details>
+                <summary className="cursor-pointer text-[10px] font-medium text-red-700">Raw body from CampaignBot</summary>
+                <pre className="mt-1 max-h-40 overflow-auto text-[9px] text-red-800 whitespace-pre-wrap break-all">{webhook.lastRejectedRawBody}</pre>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Webhook debug console (detailed payloads) ───────────────────────────── */
 function WebhookDebugConsole({
   webhook,
   debugLog,
@@ -63,6 +400,7 @@ function WebhookDebugConsole({
   sseStatus,
   lastHeartbeat,
   serverNow,
+  now,
   onRefresh,
   refreshing,
 }) {
@@ -127,19 +465,19 @@ function WebhookDebugConsole({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[10.5px] font-mono">
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">Server now</p>
-          <p className="text-amber-950">{serverNow ? `${fmtRelative(serverNow)} · ${fmtTime(serverNow)}` : '-'}</p>
+          <p className="text-amber-950">{serverNow ? `${fmtRelative(serverNow, now)} · ${fmtTime(serverNow)}` : '-'}</p>
         </div>
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">SSE / heartbeat</p>
-          <p className="text-amber-950">{sseStatus}{lastHeartbeat ? ` · ${fmtRelative(lastHeartbeat)}` : ''}</p>
+          <p className="text-amber-950">{sseStatus}{lastHeartbeat ? ` · ${fmtRelative(lastHeartbeat, now)}` : ''}</p>
         </div>
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">Last webhook</p>
-          <p className="text-amber-950">{fmtRelative(webhook?.lastWebhookAt)} ({fmtTime(webhook?.lastWebhookAt) || '-'})</p>
+          <p className="text-amber-950">{fmtRelative(webhook?.lastWebhookAt, now)} ({fmtTime(webhook?.lastWebhookAt) || '-'})</p>
         </div>
         <div className="rounded-lg border border-amber-100 bg-white p-2">
           <p className="text-amber-600">Last inbound</p>
-          <p className="text-amber-950">{fmtRelative(webhook?.lastInboundAt)} · {webhook?.lastInboundProcessing || '-'}</p>
+          <p className="text-amber-950">{fmtRelative(webhook?.lastInboundAt, now)} · {webhook?.lastInboundProcessing || '-'}</p>
         </div>
       </div>
 
@@ -184,7 +522,7 @@ function WebhookDebugConsole({
                   className="w-full text-left px-3 py-2 hover:bg-amber-50/80"
                 >
                   <p className={`text-[10px] font-mono truncate ${e.ok === false ? 'text-red-700' : 'text-amber-950'}`}>
-                    {fmtRelative(e.at)} · {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.ok === false ? 'FAIL' : 'OK'} · {e.from || '-'} · {e.note || e.text || ''}
+                    {fmtRelative(e.at, now)} · {fmtTime(e.at)} · {e.event} · {e.processing || '-'} · {e.ok === false ? 'FAIL' : 'OK'} · {e.from || '-'} · {e.note || e.text || ''}
                   </p>
                 </button>
                 {open && (
@@ -739,6 +1077,11 @@ export default function ChatbotSection() {
   const [sseStatus, setSseStatus] = useState('connecting');
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
   const [debugEvents, setDebugEvents] = useState([]);
+  const [lastPollAt, setLastPollAt] = useState(null);
+  const [pollCount, setPollCount] = useState(0);
+  const [pollError, setPollError] = useState('');
+
+  const now = useLiveClock(1000);
 
   const pushDebug = useCallback((event) => {
     const entry = { ...event, receivedAt: new Date().toISOString() };
@@ -768,7 +1111,10 @@ export default function ChatbotSection() {
       }
       setWebhook(w.data);
       setServerNow(w.data.serverNow || new Date().toISOString());
-    } catch { /* ignore */ }
+      setPollError('');
+    } catch (e) {
+      setPollError(e?.response?.data?.error || e?.message || 'status fetch failed');
+    }
   }, []);
 
   const load = useCallback(async () => {
@@ -796,17 +1142,18 @@ export default function ChatbotSection() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Live clock — relative times tick every second without manual refresh.
-  useLiveClock(1000);
-
-  // Continuous polling keeps webhook status + debug log current even if SSE drops.
+  // Continuous polling — webhook status + debug log every 2s.
   useEffect(() => {
-    const poll = () => {
-      refreshWebhookStatus().catch(() => {});
-      refreshWebhookDebug(true).catch(() => {});
+    const poll = async () => {
+      setPollCount((n) => n + 1);
+      setLastPollAt(new Date().toISOString());
+      await Promise.all([
+        refreshWebhookStatus().catch(() => {}),
+        refreshWebhookDebug(true).catch(() => {}),
+      ]);
     };
     poll();
-    const id = setInterval(poll, 4000);
+    const id = setInterval(poll, 2000);
     return () => clearInterval(id);
   }, [refreshWebhookStatus, refreshWebhookDebug]);
 
@@ -862,6 +1209,8 @@ export default function ChatbotSection() {
                 lastInboundProcessing: data.processing || previous?.lastInboundProcessing || null,
                 ...(data.note ? { lastRejectedNote: data.note } : {}),
               }));
+              refreshWebhookStatus().catch(() => {});
+              refreshWebhookDebug(true).catch(() => {});
             }
 
             if (['inbound_received', 'inbound', 'outbound'].includes(data.type)) {
@@ -979,45 +1328,21 @@ export default function ChatbotSection() {
         </div>
       )}
 
-      {/* Webhook connectivity — CampaignBot POSTs here */}
-      <div className="mb-5 rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Inbound webhook</p>
-            <p className="text-[12px] text-zinc-500 mt-0.5">
-              CampaignBot should POST <span className="font-mono text-zinc-700">incoming_message</span> events here. The backend acknowledges valid payloads immediately, then saves and replies.
-            </p>
-          </div>
-          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
-            webhook?.lastInboundProcessing === 'failed'
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : webhook?.lastInboundAt
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-amber-200 bg-amber-50 text-amber-700'
-          }`}>
-            {webhook?.lastInboundProcessing === 'failed'
-              ? 'Processing error'
-              : webhook?.lastInboundAt ? 'Receiving' : 'Waiting for inbound'}
-          </span>
-        </div>
-        <code className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11.5px] font-mono text-zinc-700 break-all">
-          {webhook?.webhookUrl || 'https://picoso.in/api/webhooks/campaignbot'}
-        </code>
-        <p className="text-[11px] text-zinc-500">
-          Live stream: <span className={`font-mono ${sseStatus === 'connected' ? 'text-emerald-700' : 'text-amber-700'}`}>{sseStatus}</span>
-          {lastHeartbeat && <> {' · '}heartbeat {fmtRelative(lastHeartbeat)}</>}
-          {' · '}Auto-refresh every 4s
-          {' · '}Local time {fmtTime(new Date())}
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px] text-zinc-500">
-          <p>Last webhook: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastWebhookAt)}</span> <span className="text-zinc-400">({fmtTime(webhook?.lastWebhookAt) || '-'})</span></p>
-          <p>Last inbound: <span className="font-mono text-zinc-800">{fmtRelative(webhook?.lastInboundAt)}</span> <span className="text-zinc-400">({fmtTime(webhook?.lastInboundAt) || '-'})</span></p>
-          <p>Last event: <span className="font-mono text-zinc-800">{webhook?.lastEvent || '-'}</span></p>
-          <p>Processing: <span className="font-mono text-zinc-800">{webhook?.lastInboundProcessing || '-'}</span></p>
-          <p>Signature: <span className="font-mono text-zinc-800">{webhook?.lastInboundSignature || '-'}</span></p>
-          <p>Request ID: <span className="font-mono text-zinc-800">{webhook?.lastInboundRequestId || '-'}</span></p>
-        </div>
-      </div>
+      {/* Live webhook monitor — every step visible, clock ticks every second */}
+      <WebhookLiveDashboard
+        webhook={webhook}
+        debugLog={debugLog}
+        liveEvents={debugEvents}
+        sseStatus={sseStatus}
+        lastHeartbeat={lastHeartbeat}
+        serverNow={serverNow}
+        lastPollAt={lastPollAt}
+        pollCount={pollCount}
+        pollError={pollError}
+        now={now}
+        onRefresh={() => { refreshWebhookStatus(); refreshWebhookDebug(); }}
+        refreshing={debugRefreshing}
+      />
 
       <WebhookDebugConsole
         webhook={webhook}
@@ -1026,6 +1351,7 @@ export default function ChatbotSection() {
         sseStatus={sseStatus}
         lastHeartbeat={lastHeartbeat}
         serverNow={serverNow}
+        now={now}
         onRefresh={refreshWebhookDebug}
         refreshing={debugRefreshing}
       />
