@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "postinstall": "playwright install chromium",
+    "postinstall": "node -e \"try{require('child_process').execSync('npx playwright install chromium',{stdio:'inherit'})}catch(e){console.log('[postinstall] playwright chromium skipped:',e.message)}\"",
     "playwright:install": "playwright install chromium",
     "playwright:deps": "playwright install-deps chromium"
   },
