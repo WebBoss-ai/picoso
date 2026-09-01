@@ -15,6 +15,10 @@ import {
   registerWebhookWithCampaignBot,
   syncInboundMessages,
 } from '../services/wpInboundSync.js';
+import {
+  analyzeRootCause,
+  getWebhookDiagnostics,
+} from '../services/wpWebhookDiagnostics.js';
 import * as bot from '../services/campaignBot.js';
 
 function clientId(req) {
@@ -179,6 +183,7 @@ export const getWebhookStatus = async (req, res) => {
       minutesSinceLastWebhook,
       webhookStale,
       inboundSync: sync,
+      webhookDiagnostics: getWebhookDiagnostics(),
       lastWebhookAt: lastAny?.createdAt || null,
       lastInboundAt: lastInbound?.createdAt || null,
       lastEvent: lastAny?.event || null,
@@ -222,6 +227,136 @@ export const getWebhookStatus = async (req, res) => {
         debugTrace: e.debugTrace,
         at: e.createdAt,
       })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/** GET /wp-marketing/chatbot/webhook-verify — full diagnostic + root cause */
+export const verifyWebhook = async (req, res) => {
+  try {
+    const diagnostics = getWebhookDiagnostics();
+    const sync = getInboundSyncState();
+    const webhookUrl = bot.getPublicWebhookUrl();
+    const altUrl = webhookUrl.includes('/api/webhooks')
+      ? webhookUrl.replace('/api/webhooks', '/webhooks')
+      : webhookUrl.replace('/webhooks', '/api/webhooks');
+
+    const [lastAny, eventCount, cbStatus] = await Promise.all([
+      WpWebhookEvent.findOne().sort({ createdAt: -1 }).lean(),
+      WpWebhookEvent.countDocuments(),
+      bot.testConnection().catch((err) => ({ connected: false, error: err.message })),
+    ]);
+
+    // Self-test: POST to our own public webhook URL
+    let selfTest = { ok: false, error: 'not run' };
+    try {
+      const pingBody = JSON.stringify({
+        event: 'incoming_message',
+        meta_raw: {},
+        meta_contacts: [],
+        meta_metadata: {},
+        processed: {
+          message_id: `wamid.VERIFY_${Date.now()}`,
+          from: '+919999999999',
+          type: 'text',
+          text: '__picoso_webhook_verify__',
+          timestamp: new Date().toISOString(),
+          media: { id: null, url: null },
+        },
+        system: { received_at: new Date().toISOString(), source: 'self_verify' },
+      });
+      const pingRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Webhook-Verify': 'picoso-self-test' },
+        body: pingBody,
+      });
+      const pingText = await pingRes.text();
+      selfTest = {
+        ok: pingRes.status >= 200 && pingRes.status < 300,
+        status: pingRes.status,
+        url: webhookUrl,
+        responsePreview: pingText.slice(0, 300),
+      };
+    } catch (err) {
+      selfTest = { ok: false, error: err.message, url: webhookUrl };
+    }
+
+    const causes = analyzeRootCause({
+      diagnostics,
+      lastWebhookAt: lastAny?.createdAt,
+      sync,
+      cbConnected: cbStatus?.connected,
+    });
+
+    const checklist = [
+      {
+        id: 'endpoint_live',
+        label: 'Webhook endpoint reachable',
+        pass: selfTest.ok,
+        detail: selfTest.ok
+          ? `POST ${webhookUrl} → HTTP ${selfTest.status}`
+          : `Failed: ${selfTest.error || selfTest.responsePreview || 'unknown'}`,
+      },
+      {
+        id: 'mongodb',
+        label: 'MongoDB webhook log',
+        pass: eventCount > 0,
+        detail: `${eventCount} events stored, last at ${lastAny?.createdAt || 'never'}`,
+      },
+      {
+        id: 'post_received',
+        label: 'POST hit this server process',
+        pass: diagnostics.totalPosts > 0 && !diagnostics.postStale,
+        detail: diagnostics.totalPosts > 0
+          ? `${diagnostics.totalPosts} POST(s), last ${diagnostics.lastPostAt} from ${diagnostics.lastPostIp}`
+          : 'No POST ever recorded in this server process',
+      },
+      {
+        id: 'campaignbot_api',
+        label: 'CampaignBot API connected',
+        pass: !!cbStatus?.connected,
+        detail: cbStatus?.connected
+          ? `Templates API OK (${cbStatus.templateCount ?? 0} templates)`
+          : (cbStatus?.error || 'API access denied — check CAMPAIGNBOT_API_KEY'),
+      },
+      {
+        id: 'campaignbot_delivering',
+        label: 'CampaignBot delivering real WhatsApp webhooks',
+        pass: !diagnostics.postStale && diagnostics.lastPostEvent === 'incoming_message'
+          && !String(diagnostics.lastPostBodyPreview || '').includes('__picoso_webhook_verify__'),
+        detail: diagnostics.postStale
+          ? `No CampaignBot POST in ${diagnostics.minutesSinceLastPost ?? '?'} min — YOUR MESSAGES ARE NOT REACHING PICOSO`
+          : `Last event: ${diagnostics.lastPostEvent} at ${diagnostics.lastPostAt}`,
+      },
+    ];
+
+    res.json({
+      success: true,
+      serverNow: new Date().toISOString(),
+      webhookUrl,
+      altUrl,
+      diagnostics,
+      sync,
+      selfTest,
+      checklist,
+      rootCauses: causes,
+      campaignBotApi: cbStatus,
+      mongo: {
+        totalEvents: eventCount,
+        lastEventAt: lastAny?.createdAt || null,
+        lastEvent: lastAny?.event || null,
+        lastNote: lastAny?.note || null,
+      },
+      realCause: causes.find((c) => c.severity === 'critical') || causes[0] || null,
+      instructions: [
+        '1. In CampaignBot dashboard set webhook URL exactly to: ' + webhookUrl,
+        '2. Enable incoming_message webhook events',
+        '3. Send a WhatsApp message to your business number (+91 81670 80111)',
+        '4. Click Run verification — "POST hit this server" must update within seconds',
+        '5. If step 4 fails but self-test passes, CampaignBot is NOT firing webhooks — contact CampaignBot support',
+      ],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

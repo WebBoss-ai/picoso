@@ -305,6 +305,92 @@ function tryPrettyJson(raw) {
   }
 }
 
+/* ── Backend verification checklist ──────────────────────────────────────── */
+function WebhookVerifyPanel({ verify, loading, onRun, now }) {
+  if (!verify && !loading) {
+    return (
+      <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-800">Backend verification</p>
+            <p className="text-[12px] text-blue-900/80 mt-0.5">Run a full diagnostic to find why CampaignBot messages are not arriving.</p>
+          </div>
+          <button type="button" onClick={onRun} className="rounded-lg bg-blue-800 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-900">
+            Run verification
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const rc = verify?.realCause;
+
+  return (
+    <div className="mb-5 rounded-2xl border-2 border-blue-200 bg-blue-50/30 p-4 space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-800">Backend verification</p>
+          <p className="text-[12px] text-blue-900/80 mt-0.5">
+            {loading ? 'Running self-test + root cause analysis…' : `Last run ${verify?.serverNow ? fmtRelative(verify.serverNow, now) : '-'}`}
+          </p>
+        </div>
+        <button type="button" onClick={onRun} disabled={loading} className="rounded-lg bg-blue-800 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-900 disabled:opacity-50">
+          {loading ? 'Running…' : 'Run again'}
+        </button>
+      </div>
+
+      {rc && rc.severity === 'critical' && (
+        <div className="rounded-xl border-2 border-red-400 bg-red-50 px-4 py-3">
+          <p className="text-[13px] font-bold text-red-900">Real cause: {rc.title}</p>
+          <p className="text-[12px] text-red-800 mt-1">{rc.detail}</p>
+          {rc.action && <p className="text-[11px] text-red-700 mt-2 font-medium">→ {rc.action}</p>}
+        </div>
+      )}
+
+      {verify?.checklist && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Checklist</p>
+          {verify.checklist.map((item) => (
+            <div key={item.id} className={`flex gap-2 rounded-lg border px-3 py-2 ${item.pass ? 'border-emerald-200 bg-emerald-50/80' : 'border-red-200 bg-white'}`}>
+              <span className={`text-[14px] ${item.pass ? 'text-emerald-600' : 'text-red-500'}`}>{item.pass ? '✓' : '✗'}</span>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-zinc-800">{item.label}</p>
+                <p className="text-[10.5px] font-mono text-zinc-600 break-all">{item.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {verify?.diagnostics && (
+        <details className="rounded-lg border border-blue-100 bg-white p-3">
+          <summary className="cursor-pointer text-[11px] font-semibold text-blue-800">Server POST tracker (in-memory)</summary>
+          <pre className="mt-2 text-[10px] font-mono text-zinc-700 whitespace-pre-wrap break-all max-h-48 overflow-auto">
+            {tryPrettyJson({
+              totalPosts: verify.diagnostics.totalPosts,
+              lastPostAt: verify.diagnostics.lastPostAt,
+              lastPostIp: verify.diagnostics.lastPostIp,
+              lastPostUserAgent: verify.diagnostics.lastPostUserAgent,
+              lastPostEvent: verify.diagnostics.lastPostEvent,
+              lastPostBodyPreview: verify.diagnostics.lastPostBodyPreview,
+              recentHits: verify.diagnostics.recentHits?.slice(0, 8),
+            })}
+          </pre>
+        </details>
+      )}
+
+      {verify?.instructions && (
+        <div className="text-[11px] text-blue-900/90 space-y-1">
+          <p className="font-semibold">Steps to fix:</p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            {verify.instructions.map((line) => <li key={line}>{line}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Live webhook dashboard — every step visible ─────────────────────────── */
 function WebhookLiveDashboard({
   webhook,
@@ -420,6 +506,11 @@ function WebhookLiveDashboard({
           <p><span className="font-semibold text-zinc-800">Active sync poller:</span> every {Math.round((sync.pollIntervalMs || 15000) / 1000)}s {sync.workingFetchPath ? `(via ${sync.workingFetchPath})` : '(no fetch API found yet)'}</p>
           <p>Last sync run: {sync.lastRunAt ? `${fmtRelative(sync.lastRunAt, now)} · fetched ${sync.lastFetched || 0} · processed ${sync.lastProcessed || 0}` : 'not started'}</p>
           {sync.lastError && <p className="text-amber-800">Sync note: {sync.lastError}</p>}
+          {sync.lastFetchStatus && sync.lastFetchStatus >= 400 && sync.lastFetchBody && (
+            <p className="text-amber-800 font-mono text-[10px] break-all">
+              Fetch HTTP {sync.lastFetchStatus}: {typeof sync.lastFetchBody === 'string' ? sync.lastFetchBody : tryPrettyJson(sync.lastFetchBody).slice(0, 400)}
+            </p>
+          )}
           {sync.lastRegisterNote && <p className="text-zinc-500">Register: {sync.lastRegisterNote}</p>}
         </div>
 
@@ -1243,6 +1334,8 @@ export default function ChatbotSection() {
   const [pollCount, setPollCount] = useState(0);
   const [pollError, setPollError] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [verify, setVerify] = useState(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   const now = useLiveClock(1000);
 
@@ -1306,6 +1399,20 @@ export default function ChatbotSection() {
     }
   }, [refreshWebhookStatus]);
 
+  const runVerify = useCallback(async () => {
+    setVerifyLoading(true);
+    try {
+      const r = await wpMarketing.verifyChatbotWebhook();
+      setVerify(r.data);
+      await refreshWebhookStatus();
+      await refreshWebhookDebug(true);
+    } catch (e) {
+      setPollError(e?.response?.data?.error || e?.message || 'verify failed');
+    } finally {
+      setVerifyLoading(false);
+    }
+  }, [refreshWebhookStatus, refreshWebhookDebug]);
+
   const load = useCallback(async () => {
     setError('');
     try {
@@ -1328,6 +1435,10 @@ export default function ChatbotSection() {
       setLoading(false);
     }
   }, [refreshWebhookDebug]);
+
+  useEffect(() => {
+    runVerify().catch(() => {});
+  }, [runVerify]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1511,6 +1622,9 @@ export default function ChatbotSection() {
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
         </div>
       )}
+
+      {/* Backend verification — root cause + checklist */}
+      <WebhookVerifyPanel verify={verify} loading={verifyLoading} onRun={runVerify} now={now} />
 
       {/* Live webhook monitor — every step visible, clock ticks every second */}
       <WebhookLiveDashboard

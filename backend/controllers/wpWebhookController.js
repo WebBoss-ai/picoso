@@ -17,6 +17,7 @@ import {
   detectWebhookEvent,
   extractInboundMessagesWithDebug,
 } from '../services/wpWebhookExtract.js';
+import { recordWebhookHit } from '../services/wpWebhookDiagnostics.js';
 
 const WEBHOOK_SECRETS = [
   process.env.CAMPAIGNBOT_WEBHOOK_SECRET,
@@ -179,6 +180,11 @@ async function handleIncomingMessage(inbound, requestId = '') {
     return null;
   }
 
+  if (String(inbound.text || '').includes('__picoso_webhook_verify__')) {
+    console.log(`[WP Webhook][${requestId || 'unknown'}] verify ping — skip chatbot`);
+    return { skipped: true, reason: 'verify_ping' };
+  }
+
   console.log(`[WP Webhook][${requestId || 'unknown'}] INBOUND from=${inbound.from} type=${inbound.type} id=${inbound.messageId || 'none'} text="${String(inbound.text || '').slice(0, 100)}"`);
   await markProcessing(requestId, 'processing');
 
@@ -292,10 +298,18 @@ export const webhookHealth = async (req, res) => {
 export const handleWebhook = async (req, res) => {
   const rawBody = req.rawBody || JSON.stringify(req.body || {});
   const requestId = req.webhookRequestId || req.headers['x-request-id'] || crypto.randomUUID();
-  const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
   const body = req.body || {};
   const event = detectWebhookEvent(body);
   const rawBodyLength = Buffer.byteLength(rawBody, 'utf8');
+
+  recordWebhookHit(req, {
+    requestId,
+    event: event || body?.event,
+    bytes: rawBodyLength,
+    bodyPreview: rawBody.slice(0, 500),
+  });
+
+  const sigHeader = req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature'] || '';
   const signatureCheck = sigHeader
     ? verifySignature(rawBody, sigHeader)
     : { ok: false, reason: 'missing' };

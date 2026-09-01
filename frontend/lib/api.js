@@ -322,6 +322,7 @@ export const wpMarketing = {
   getChatbotStats:   ()        => wpMarketingApi.get('/wp-marketing/chatbot/stats'),
   getChatbotWebhookStatus: ()  => wpMarketingApi.get('/wp-marketing/chatbot/webhook-status'),
   getChatbotWebhookDebug:  (params) => wpMarketingApi.get('/wp-marketing/chatbot/webhook-debug', { params }),
+  verifyChatbotWebhook:    ()   => wpMarketingApi.get('/wp-marketing/chatbot/webhook-verify'),
   syncChatbotInbound:      ()   => wpMarketingApi.post('/wp-marketing/chatbot/sync-inbound'),
   registerChatbotWebhook:  ()   => wpMarketingApi.post('/wp-marketing/chatbot/register-webhook'),
   getChatbotConversations: (params) => wpMarketingApi.get('/wp-marketing/chatbot/conversations', { params }),

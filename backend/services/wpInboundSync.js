@@ -28,6 +28,9 @@ const syncState = {
   lastRegisterOk: null,
   lastRegisterNote: null,
   workingFetchPath: null,
+  lastFetchStatus: null,
+  lastFetchBody: null,
+  registerAttempts: [],
 };
 
 function apiHeaders() {
@@ -96,6 +99,7 @@ export function getInboundSyncState() {
 
 export async function registerWebhookWithCampaignBot() {
   syncState.lastRegisterAt = new Date().toISOString();
+  syncState.registerAttempts = [];
   const urls = webhookUrls();
   const attempts = [
     { method: 'post', path: '/v1/webhooks', body: (url) => ({ webhookUrl: url, url, events: ['incoming_message', 'message_status'] }) },
@@ -110,6 +114,13 @@ export async function registerWebhookWithCampaignBot() {
     for (const attempt of attempts) {
       try {
         const res = await apiCall(attempt.method, attempt.path, attempt.body(url));
+        syncState.registerAttempts.push({
+          url,
+          path: attempt.path,
+          method: attempt.method,
+          status: res.status,
+          body: typeof res.data === 'object' ? res.data : String(res.data || '').slice(0, 200),
+        });
         if (res.status >= 200 && res.status < 300) {
           syncState.lastRegisterOk = true;
           syncState.lastRegisterNote = `registered via ${attempt.method.toUpperCase()} ${attempt.path} → ${url}`;
@@ -143,12 +154,16 @@ export async function syncInboundMessages() {
 
   let lastStatus = null;
   let lastBody = null;
+  let lastPath = null;
 
   for (const attempt of fetchAttempts) {
     try {
       const res = await apiCall(attempt.method, attempt.path, attempt.body, attempt.params);
       lastStatus = res.status;
       lastBody = res.data;
+      lastPath = `${attempt.method.toUpperCase()} ${attempt.path}`;
+      syncState.lastFetchStatus = lastStatus;
+      syncState.lastFetchBody = typeof lastBody === 'object' ? lastBody : { raw: String(lastBody || '').slice(0, 300) };
       if (res.status < 200 || res.status >= 300) continue;
 
       const messages = collectMessagesFromResponse(res.data);
@@ -198,10 +213,10 @@ export async function syncInboundMessages() {
   }
 
   syncState.lastError = lastStatus
-    ? `fetch failed (last HTTP ${lastStatus})`
+    ? `fetch failed (last HTTP ${lastStatus} on ${lastPath || 'unknown'})${lastBody?.message ? `: ${lastBody.message}` : ''}`
     : 'no fetch endpoint returned messages';
 
-  return { ok: false, error: syncState.lastError, body: lastBody };
+  return { ok: false, error: syncState.lastError, status: lastStatus, path: lastPath, body: lastBody };
 }
 
 let timer = null;

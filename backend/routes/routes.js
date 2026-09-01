@@ -281,6 +281,7 @@ router.put('/wp-marketing/chatbot/brain',                  requireWpPin, wpChatb
 router.get('/wp-marketing/chatbot/stats',                  requireWpPin, wpChatbot.getStats);
 router.get('/wp-marketing/chatbot/webhook-status',         requireWpPin, wpChatbot.getWebhookStatus);
 router.get('/wp-marketing/chatbot/webhook-debug',          requireWpPin, wpChatbot.getWebhookDebug);
+router.get('/wp-marketing/chatbot/webhook-verify',       requireWpPin, wpChatbot.verifyWebhook);
 router.post('/wp-marketing/chatbot/sync-inbound',         requireWpPin, wpChatbot.syncInbound);
 router.post('/wp-marketing/chatbot/register-webhook',     requireWpPin, wpChatbot.registerWebhook);
 router.get('/wp-marketing/chatbot/events',                 requireWpPin, wpChatbot.streamEvents);
