@@ -10,6 +10,7 @@ import { WpClient } from './models/wpMarketingModels.js';
 import { startScheduler } from './services/wpScheduler.js';
 import { ensureDefaultBrain } from './services/wpChatbot.js';
 import { startInboundSync } from './services/wpInboundSync.js';
+import { seedStayData } from './services/staySeed.js';
 import { WpWebhookEvent } from './models/wpMarketingModels.js';
 import { CAMPAIGNBOT_TRAFFIC_QUERY } from './services/wpWebhookVerify.js';
 import { hydrateDiagnosticsFromEvent } from './services/wpWebhookDiagnostics.js';
@@ -168,6 +169,7 @@ mongoose.connect(process.env.MONGO_URI)
     await ensureTestUserAddress();
     await seedCampaign1();
     await seedWpClients();
+    await seedStayData();
     await ensureDefaultBrain();
     startScheduler();
     startInboundSync();

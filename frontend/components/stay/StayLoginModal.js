@@ -2,18 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { X, Phone, ArrowRight, ShieldCheck, Loader2, CheckCircle2 } from 'lucide-react';
-import { generateOtp, hashOtp, setStayUser } from '@/lib/stayStore';
+import { auth } from '@/lib/api';
+import { hashOtp } from '@/lib/stayUtils';
+import { useAuth } from '@/context/AuthContext';
 
-/**
- * Phone-only login with 2s wait → hashed OTP auto-fill → verify.
- */
+const DEV_OTP = '0000';
+
 export default function StayLoginModal({ onClose, onSuccess }) {
-  const [step, setStep] = useState('phone'); // phone | wait | otp | success
+  const { login } = useAuth();
+  const [step, setStep] = useState('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '']);
-  const [realOtp, setRealOtp] = useState('');
   const [hashed, setHashed] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [waitLeft, setWaitLeft] = useState(2);
   const refs = useRef([]);
 
@@ -22,10 +24,8 @@ export default function StayLoginModal({ onClose, onSuccess }) {
     setWaitLeft(2);
     const tick = setInterval(() => setWaitLeft((w) => Math.max(0, w - 1)), 1000);
     const done = setTimeout(() => {
-      const code = generateOtp(4);
-      setRealOtp(code);
-      setHashed(hashOtp(code));
-      setOtp(code.split(''));
+      setHashed(hashOtp(DEV_OTP));
+      setOtp(DEV_OTP.split(''));
       setStep('otp');
     }, 2000);
     return () => {
@@ -35,36 +35,49 @@ export default function StayLoginModal({ onClose, onSuccess }) {
   }, [step]);
 
   useEffect(() => {
-    if (step === 'otp' && otp.join('').length === 4 && realOtp) {
+    if (step === 'otp' && otp.join('').length === 4) {
       const t = setTimeout(() => verify(otp.join('')), 400);
       return () => clearTimeout(t);
     }
-  }, [step, otp, realOtp]);
+  }, [step, otp]);
 
-  const startLogin = () => {
+  const startLogin = async () => {
     if (!/^\d{10}$/.test(phone)) {
       setError('Enter a valid 10-digit mobile number');
       return;
     }
     setError('');
-    setStep('wait');
+    setLoading(true);
+    try {
+      await auth.sendOTP(phone);
+      setStep('wait');
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to send OTP');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const verify = (code) => {
-    if (code !== realOtp) {
-      setError('Invalid OTP');
-      return;
+  const verify = async (code) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await auth.verifyOTP(phone, code);
+      const { token, user } = res.data;
+      login(token, user);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('picoso-stay-auth'));
+      }
+      setStep('success');
+      setTimeout(() => {
+        onSuccess?.(user);
+        onClose?.();
+      }, 900);
+    } catch (e) {
+      setError(e.response?.data?.error || 'Invalid OTP');
+    } finally {
+      setLoading(false);
     }
-    const user = { phone, name: '', loggedInAt: new Date().toISOString() };
-    setStayUser(user);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('picoso-stay-auth'));
-    }
-    setStep('success');
-    setTimeout(() => {
-      onSuccess?.(user);
-      onClose?.();
-    }, 900);
   };
 
   const onOtpChange = (i, val) => {
@@ -85,20 +98,16 @@ export default function StayLoginModal({ onClose, onSuccess }) {
           <div>
             <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-turtle-600">Picoso Stay</p>
             <h2 className="text-xl font-semibold text-gray-900 mt-1 tracking-tight">
-              {step === 'success' ? 'You\'re in' : 'Login with phone'}
+              {step === 'success' ? "You're in" : 'Login with phone'}
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              {step === 'phone' && 'OTP is hashed & auto-verified securely.'}
+              {step === 'phone' && 'Secure OTP login — hashed & verified.'}
               {step === 'wait' && 'Preparing secure OTP…'}
               {step === 'otp' && 'Confirm the hashed OTP below.'}
               {step === 'success' && 'Continue to book your stay.'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-50"
-          >
+          <button type="button" onClick={onClose} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700">
             <X size={16} />
           </button>
         </div>
@@ -126,18 +135,17 @@ export default function StayLoginModal({ onClose, onSuccess }) {
             <button
               type="button"
               onClick={startLogin}
-              className="w-full h-12 rounded-2xl bg-turtle-600 hover:bg-turtle-700 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+              disabled={loading}
+              className="w-full h-12 rounded-2xl bg-turtle-600 hover:bg-turtle-700 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              Continue <ArrowRight size={16} />
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <>Continue <ArrowRight size={16} /></>}
             </button>
           </div>
         )}
 
         {step === 'wait' && (
           <div className="py-10 flex flex-col items-center text-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-turtle-50 border border-turtle-100 flex items-center justify-center">
-              <Loader2 className="w-6 h-6 text-turtle-600 animate-spin" />
-            </div>
+            <Loader2 className="w-6 h-6 text-turtle-600 animate-spin" />
             <p className="text-sm text-gray-600">Secure channel opening…</p>
             <p className="text-3xl font-semibold tabular-nums text-turtle-700">{waitLeft}s</p>
           </div>
@@ -167,15 +175,13 @@ export default function StayLoginModal({ onClose, onSuccess }) {
               ))}
             </div>
             {error && <p className="text-sm text-red-500 text-center">{error}</p>}
-            <p className="text-center text-xs text-gray-400">Auto-verifying…</p>
+            {loading && <p className="text-center text-xs text-gray-400">Verifying…</p>}
           </div>
         )}
 
         {step === 'success' && (
           <div className="py-10 flex flex-col items-center gap-3">
-            <div className="w-14 h-14 rounded-full bg-turtle-50 border border-turtle-100 flex items-center justify-center">
-              <CheckCircle2 className="w-7 h-7 text-turtle-600" />
-            </div>
+            <CheckCircle2 className="w-7 h-7 text-turtle-600" />
             <p className="text-sm text-gray-600">Logged in as +91 {phone}</p>
           </div>
         )}

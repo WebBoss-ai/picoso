@@ -3,16 +3,16 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { LogOut, User } from 'lucide-react';
-import { clearStayUser, getStayUser } from '@/lib/stayStore';
+import { useAuth } from '@/context/AuthContext';
 import StayLoginModal from './StayLoginModal';
 
 export function StayNav({ onLoginRequest }) {
-  const [user, setUser] = useState(null);
+  const { user, isLoggedIn, logout } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
+  const [, setTick] = useState(0);
 
   useEffect(() => {
-    const sync = () => setUser(getStayUser());
-    sync();
+    const sync = () => setTick((t) => t + 1);
     window.addEventListener('picoso-stay-auth', sync);
     return () => window.removeEventListener('picoso-stay-auth', sync);
   }, []);
@@ -22,20 +22,12 @@ export function StayNav({ onLoginRequest }) {
     else setShowLogin(true);
   };
 
-  const logout = () => {
-    clearStayUser();
-    setUser(null);
-    window.dispatchEvent(new CustomEvent('picoso-stay-auth'));
-  };
-
   return (
     <>
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-gray-100 font-stay">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <Link href="/stay" className="flex items-center gap-2.5 group">
-            <span className="w-8 h-8 rounded-xl bg-turtle-600 text-white text-sm font-bold flex items-center justify-center tracking-tight">
-              P
-            </span>
+          <Link href="/stay" className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-xl bg-turtle-600 text-white text-sm font-bold flex items-center justify-center">P</span>
             <div className="leading-tight">
               <p className="text-[13px] font-semibold text-gray-900 tracking-tight">Picoso Stay</p>
               <p className="text-[10px] text-gray-400 hidden sm:block">Nature, discovered</p>
@@ -43,12 +35,21 @@ export function StayNav({ onLoginRequest }) {
           </Link>
 
           <div className="flex items-center gap-2">
-            {user ? (
+            {isLoggedIn ? (
               <>
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-200 text-xs text-gray-600">
+                <Link
+                  href="/stay/profile"
+                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-200 text-xs text-gray-600 hover:border-turtle-300 hover:text-turtle-700"
+                >
                   <User size={13} className="text-turtle-600" />
-                  +91 {user.phone}
-                </div>
+                  My bookings
+                </Link>
+                <Link
+                  href="/stay/profile"
+                  className="sm:hidden w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-turtle-600"
+                >
+                  <User size={15} />
+                </Link>
                 <button
                   type="button"
                   onClick={logout}
@@ -59,11 +60,7 @@ export function StayNav({ onLoginRequest }) {
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={openLogin}
-                className="h-9 px-4 rounded-xl bg-turtle-600 hover:bg-turtle-700 text-white text-xs font-semibold transition-colors"
-              >
+              <button type="button" onClick={openLogin} className="h-9 px-4 rounded-xl bg-turtle-600 hover:bg-turtle-700 text-white text-xs font-semibold">
                 Login
               </button>
             )}
@@ -72,10 +69,7 @@ export function StayNav({ onLoginRequest }) {
       </header>
 
       {showLogin && (
-        <StayLoginModal
-          onClose={() => setShowLogin(false)}
-          onSuccess={(u) => setUser(u)}
-        />
+        <StayLoginModal onClose={() => setShowLogin(false)} />
       )}
     </>
   );
@@ -83,9 +77,7 @@ export function StayNav({ onLoginRequest }) {
 
 export function PayAtPropertyBadge({ className = '' }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-turtle-50 border border-turtle-100 text-[11px] font-semibold text-turtle-700 tracking-wide ${className}`}
-    >
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-turtle-50 border border-turtle-100 text-[11px] font-semibold text-turtle-700 tracking-wide ${className}`}>
       <span className="w-1.5 h-1.5 rounded-full bg-turtle-500" />
       Pay at property
     </span>
@@ -95,12 +87,10 @@ export function PayAtPropertyBadge({ className = '' }) {
 export function StayShell({ children, className = '' }) {
   return (
     <div className={`min-h-screen bg-[#fafbfb] text-gray-900 font-stay ${className}`}>
-      {/* subtle grid atmosphere — no shadows */}
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.035]"
         style={{
-          backgroundImage:
-            'linear-gradient(#0f766e 1px, transparent 1px), linear-gradient(90deg, #0f766e 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(#0f766e 1px, transparent 1px), linear-gradient(90deg, #0f766e 1px, transparent 1px)',
           backgroundSize: '48px 48px',
         }}
       />

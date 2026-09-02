@@ -331,4 +331,69 @@ export const wpMarketing = {
   simulateChatbotInbound:  (data)  => wpMarketingApi.post('/wp-marketing/chatbot/simulate', data),
 };
 
+// ── Picoso Stay ───────────────────────────────────────────────────────────────
+const stayAdminApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+});
+stayAdminApi.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const pin = sessionStorage.getItem('picoso_stay_admin_pin');
+    if (pin) config.headers['x-stay-admin-pin'] = pin;
+  }
+  return config;
+});
+
+const stayOwnerApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://picoso.in/api',
+});
+stayOwnerApi.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const pin = sessionStorage.getItem('picoso_stay_owner_pin');
+    if (pin) config.headers['x-stay-owner-pin'] = pin;
+  }
+  return config;
+});
+
+export const stay = {
+  getDestinations: () => api.get('/stay/destinations'),
+  getCategories: () => api.get('/stay/categories'),
+  getProperties: (slug) => api.get(`/stay/destinations/${slug}/properties`),
+  getProperty: (id) => api.get(`/stay/properties/${id}`),
+  createBooking: (data) => api.post('/stay/bookings', data),
+  getMyBookings: () => api.get('/stay/bookings'),
+  getMyBooking: (id) => api.get(`/stay/bookings/${id}`),
+  getProfile: () => api.get('/stay/profile'),
+  updateProfile: (data) => api.put('/stay/profile', data),
+};
+
+export const stayAdmin = {
+  verifyPin: (pin) => stayAdminApi.post('/stay-admin/verify-pin', {}, { headers: { 'x-stay-admin-pin': pin } }),
+  getStats: () => stayAdminApi.get('/stay-admin/stats'),
+  getProperties: () => stayAdminApi.get('/stay-admin/properties'),
+  createProperty: (data) => stayAdminApi.post('/stay-admin/properties', data),
+  updateProperty: (id, data) => stayAdminApi.put(`/stay-admin/properties/${id}`, data),
+  deleteProperty: (id) => stayAdminApi.delete(`/stay-admin/properties/${id}`),
+  getOwners: () => stayAdminApi.get('/stay-admin/owners'),
+  createOwner: (data) => stayAdminApi.post('/stay-admin/owners', data),
+  updateOwner: (id, data) => stayAdminApi.put(`/stay-admin/owners/${id}`, data),
+  deleteOwner: (id) => stayAdminApi.delete(`/stay-admin/owners/${id}`),
+  regenerateOwnerPin: (id) => stayAdminApi.post(`/stay-admin/owners/${id}/regenerate-pin`),
+  getGuests: () => stayAdminApi.get('/stay-admin/guests'),
+  getBookings: () => stayAdminApi.get('/stay-admin/bookings'),
+  getInvoices: () => stayAdminApi.get('/stay-admin/invoices'),
+  getCategories: () => stayAdminApi.get('/stay-admin/categories'),
+  updateCategories: (categories) => stayAdminApi.put('/stay-admin/categories', { categories }),
+  checkIn: (otp) => stayAdminApi.post('/stay-admin/check-in', { otp }),
+};
+
+export const stayOwner = {
+  verifyPin: (pin) => stayOwnerApi.post('/stay-owner/verify-pin', {}, { headers: { 'x-stay-owner-pin': pin } }),
+  getStats: () => stayOwnerApi.get('/stay-owner/stats'),
+  getProperties: () => stayOwnerApi.get('/stay-owner/properties'),
+  updateProperty: (id, data) => stayOwnerApi.put(`/stay-owner/properties/${id}`, data),
+  getBookings: () => stayOwnerApi.get('/stay-owner/bookings'),
+  getInvoices: () => stayOwnerApi.get('/stay-owner/invoices'),
+  checkIn: (otp) => stayOwnerApi.post('/stay-owner/check-in', { otp }),
+};
+
 export default api;

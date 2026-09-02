@@ -16,6 +16,11 @@ import * as wpExecution  from '../controllers/wpExecutionController.js';
 import * as wpWebhook    from '../controllers/wpWebhookController.js';
 import * as wpChatbot    from '../controllers/wpChatbotController.js';
 import { requireWpPin } from '../middleware/wpMarketingAuth.js';
+import * as stay from '../controllers/stayController.js';
+import * as stayAdmin from '../controllers/stayAdminController.js';
+import * as stayOwner from '../controllers/stayOwnerController.js';
+import { requireStayAdminPin } from '../middleware/stayAdminAuth.js';
+import { requireStayOwnerPin } from '../middleware/stayOwnerAuth.js';
 
 const router = express.Router();
 
@@ -297,5 +302,47 @@ router.post('/webhooks/campaignbot',                       wpWebhook.handleWebho
 // ── Picoso Intelligence (/llm console) — self-contained module ───────────────
 router.use('/llm', llmRouter);
 router.use('/llm', platformRouter);
+
+// ── Picoso Stay — Public ─────────────────────────────────────────────────────
+router.get('/stay/destinations', stay.getDestinations);
+router.get('/stay/categories', stay.getCategories);
+router.get('/stay/destinations/:slug/properties', stay.getPropertiesByDestination);
+router.get('/stay/properties/:id', stay.getProperty);
+
+// ── Picoso Stay — Guest (JWT) ────────────────────────────────────────────────
+router.post('/stay/bookings', authenticate, stay.createBooking);
+router.get('/stay/bookings', authenticate, stay.getMyBookings);
+router.get('/stay/bookings/:id', authenticate, stay.getMyBooking);
+router.get('/stay/profile', authenticate, stay.getMyProfile);
+router.put('/stay/profile', authenticate, stay.updateMyProfile);
+
+// ── Picoso Stay Admin (PIN) ──────────────────────────────────────────────────
+router.post('/stay-admin/verify-pin', requireStayAdminPin, stayAdmin.verifyPin);
+router.get('/stay-admin/stats', requireStayAdminPin, stayAdmin.getStats);
+router.get('/stay-admin/destinations', requireStayAdminPin, stayAdmin.getDestinations);
+router.get('/stay-admin/properties', requireStayAdminPin, stayAdmin.getProperties);
+router.post('/stay-admin/properties', requireStayAdminPin, stayAdmin.createProperty);
+router.put('/stay-admin/properties/:id', requireStayAdminPin, stayAdmin.updateProperty);
+router.delete('/stay-admin/properties/:id', requireStayAdminPin, stayAdmin.deleteProperty);
+router.get('/stay-admin/owners', requireStayAdminPin, stayAdmin.getOwners);
+router.post('/stay-admin/owners', requireStayAdminPin, stayAdmin.createOwner);
+router.put('/stay-admin/owners/:id', requireStayAdminPin, stayAdmin.updateOwner);
+router.delete('/stay-admin/owners/:id', requireStayAdminPin, stayAdmin.deleteOwner);
+router.post('/stay-admin/owners/:id/regenerate-pin', requireStayAdminPin, stayAdmin.regenerateOwnerPin);
+router.get('/stay-admin/guests', requireStayAdminPin, stayAdmin.getGuests);
+router.get('/stay-admin/bookings', requireStayAdminPin, stayAdmin.getBookings);
+router.get('/stay-admin/invoices', requireStayAdminPin, stayAdmin.getInvoices);
+router.get('/stay-admin/categories', requireStayAdminPin, stayAdmin.getCategories);
+router.put('/stay-admin/categories', requireStayAdminPin, stayAdmin.updateCategories);
+router.post('/stay-admin/check-in', requireStayAdminPin, stayAdmin.checkInWithOtp);
+
+// ── Picoso Stay Owner (per-owner PIN) ────────────────────────────────────────
+router.post('/stay-owner/verify-pin', requireStayOwnerPin, stayOwner.verifyPin);
+router.get('/stay-owner/stats', requireStayOwnerPin, stayOwner.getStats);
+router.get('/stay-owner/properties', requireStayOwnerPin, stayOwner.getMyProperties);
+router.put('/stay-owner/properties/:id', requireStayOwnerPin, stayOwner.updateProperty);
+router.get('/stay-owner/bookings', requireStayOwnerPin, stayOwner.getBookings);
+router.get('/stay-owner/invoices', requireStayOwnerPin, stayOwner.getInvoices);
+router.post('/stay-owner/check-in', requireStayOwnerPin, stayOwner.checkInWithOtp);
 
 export default router;
