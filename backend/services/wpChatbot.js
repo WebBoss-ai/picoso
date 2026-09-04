@@ -95,14 +95,7 @@ export async function getOrCreateBrain(clientId) {
 export async function ensureDefaultBrain() {
   try {
     const existing = await WpChatbotBrain.findOne().sort({ updatedAt: -1 });
-    if (existing) {
-      if (!existing.enabled) {
-        existing.enabled = true;
-        await existing.save();
-        console.log('[WP Chatbot] re-enabled existing brain');
-      }
-      return existing;
-    }
+    if (existing) return existing;
     return await getOrCreateBrain(null);
   } catch (err) {
     console.error('[WP Chatbot] ensureDefaultBrain failed:', err.message);
@@ -346,17 +339,14 @@ async function handleInboundChatOnce({
     return null;
   }
 
-  let brain = await WpChatbotBrain.findOne({ enabled: true }).sort({ updatedAt: -1 });
+  let brain = await WpChatbotBrain.findOne().sort({ updatedAt: -1 });
   if (!brain) brain = await ensureDefaultBrain();
   if (!brain) {
     console.error('[WP Chatbot] no brain available');
     return { error: 'no_brain' };
   }
-  if (!brain.enabled) {
-    brain.enabled = true;
-    await brain.save();
-  }
 
+  const autoReply = brain.enabled !== false;
   const clientId = brain.clientId;
   const inboundText = String(text || '').trim();
   const toPhone = toE164(from);
@@ -419,6 +409,17 @@ async function handleInboundChatOnce({
     conversationId: String(convo._id),
     at: new Date().toISOString(),
   });
+
+  if (!autoReply) {
+    console.log(`[WP Chatbot] brain paused — saved inbound from ${toPhone}, no reply`);
+    return {
+      reply: null,
+      matchedAction: 'paused',
+      conversationId: convo._id,
+      paused: true,
+      toPhone,
+    };
+  }
 
   // Build reply: fast path → LLM → welcome/fallback
   let reply = resolveFastReply(brain, inboundText);
